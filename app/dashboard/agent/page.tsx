@@ -1230,7 +1230,7 @@ export default function AgentDashboard() {
                                   </Badge>
                                   {tenant.idVerificationStatus && (
                                     <Badge
-                                      variant={tenant.idVerificationStatus === "approved" ? "success" : tenant.idVerificationStatus === "rejected" ? "danger" : "outline"}
+                                      variant={tenant.idVerificationStatus === "approved" ? "success" : tenant.idVerificationStatus === "rejected" ? "destructive" : "outline"}
                                       className="text-[11px]"
                                     >
                                       {tenant.idVerificationStatus === "approved" ? "ID Verified" : tenant.idVerificationStatus === "rejected" ? "ID Rejected" : "ID Pending"}
