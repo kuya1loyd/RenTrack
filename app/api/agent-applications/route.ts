@@ -109,6 +109,11 @@ export async function PATCH(request: NextRequest) {
       const application = await reopenAgentApplication(id);
       return NextResponse.json({ success: true, application });
     }
+    if (action === "mark_approved") {
+      if (!id) return NextResponse.json({ success: false, error: "Application ID is required" }, { status: 400 });
+      const application = await reviewAgentApplication(id, "approved", auth.userId);
+      return NextResponse.json({ success: true, application });
+    }
     if (!id || !["approved", "rejected"].includes(status)) return NextResponse.json({ success: false, error: "Invalid review request" }, { status: 400 });
     const rejectionReason = typeof rawRejectionReason === "string" ? rawRejectionReason.trim() : "";
     if (status === "rejected" && (!rejectionReason || rejectionReason.length > 1000)) {

@@ -509,6 +509,7 @@ export async function registerAgent(data: {
   experience?: string;
   gender?: string;
   birthdate?: string;
+  appliedDate?: string;
   country?: string;
 }): Promise<UserRecord & { needsOtp?: boolean; devOtp?: string; emailSent?: boolean; emailStatus?: "sent" | "not_configured" | "failed" }> {
   const result = await apiPost("/api/auth/users", { ...data, role: "agent" });
@@ -547,6 +548,10 @@ export async function reviewAgentApplication(id: string, status: "approved" | "r
 
 export async function reopenAgentApplication(id: string) {
   return apiPatch("/api/agent-applications", { id, action: "reopen" });
+}
+
+export async function markAgentApplicationApproved(id: string) {
+  return apiPatch("/api/agent-applications", { id, action: "mark_approved" });
 }
 
 export async function deleteRejectedAgentApplication(id: string) {

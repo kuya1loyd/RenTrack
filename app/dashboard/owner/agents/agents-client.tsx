@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { getOwnerAgents, registerAgent, deleteUser, deleteRejectedAgentApplication, updateUser, UserRecord, getAgentApplications, reviewAgentApplication, reopenAgentApplication, AgentApplication, getProperties, getUnits, getTenants, getPayments, Payment } from "@/lib/data";
+import { getOwnerAgents, registerAgent, deleteUser, deleteRejectedAgentApplication, updateUser, UserRecord, getAgentApplications, reviewAgentApplication, reopenAgentApplication, markAgentApplicationApproved, AgentApplication, getProperties, getUnits, getTenants, getPayments, Payment } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency, formatDate, getInitials } from "@/lib/utils";
 import { toast } from "sonner";
@@ -76,8 +76,9 @@ export default function OwnerAgentsPage() {
   const [messagingAgent, setMessagingAgent] = useState<UserRecord | null>(null);
   const [editForm, setEditForm] = useState({ name: "", email: "", phone: "", address: "" });
   const [applications, setApplications] = useState<AgentApplication[]>([]);
+  const [approvedApplications, setApprovedApplications] = useState<AgentApplication[]>([]);
   const [rejectedApplications, setRejectedApplications] = useState<AgentApplication[]>([]);
-  const [agentView, setAgentView] = useState<"agents" | "applicants" | "rejected">("agents");
+  const [agentView, setAgentView] = useState<"agents" | "applicants" | "approved" | "rejected">("agents");
   const [agentStatusFilter, setAgentStatusFilter] = useState<"all" | "pending">("all");
   const [selectedApplication, setSelectedApplication] = useState<AgentApplication | null>(null);
   const [applicationToDelete, setApplicationToDelete] = useState<AgentApplication | null>(null);
@@ -85,11 +86,13 @@ export default function OwnerAgentsPage() {
   const [showRejectionForm, setShowRejectionForm] = useState(false);
   const [agentSearch, setAgentSearch] = useState("");
   const [applicantSearch, setApplicantSearch] = useState("");
+  const [approvedApplicantSearch, setApprovedApplicantSearch] = useState("");
   const [rejectedApplicantSearch, setRejectedApplicantSearch] = useState("");
+  const [selectedApplicantId, setSelectedApplicantId] = useState("");
 
   useEffect(() => {
     const requestedView = searchParams.get("view");
-    if (requestedView === "agents" || requestedView === "applicants" || requestedView === "rejected") {
+    if (requestedView === "agents" || requestedView === "applicants" || requestedView === "approved" || requestedView === "rejected") {
       setAgentView(requestedView);
       setAgentStatusFilter("all");
     }
@@ -102,7 +105,7 @@ export default function OwnerAgentsPage() {
     phone: "",
     address: "",
     gender: "",
-    birthdate: "",
+    appliedDate: new Date().toISOString().slice(0, 10),
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -114,8 +117,14 @@ export default function OwnerAgentsPage() {
     try {
       const agentRecords = await getOwnerAgents();
       setAgents(agentRecords);
-      setApplications(await getAgentApplications("pending"));
-      setRejectedApplications(await getAgentApplications("rejected"));
+      const [pendingApps, approvedApps, rejectedApps] = await Promise.all([
+        getAgentApplications("pending"),
+        getAgentApplications("approved"),
+        getAgentApplications("rejected"),
+      ]);
+      setApplications(pendingApps);
+      setApprovedApplications(approvedApps);
+      setRejectedApplications(rejectedApps);
 
       const stats: Record<string, { properties: number; tenants: number; payments: number }> = {};
       const [properties, units, tenants, payments] = await Promise.all([
@@ -165,7 +174,16 @@ export default function OwnerAgentsPage() {
   }, [loadData]);
 
   const openRegister = () => {
-    setAgentForm({ name: "", email: "", password: "", phone: "", address: "", gender: "", birthdate: "" });
+    setSelectedApplicantId("");
+    setAgentForm({
+      name: "",
+      email: "",
+      password: "",
+      phone: "",
+      address: "",
+      gender: "",
+      appliedDate: new Date().toISOString().slice(0, 10),
+    });
     setShowAgentPassword(false);
     setIsRegisterOpen(true);
   };
@@ -173,7 +191,33 @@ export default function OwnerAgentsPage() {
   const closeRegister = () => {
     setIsRegisterOpen(false);
     setShowAgentPassword(false);
-    setAgentForm({ name: "", email: "", password: "", phone: "", address: "", gender: "", birthdate: "" });
+    setSelectedApplicantId("");
+    setAgentForm({
+      name: "",
+      email: "",
+      password: "",
+      phone: "",
+      address: "",
+      gender: "",
+      appliedDate: new Date().toISOString().slice(0, 10),
+    });
+  };
+
+  const handleSelectApplicant = (applicantId: string) => {
+    setSelectedApplicantId(applicantId);
+    if (!applicantId) return;
+    const applicant = applications.find((a) => a.id === applicantId);
+    if (applicant) {
+      setAgentForm((prev) => ({
+        ...prev,
+        name: applicant.name || prev.name,
+        email: applicant.email || prev.email,
+        phone: applicant.phone || prev.phone,
+        address: applicant.address || prev.address,
+        gender: applicant.gender || prev.gender,
+        appliedDate: applicant.createdAt ? applicant.createdAt.slice(0, 10) : prev.appliedDate,
+      }));
+    }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -190,11 +234,35 @@ export default function OwnerAgentsPage() {
     }
     setIsSubmitting(true);
     try {
-      const agent = await registerAgent(agentForm);
+      const agent = await registerAgent({
+        name: agentForm.name,
+        email: agentForm.email,
+        password: agentForm.password,
+        phone: agentForm.phone || undefined,
+        address: agentForm.address || undefined,
+        gender: agentForm.gender || undefined,
+        birthdate: agentForm.appliedDate || undefined,
+        appliedDate: agentForm.appliedDate || undefined,
+      });
       setAgents([agent, ...agents]);
       setSelectedAgentId(agent.id);
       setCommissionRateInput(String(agent.commissionRate ?? 0));
-      setAgentForm({ name: "", email: "", password: "", phone: "", address: "", gender: "", birthdate: "" });
+
+      const applicantToApprove = selectedApplicantId
+        ? applications.find((a) => a.id === selectedApplicantId)
+        : applications.find((a) => a.email.toLowerCase() === agentForm.email.toLowerCase());
+
+      if (applicantToApprove) {
+        try {
+          await markAgentApplicationApproved(applicantToApprove.id);
+          setApplications((current) => current.filter((a) => a.id !== applicantToApprove.id));
+          setApprovedApplications((current) => [{ ...applicantToApprove, status: "approved" }, ...current]);
+        } catch (appErr) {
+          console.warn("Could not mark application as approved:", appErr);
+        }
+      }
+
+      closeRegister();
       if (agent.emailSent) {
         toast.success(`Agent account created. Login details were emailed to ${agent.email}.`);
       } else {
@@ -301,6 +369,7 @@ export default function OwnerAgentsPage() {
       setRejectedApplications((current) => current.filter((item) => item.id !== selectedApplication.id));
       if (status === "approved" && result.agent) {
         setAgents((current) => [result.agent, ...current]);
+        setApprovedApplications((current) => [{ ...selectedApplication, status: "approved" }, ...current]);
         if (result.emailSent) {
           toast.success("Applicant approved and agent account created. Credentials were emailed.");
         } else {
@@ -374,6 +443,9 @@ export default function OwnerAgentsPage() {
   const filteredApplications = applications.filter((application) =>
     `${application.name} ${application.email} ${application.address}`.toLowerCase().includes(applicantSearch.trim().toLowerCase())
   );
+  const filteredApprovedApplications = approvedApplications.filter((application) =>
+    `${application.name} ${application.email} ${application.address}`.toLowerCase().includes(approvedApplicantSearch.trim().toLowerCase())
+  );
   const filteredRejectedApplications = rejectedApplications.filter((application) =>
     `${application.name} ${application.email} ${application.address} ${application.rejectionReason || ""}`.toLowerCase().includes(rejectedApplicantSearch.trim().toLowerCase())
   );
@@ -413,7 +485,7 @@ export default function OwnerAgentsPage() {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6">
       <ManagementBanner
         category="AGENT MANAGEMENT"
-        title={agentView === "agents" ? "Agents & Property Managers" : agentView === "applicants" ? "Agent Applicants" : "Rejected Applicants"}
+        title={agentView === "agents" ? "Agents & Property Managers" : agentView === "applicants" ? "Agent Applicants" : agentView === "approved" ? "Approved Applicants" : "Rejected Applicants"}
         description="Manage your licensed agent team, monitor performance, and review rent-based commission statements."
         icon={Users}
       />
@@ -424,6 +496,7 @@ export default function OwnerAgentsPage() {
             { label: "All agents", view: "agents" as const, filter: "all" as const, count: agents.length, active: agentView === "agents" && agentStatusFilter === "all" },
             { label: "Pending", view: "agents" as const, filter: "pending" as const, count: agents.filter((agent) => agent.idVerificationStatus === "pending").length, active: agentView === "agents" && agentStatusFilter === "pending" },
             { label: "Applicants", view: "applicants" as const, filter: "all" as const, count: applications.length, active: agentView === "applicants" },
+            { label: "Approved", view: "approved" as const, filter: "all" as const, count: approvedApplications.length, active: agentView === "approved" },
             { label: "Rejected", view: "rejected" as const, filter: "all" as const, count: rejectedApplications.length, active: agentView === "rejected" },
           ].map((tab) => (
             <button
@@ -463,6 +536,46 @@ export default function OwnerAgentsPage() {
               <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">New applicant</Badge>
             </button>
           ))}
+        </div>
+      )}
+
+      {agentView === "approved" && (
+        <div className="space-y-3">
+          <div className="relative max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
+            <Input value={approvedApplicantSearch} onChange={(event) => setApprovedApplicantSearch(event.target.value)} placeholder="Search approved applicants by name, email, or location" className="pl-9" />
+          </div>
+          {filteredApprovedApplications.length === 0 ? (
+            <div className="rounded-2xl border border-border p-10 text-center text-text-secondary">
+              {approvedApplications.length === 0 ? "No approved applicants yet." : "No approved applicants match your search."}
+            </div>
+          ) : (
+            filteredApprovedApplications.map((application) => (
+              <button
+                type="button"
+                key={application.id}
+                onClick={() => {
+                  setRejectionReason("");
+                  setShowRejectionForm(false);
+                  setSelectedApplication(application);
+                }}
+                className="flex w-full items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 text-left transition hover:bg-emerald-50/80"
+              >
+                <div>
+                  <p className="font-semibold text-foreground">{application.name}</p>
+                  <p className="text-sm text-text-secondary">{application.email} · {application.address}</p>
+                  {application.createdAt && (
+                    <p className="text-xs text-text-tertiary mt-1">
+                      Applied: {new Date(application.createdAt).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" })}
+                    </p>
+                  )}
+                </div>
+                <Badge variant="outline" className="border-emerald-300 bg-emerald-100 text-emerald-800">
+                  Approved · Account Created
+                </Badge>
+              </button>
+            ))
+          )}
         </div>
       )}
 
@@ -527,14 +640,63 @@ export default function OwnerAgentsPage() {
                   <h3 className="text-base font-semibold">Register New Agent</h3>
                   <p className="text-[10px] text-text-secondary mt-0.5">Agents can manage tenants, units, and payments.</p>
                 </div>
-                <button
-                  onClick={closeRegister}
-                  className="h-8 w-8 rounded-xl flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-surface-secondary transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeRegister();
+                      setAgentView("applicants");
+                    }}
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                  >
+                    View Applications ({applications.length}) →
+                  </button>
+                  <button
+                    onClick={closeRegister}
+                    className="h-8 w-8 rounded-xl flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-surface-secondary transition-colors"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-              <form onSubmit={handleRegister} autoComplete="off" className="max-h-[calc(90vh-90px)] overflow-y-auto p-4 space-y-2">
+              <form onSubmit={handleRegister} autoComplete="off" className="max-h-[calc(90vh-90px)] overflow-y-auto p-4 space-y-3">
+                {applications.length > 0 && (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label htmlFor="select-applicant" className="text-[11px] font-semibold text-blue-900 block">
+                        Choose from Pending Applicants (Optional):
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          closeRegister();
+                          setAgentView("applicants");
+                        }}
+                        className="text-[10px] font-medium text-blue-700 hover:underline"
+                      >
+                        View all applicants ({applications.length})
+                      </button>
+                    </div>
+                    <Select
+                      id="select-applicant"
+                      value={selectedApplicantId}
+                      onChange={(e) => handleSelectApplicant(e.target.value)}
+                      className="bg-white text-xs border-blue-200"
+                    >
+                      <option value="">-- Manual Registration (New Agent) --</option>
+                      {applications.map((app) => (
+                        <option key={app.id} value={app.id}>
+                          {app.name} ({app.email}) — Applied {app.createdAt ? new Date(app.createdAt).toLocaleDateString() : ""}
+                        </option>
+                      ))}
+                    </Select>
+                    {selectedApplicantId && (
+                      <p className="text-[10px] text-blue-700">
+                        Applicant details loaded. Registering will create their account and mark their application as approved.
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div className="min-w-0">
                     <label className="text-[10px] font-medium text-text-secondary mb-0.5 block">Full Name *</label>
@@ -572,9 +734,9 @@ export default function OwnerAgentsPage() {
                       <option value="Other">Other</option>
                     </Select>
                   </div>
-                  <div className="min-w-0">
-                    <label className="text-[10px] font-medium text-text-secondary mb-0.5 block">Birthdate</label>
-                    <Input type="date" value={agentForm.birthdate} onChange={(e) => setAgentForm({ ...agentForm, birthdate: e.target.value })} />
+                  <div className="min-w-0 sm:col-span-2">
+                    <label className="text-[10px] font-medium text-text-secondary mb-0.5 block">Applied Date</label>
+                    <Input type="date" value={agentForm.appliedDate} onChange={(e) => setAgentForm({ ...agentForm, appliedDate: e.target.value })} />
                   </div>
                 </div>
                 <div className="flex gap-2 pt-1">
@@ -593,25 +755,101 @@ export default function OwnerAgentsPage() {
         {selectedApplication && (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4">
             <motion.div initial={{ opacity: 0, scale: .95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-              <div className="flex items-start justify-between"><div><h3 className="text-lg font-bold">Applicant Information</h3><Badge className={selectedApplication.status === "rejected" ? "mt-2 bg-red-100 text-red-700" : "mt-2 bg-amber-100 text-amber-700"}>{selectedApplication.status === "rejected" ? "Rejected" : "Pending review"}</Badge></div><button onClick={() => { setSelectedApplication(null); setShowRejectionForm(false); setRejectionReason(""); }}><X className="h-5 w-5" /></button></div>
-              <div className="mt-4 grid grid-cols-2 gap-3 text-sm"><p><b>Name</b><br />{selectedApplication.name}</p><p><b>Email</b><br />{selectedApplication.email}</p><p><b>Phone</b><br />{selectedApplication.phone || "N/A"}</p><p><b>Location</b><br />{selectedApplication.address}</p><p><b>Gender</b><br />{selectedApplication.gender || "N/A"}</p><p><b>Date Applied</b><br />{selectedApplication.createdAt ? new Date(selectedApplication.createdAt).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" }) : "N/A"}</p></div>
-              {selectedApplication.status === "rejected" && selectedApplication.rejectionReason && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800"><b>Rejection reason:</b> {selectedApplication.rejectionReason}</p>}
-              <a href={`/api/agent-applications/${selectedApplication.id}/resume`} target="_blank" rel="noreferrer" className="mt-5 block rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-center text-sm font-medium text-blue-700">View Resume</a>
-              {selectedApplication.status === "rejected" ? (
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-lg font-bold">Applicant Information</h3>
+                  <Badge className={
+                    selectedApplication.status === "rejected"
+                      ? "mt-2 bg-red-100 text-red-700"
+                      : selectedApplication.status === "approved"
+                      ? "mt-2 bg-emerald-100 text-emerald-800"
+                      : "mt-2 bg-amber-100 text-amber-700"
+                  }>
+                    {selectedApplication.status === "rejected"
+                      ? "Rejected"
+                      : selectedApplication.status === "approved"
+                      ? "Approved · Account Created"
+                      : "Pending review"}
+                  </Badge>
+                </div>
+                <button onClick={() => { setSelectedApplication(null); setShowRejectionForm(false); setRejectionReason(""); }}>
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <p><b>Name</b><br />{selectedApplication.name}</p>
+                <p><b>Email</b><br />{selectedApplication.email}</p>
+                <p><b>Phone</b><br />{selectedApplication.phone || "N/A"}</p>
+                <p><b>Location</b><br />{selectedApplication.address}</p>
+                <p><b>Gender</b><br />{selectedApplication.gender || "N/A"}</p>
+                <p><b>Date Applied</b><br />{selectedApplication.createdAt ? new Date(selectedApplication.createdAt).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" }) : "N/A"}</p>
+              </div>
+              {selectedApplication.status === "rejected" && selectedApplication.rejectionReason && (
+                <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800"><b>Rejection reason:</b> {selectedApplication.rejectionReason}</p>
+              )}
+              <a href={`/api/agent-applications/${selectedApplication.id}/resume`} target="_blank" rel="noreferrer" className="mt-5 block rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-center text-sm font-medium text-blue-700">
+                View Resume
+              </a>
+              {selectedApplication.status === "approved" ? (
+                <div className="mt-5 flex gap-2">
+                  <Button
+                    className="flex-1"
+                    onClick={() => {
+                      const appEmail = selectedApplication.email.toLowerCase();
+                      const matchingAgent = agents.find((a) => a.email.toLowerCase() === appEmail);
+                      setSelectedApplication(null);
+                      setAgentView("agents");
+                      if (matchingAgent) {
+                        setSelectedAgentId(matchingAgent.id);
+                      }
+                    }}
+                  >
+                    View in Agent Roster
+                  </Button>
+                  <Button variant="outline" onClick={() => setSelectedApplication(null)}>
+                    Close
+                  </Button>
+                </div>
+              ) : selectedApplication.status === "rejected" ? (
                 <div className="mt-5 flex justify-end">
-                  <Button disabled={isSubmitting} onClick={() => handleReturnToReview(selectedApplication)}>{isSubmitting ? "Returning..." : "Return to pending applicants"}</Button>
+                  <Button disabled={isSubmitting} onClick={() => handleReturnToReview(selectedApplication)}>
+                    {isSubmitting ? "Returning..." : "Return to pending applicants"}
+                  </Button>
                 </div>
               ) : showRejectionForm ? (
                 <div className="mt-5 space-y-3">
                   <label htmlFor="application-rejection-reason" className="block text-sm font-medium text-slate-800">Reason for rejection *</label>
                   <textarea id="application-rejection-reason" value={rejectionReason} onChange={(event) => setRejectionReason(event.target.value)} maxLength={1000} rows={4} required className="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="Explain why this application is being rejected" />
                   <div className="flex gap-2">
-                    <Button className="flex-1" disabled={isSubmitting || !rejectionReason.trim()} onClick={() => handleReviewApplication("rejected", rejectionReason)}>{isSubmitting ? "Sending..." : "Reject & Email Applicant"}</Button>
-                    <Button variant="outline" disabled={isSubmitting} onClick={() => setShowRejectionForm(false)}>Cancel</Button>
+                    <Button className="flex-1" disabled={isSubmitting || !rejectionReason.trim()} onClick={() => handleReviewApplication("rejected", rejectionReason)}>
+                      {isSubmitting ? "Sending..." : "Reject & Email Applicant"}
+                    </Button>
+                    <Button variant="outline" disabled={isSubmitting} onClick={() => setShowRejectionForm(false)}>
+                      Cancel
+                    </Button>
                   </div>
                 </div>
               ) : (
-                <div className="mt-5 flex gap-2"><Button className="flex-1" disabled={isSubmitting} onClick={() => handleReviewApplication("approved")}>{isSubmitting ? "Creating account..." : "Approve & Create Account"}</Button><Button variant="outline" className="flex-1" disabled={isSubmitting} onClick={() => setShowRejectionForm(true)}>Reject</Button></div>
+                <div className="mt-5 flex flex-col sm:flex-row gap-2">
+                  <Button className="flex-1" disabled={isSubmitting} onClick={() => handleReviewApplication("approved")}>
+                    {isSubmitting ? "Creating account..." : "Approve & Create Account"}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="flex-1"
+                    onClick={() => {
+                      const app = selectedApplication;
+                      setSelectedApplication(null);
+                      openRegister();
+                      handleSelectApplicant(app.id);
+                    }}
+                  >
+                    Open in Register Form
+                  </Button>
+                  <Button variant="outline" disabled={isSubmitting} onClick={() => setShowRejectionForm(true)}>
+                    Reject
+                  </Button>
+                </div>
               )}
             </motion.div>
           </div>
