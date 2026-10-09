@@ -301,20 +301,111 @@ export default function LandingPage() {
       </nav>
 
        {/* ─── Hero ─── */}
-      <section className="relative flex min-h-115 items-center justify-center overflow-hidden sm:min-h-125">
-         <div className="absolute inset-0">
-           <Image
-             src="/images/favicon/Landing page and login page.png"
-             alt="HedgeHomes Realty & Brokerage"
-             fill
-             priority
-             quality={100}
-             unoptimized
-             sizes="100vw"
-             className="object-cover object-center"
+      <section className="relative flex min-h-115 items-center justify-center overflow-hidden sm:min-h-125 lg:min-h-[580px]">
+         {/* Animated Background Container */}
+         <div className="absolute inset-0 overflow-hidden">
+           {/* Ken Burns Zoom & Pan Animation */}
+           <motion.div
+             className="absolute inset-[-5%] h-[110%] w-[110%]"
+             initial={{ scale: 1, x: 0, y: 0 }}
+             animate={{
+               scale: [1, 1.08, 1.03, 1.09, 1],
+               x: ["0%", "1.5%", "-1%", "0.8%", "0%"],
+               y: ["0%", "-1.2%", "0.8%", "-0.6%", "0%"],
+             }}
+             transition={{
+               duration: 22,
+               repeat: Infinity,
+               repeatType: "reverse",
+               ease: "easeInOut",
+             }}
+           >
+             <Image
+               src="/images/favicon/Landing page and login page.png"
+               alt="HedgeHomes Realty & Brokerage"
+               fill
+               priority
+               quality={100}
+               unoptimized
+               sizes="100vw"
+               className="object-cover object-center filter brightness-[0.95] contrast-[1.05]"
+             />
+           </motion.div>
+
+           {/* Atmospheric Blue Light Glow */}
+           <motion.div
+             className="pointer-events-none absolute -left-1/4 -top-1/4 h-[150%] w-[150%] bg-[radial-gradient(ellipse_at_30%_20%,rgba(59,130,246,0.3),transparent_50%)]"
+             animate={{
+               opacity: [0.35, 0.7, 0.35],
+               scale: [1, 1.06, 1],
+             }}
+             transition={{
+               duration: 8,
+               repeat: Infinity,
+               ease: "easeInOut",
+             }}
            />
+
+           {/* Warm Golden Architectural Glow */}
+           <motion.div
+             className="pointer-events-none absolute -bottom-1/3 -right-1/4 h-[140%] w-[140%] bg-[radial-gradient(ellipse_at_75%_75%,rgba(245,158,11,0.22),transparent_45%)]"
+             animate={{
+               opacity: [0.25, 0.6, 0.25],
+               scale: [1.05, 1, 1.05],
+             }}
+             transition={{
+               duration: 10,
+               repeat: Infinity,
+               ease: "easeInOut",
+             }}
+           />
+
+           {/* Floating Ambient Light Particles */}
+           <div className="pointer-events-none absolute inset-0 overflow-hidden">
+             {Array.from({ length: 8 }).map((_, i) => (
+               <motion.span
+                 key={i}
+                 className="absolute rounded-full bg-white/30 shadow-[0_0_8px_rgba(255,255,255,0.6)] backdrop-blur-xs"
+                 style={{
+                   width: 3 + (i % 3) * 2,
+                   height: 3 + (i % 3) * 2,
+                   left: `${10 + i * 11}%`,
+                   top: `${20 + (i % 5) * 14}%`,
+                 }}
+                 animate={{
+                   y: [0, -32, 0],
+                   x: [0, i % 2 === 0 ? 14 : -14, 0],
+                   opacity: [0.15, 0.85, 0.15],
+                   scale: [0.8, 1.5, 0.8],
+                 }}
+                 transition={{
+                   duration: 6 + (i % 4) * 1.5,
+                   repeat: Infinity,
+                   ease: "easeInOut",
+                   delay: i * 0.7,
+                 }}
+               />
+             ))}
+           </div>
+
+           {/* Cinematic Diagonal Light Flare Sweep */}
+           <motion.div
+             className="pointer-events-none absolute inset-0 -skew-x-12 bg-gradient-to-r from-transparent via-white/[0.07] to-transparent"
+             animate={{
+               x: ["-200%", "250%"],
+             }}
+             transition={{
+               duration: 11,
+               repeat: Infinity,
+               repeatDelay: 5,
+               ease: "easeInOut",
+             }}
+           />
+
+           {/* Gradient Vignette for Depth & High Typography Contrast */}
+           <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-black/35 to-black/55" />
+           <div className="absolute inset-0 bg-radial-[circle_at_center,transparent_35%,rgba(0,0,0,0.5)_100%]" />
          </div>
-         <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/45" />
 
          <motion.div
            initial={{ opacity: 0, y: 22 }}
