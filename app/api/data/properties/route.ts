@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, property: sanitizeResponse(property) });
   } catch (error) {
     console.error("Create property error:", error);
-    const message = error instanceof Error ? error.message : "Failed to create property";
+    const message = (error as any)?.message || (error instanceof Error ? error.message : "Failed to create property");
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

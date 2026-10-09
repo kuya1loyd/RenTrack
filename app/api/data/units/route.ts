@@ -60,7 +60,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, unit: sanitizeResponse(unit) });
   } catch (error) {
     console.error("Create unit error:", error);
-    return NextResponse.json({ success: false, error: "Failed to create unit" }, { status: 500 });
+    const message = (error as any)?.message || (error instanceof Error ? error.message : "Failed to create unit");
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 

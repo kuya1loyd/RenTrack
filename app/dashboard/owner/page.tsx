@@ -218,9 +218,14 @@ export default function OwnerDashboard() {
         toast.error("Provide a unit number and a valid rental rate");
         return;
       }
+      const location = [propertyForm.address, propertyForm.city, propertyForm.province]
+        .map((s) => (s || "").trim())
+        .filter(Boolean)
+        .join(", ") || propertyForm.address || "Main Address";
+
       const newProperty = await addProperty({
-        name: propertyForm.name,
-        location: `${propertyForm.address}, ${propertyForm.city}, ${propertyForm.province}`,
+        name: propertyForm.name.trim(),
+        location,
         type: propertyForm.type,
         latitude: propertyForm.latitude ? Number(propertyForm.latitude) : undefined,
         longitude: propertyForm.longitude ? Number(propertyForm.longitude) : undefined,
@@ -236,7 +241,7 @@ export default function OwnerDashboard() {
       }, user?.id || "");
       await addUnit({
         propertyId: newProperty.id,
-        unitNumber: unitsForm.unitNumber,
+        unitNumber: unitsForm.unitNumber.trim(),
         floor: unitsForm.floor ? Number(unitsForm.floor) : undefined,
         status: unitsForm.status,
         rentAmount: Number(unitsForm.rentAmount),
@@ -251,6 +256,7 @@ export default function OwnerDashboard() {
       setTermsForm({ securityDeposit: "", advancePayment: "", duration: "12 months", paymentDueDate: "5th", rentalTerms: "" });
       await loadData();
     } catch (error) {
+      console.error("Create property error in owner dashboard:", error);
       toast.error(error instanceof Error ? error.message : "Failed to create property");
     } finally {
       setIsSubmitting(false);

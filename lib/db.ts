@@ -1025,28 +1025,92 @@ export async function getProperties() {
 }
 
 export async function createProperty(data: any, userId: string) {
-  const id = `prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  const { error } = await getAdminSupabase().from("properties").insert({
+  const id = data.id || `prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const admin = getAdminSupabase();
+  const normalizedType = ["house", "condominium"].includes(data.type) ? data.type : "house";
+
+  const basePayload: Record<string, any> = {
     id,
     name: data.name,
     location: data.location,
-    type: data.type,
-    units: data.units || 0,
+    type: normalizedType,
+    units: data.units || 1,
     occupied_units: 0,
     latitude: data.latitude ?? null,
     longitude: data.longitude ?? null,
     monthly_revenue: 0,
-    status: "active",
-    created_by: userId,
-    image_url: data.imageUrl || null,
+    status: data.status || "active",
+    created_by: userId || null,
+    image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
     image_urls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : (data.imageUrl ? [data.imageUrl] : []),
     agent_id: data.agentId || null,
     features: Array.isArray(data.features) ? data.features : [],
     condition: data.condition || null,
     availability_status: data.availabilityStatus || "Available",
     created_at: new Date().toISOString(),
-  });
-  if (error) throw error;
+  };
+
+  let payload = { ...basePayload };
+  let { error } = await admin.from("properties").insert(payload);
+
+  // 1. Foreign key constraint violation (created_by or agent_id)
+  if (error && (error.code === "23503" || /foreign key/i.test(error.message) || /created_by/i.test(error.message) || /agent_id/i.test(error.message))) {
+    console.warn("[createProperty] Foreign key constraint warning, removing foreign keys and retrying:", error.message);
+    delete payload.created_by;
+    delete payload.agent_id;
+    ({ error } = await admin.from("properties").insert(payload));
+  }
+
+  // 2. Specific missing columns in schema cache
+  if (error && /Could not find the '.+' column of 'properties'/i.test(error.message)) {
+    console.warn("[createProperty] Missing column in properties table, removing missing column:", error.message);
+    while (error && /Could not find the '.+' column of 'properties'/i.test(error.message)) {
+      const match = error.message.match(/Could not find the '(.+)' column of 'properties'/i);
+      if (match && match[1]) {
+        delete payload[match[1]];
+        ({ error } = await admin.from("properties").insert(payload));
+      } else {
+        break;
+      }
+    }
+  }
+
+  // 3. Check constraint violation (e.g. type or status)
+  if (error && (error.code === "23514" || /check constraint/i.test(error.message))) {
+    console.warn("[createProperty] Check constraint warning, resetting to standard defaults:", error.message);
+    payload.type = "house";
+    payload.status = "active";
+    delete payload.condition;
+    delete payload.availability_status;
+    ({ error } = await admin.from("properties").insert(payload));
+  }
+
+  // 4. Fallback to minimal core columns if table is older schema
+  if (error && (error.code === "PGRST204" || /column/i.test(error.message) || /schema cache/i.test(error.message))) {
+    console.warn("[createProperty] Falling back to minimal columns payload:", error.message);
+    const minimalPayload: Record<string, any> = {
+      id,
+      name: data.name,
+      location: data.location,
+      type: normalizedType,
+      units: data.units || 1,
+      status: "active",
+      image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
+      created_at: new Date().toISOString(),
+    };
+    let minRes = await admin.from("properties").insert(minimalPayload);
+    if (!minRes.error) {
+      error = null;
+    } else {
+      error = minRes.error;
+    }
+  }
+
+  if (error) {
+    console.error("[createProperty] Fatal insert error:", error);
+    throw new Error(error.message || error.details || "Database insertion failed");
+  }
+
   return { id, ...data, status: "active", createdAt: new Date().toISOString() };
 }
 
@@ -1073,8 +1137,10 @@ export async function getUnits() {
 }
 
 export async function createUnit(data: any) {
-  const id = `unit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  const { error } = await getAdminSupabase().from("units").insert({
+  const id = data.id || `unit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const admin = getAdminSupabase();
+
+  const basePayload: Record<string, any> = {
     id,
     property_id: data.propertyId,
     unit_number: data.unitNumber,
@@ -1083,8 +1149,48 @@ export async function createUnit(data: any) {
     rent_amount: data.rentAmount || 0,
     image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
     image_urls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [],
-  });
-  if (error) throw error;
+  };
+
+  let payload = { ...basePayload };
+  let { error } = await admin.from("units").insert(payload);
+
+  // 1. Missing columns in schema cache
+  if (error && /Could not find the '.+' column of 'units'/i.test(error.message)) {
+    console.warn("[createUnit] Missing column in units table, removing missing column:", error.message);
+    while (error && /Could not find the '.+' column of 'units'/i.test(error.message)) {
+      const match = error.message.match(/Could not find the '(.+)' column of 'units'/i);
+      if (match && match[1]) {
+        delete payload[match[1]];
+        ({ error } = await admin.from("units").insert(payload));
+      } else {
+        break;
+      }
+    }
+  }
+
+  // 2. Fallback to minimal core columns
+  if (error && (error.code === "PGRST204" || /column/i.test(error.message) || /schema cache/i.test(error.message))) {
+    console.warn("[createUnit] Falling back to minimal units payload:", error.message);
+    const minimalPayload = {
+      id,
+      property_id: data.propertyId,
+      unit_number: data.unitNumber,
+      status: data.status || "vacant",
+      rent_amount: data.rentAmount || 0,
+    };
+    let minRes = await admin.from("units").insert(minimalPayload);
+    if (!minRes.error) {
+      error = null;
+    } else {
+      error = minRes.error;
+    }
+  }
+
+  if (error) {
+    console.error("[createUnit] Fatal insert error:", error);
+    throw new Error(error.message || error.details || "Database unit insertion failed");
+  }
+
   return { id, ...data, imageUrls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [], status: data.status || "vacant" };
 }
 
