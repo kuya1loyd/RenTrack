@@ -763,15 +763,19 @@ export default function OwnerAgentsPage() {
 
                           {/* Contact & Address */}
                           <td className="px-3 py-3.5">
-                            <div className="flex flex-col gap-0.5 text-xs">
-                              {agent.email ? (
-                                <a href={`mailto:${agent.email}`} className="text-blue-600 hover:underline truncate max-w-[160px]">
-                                  {agent.email}
-                                </a>
-                              ) : (
-                                <span className="text-slate-400">—</span>
-                              )}
-                              <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                            <div className="flex flex-col gap-1 text-xs">
+                              <div className="flex items-center gap-1.5">
+                                <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+                                {agent.email ? (
+                                  <a href={`mailto:${agent.email}`} className="text-blue-600 hover:underline truncate max-w-[170px]" title={agent.email}>
+                                    {agent.email}
+                                  </a>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                                <Phone className="h-3 w-3 text-slate-400 shrink-0" />
                                 {agent.phone ? (
                                   <a href={`tel:${agent.phone}`} className="hover:text-blue-600">
                                     {agent.phone}
@@ -779,11 +783,12 @@ export default function OwnerAgentsPage() {
                                 ) : (
                                   <span>—</span>
                                 )}
-                                {agent.address && (
-                                  <span className="truncate max-w-[120px] text-slate-400" title={agent.address}>
-                                    • {agent.address}
-                                  </span>
-                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-600">
+                                <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
+                                <span className="truncate max-w-[180px]" title={agent.address || "No address provided"}>
+                                  {agent.address || <span className="text-slate-400 italic">No address provided</span>}
+                                </span>
                               </div>
                             </div>
                           </td>
@@ -1227,12 +1232,10 @@ export default function OwnerAgentsPage() {
                       <p className="text-sm font-medium text-foreground">{viewingAgent.phone}</p>
                     </div>
                   )}
-                  {viewingAgent.address && (
-                    <div className="p-4 rounded-xl bg-surface-secondary">
-                      <p className="text-xs text-text-secondary mb-1">Address</p>
-                      <p className="text-sm font-medium text-foreground">{viewingAgent.address}</p>
-                    </div>
-                  )}
+                  <div className="p-4 rounded-xl bg-surface-secondary">
+                    <p className="text-xs text-text-secondary mb-1">Address</p>
+                    <p className="text-sm font-medium text-foreground">{viewingAgent.address || "No address provided"}</p>
+                  </div>
                   {viewingAgent.gender && (
                     <div className="p-4 rounded-xl bg-surface-secondary">
                       <p className="text-xs text-text-secondary mb-1">Gender</p>

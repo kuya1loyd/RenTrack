@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   User, Key, Save, Eye, EyeOff, Edit3, Shield, Camera, Mail, Phone, MapPin, Calendar as CalendarIcon, CheckCircle2, ArrowLeft,
@@ -15,6 +16,7 @@ import { formatDate } from "@/lib/utils";
 type Tab = "overview" | "edit-profile";
 
 export default function SettingsPage({ embedded = false }: { embedded?: boolean } = {}) {
+  const router = useRouter();
   const { user, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [name, setName] = useState(user?.name || "");
@@ -42,6 +44,12 @@ export default function SettingsPage({ embedded = false }: { embedded?: boolean 
     userIdRef.current = user.id;
     didSyncRef.current = true;
   }, [user]);
+
+  useEffect(() => {
+    if (user?.role === "agent") {
+      router.replace("/dashboard/agent#profile");
+    }
+  }, [user, router]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -155,6 +163,14 @@ export default function SettingsPage({ embedded = false }: { embedded?: boolean 
   };
 
   if (!user) {
+    return (
+      <div className="flex min-h-[300px] items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (user.role === "agent") {
     return (
       <div className="flex min-h-[300px] items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />

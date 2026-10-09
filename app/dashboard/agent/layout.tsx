@@ -12,7 +12,7 @@ import Link from "next/link";
 import { Avatar } from "@/components/ui/avatar";
 import {
   LayoutDashboard, Home, MapPinned, CreditCard, Send, LogOut, ChevronRight, Menu, X, Award,
-  Loader2, ChevronDown, ChevronLeft, Bell, Mail, User, FileText, Settings,
+  Loader2, ChevronDown, ChevronLeft, Bell, Mail, User, FileText,
 } from "lucide-react";
 import { getNotifications, getUnreadMessageCount, getUnreadInquiryCount, markNotificationRead, markAllNotificationsRead, Notification } from "@/lib/data";
 import { getProperties, Property } from "@/lib/data";
@@ -632,14 +632,6 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                           <User className="h-4 w-4" />
                           My Profile
                         </button>
-                        <Link
-                          href="/dashboard/settings"
-                          onClick={() => setShowUserMenu(false)}
-                          className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-text-secondary hover:bg-surface-secondary hover:text-foreground w-full transition-colors"
-                        >
-                          <Settings className="h-4 w-4" />
-                          <span>Account settings</span>
-                        </Link>
                       </div>
                     </motion.div>
                   )}

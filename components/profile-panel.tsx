@@ -183,7 +183,7 @@ export default function ProfilePanel() {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto space-y-6">
       <ManagementBanner
-        category="ACCOUNT SETTINGS"
+        category="MY PROFILE"
         title="My Profile"
         description="Manage your account profile, contact information, and security credentials."
         icon={User}

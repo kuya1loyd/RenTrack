@@ -164,7 +164,8 @@ export async function PATCH(request: NextRequest) {
     if (validation) return validation;
 
     const body = await request.json();
-    const { tenantId, ...updates } = body;
+    const tenantId = body.tenantId || body.id;
+    const { tenantId: _tId, id: _id, ...updates } = body;
 
     if (!tenantId) {
       return NextResponse.json({ success: false, error: "Tenant ID is required" }, { status: 400 });
@@ -334,6 +335,17 @@ export async function PATCH(request: NextRequest) {
 
     if (cleaned.unit_id !== undefined || cleaned.assignment_status !== undefined) {
       await syncTenantUnit(tenantId, cleaned.unit_id || data.unit_id || null, cleaned.assignment_status || data.assignment_status || "");
+    }
+    if (cleaned.name || cleaned.phone !== undefined || cleaned.address !== undefined) {
+      try {
+        const userUpdates: Record<string, any> = {};
+        if (cleaned.name) userUpdates.name = cleaned.name;
+        if (cleaned.phone !== undefined) userUpdates.phone = cleaned.phone;
+        if (cleaned.address !== undefined) userUpdates.address = cleaned.address;
+        await getAdminSupabase().schema("public").from("users").update(userUpdates).eq("id", tenantId);
+      } catch (err) {
+        console.warn("Failed to sync tenant to users table:", err);
+      }
     }
     return NextResponse.json({ success: true, tenant: mapTenant(data) });
   } catch (error) {

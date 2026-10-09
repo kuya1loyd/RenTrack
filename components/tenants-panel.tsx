@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Users, UserPlus, Mail, Phone, Eye, Trash2,
+  Users, UserPlus, Mail, Phone, MapPin, Eye, Trash2,
   MessageSquare, Pencil, Shield, ShieldOff, Search,
   Copy, MoreHorizontal, ChevronDown, Check, Building2,
   CalendarDays, User, Home, AlertTriangle, X
@@ -46,6 +46,7 @@ export default function TenantsPanel({
   // Edit form state
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
+  const [editAddress, setEditAddress] = useState("");
   const [editPropertyId, setEditPropertyId] = useState("");
   const [editUnitId, setEditUnitId] = useState("");
   const [editRent, setEditRent] = useState("");
@@ -65,6 +66,7 @@ export default function TenantsPanel({
         tenant.name,
         tenant.email,
         tenant.phone || "",
+        tenant.address || "",
         tenant.propertyName || "",
         tenant.unitNumber || "",
         tenant.status,
@@ -98,6 +100,7 @@ export default function TenantsPanel({
     setEditingTenant(tenant);
     setEditName(tenant.name || "");
     setEditPhone(tenant.phone || "");
+    setEditAddress(tenant.address || "");
     setEditPropertyId(matchedUnit?.propertyId || "");
     setEditUnitId(tenant.unitId || "");
     setEditRent(tenant.rentAmount != null ? String(tenant.rentAmount) : "");
@@ -116,8 +119,10 @@ export default function TenantsPanel({
         credentials: "include",
         body: JSON.stringify({
           id: editingTenant.id,
+          tenantId: editingTenant.id,
           name: editName,
           phone: editPhone,
+          address: editAddress,
           propertyId: editPropertyId || undefined,
           unitId: editUnitId || undefined,
           rentAmount: editRent ? Number(editRent) : undefined,
@@ -316,7 +321,7 @@ export default function TenantsPanel({
               <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
                 <tr>
                   <th scope="col" className="px-4 py-3 font-semibold text-slate-700">Tenant & ID</th>
-                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Contact (Email & Phone)</th>
+                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Contact & Address</th>
                   <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Property / Unit & Rent</th>
                   <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Lease Term</th>
                   <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Status & Assignment</th>
@@ -368,10 +373,10 @@ export default function TenantsPanel({
                         </div>
                       </td>
 
-                      {/* Contact (Email & Phone) */}
+                      {/* Contact & Address */}
                       <td className="px-3 py-3.5">
-                        <div className="flex flex-col gap-0.5">
-                          <a href={`mailto:${tenant.email}`} className="inline-flex items-center gap-1.5 text-blue-600 hover:underline truncate max-w-[170px]">
+                        <div className="flex flex-col gap-1 text-xs">
+                          <a href={`mailto:${tenant.email}`} className="inline-flex items-center gap-1.5 text-blue-600 hover:underline truncate max-w-[170px]" title={tenant.email}>
                             <Mail className="h-3 w-3 text-slate-400 shrink-0" />
                             <span className="truncate">{tenant.email}</span>
                           </a>
@@ -384,6 +389,12 @@ export default function TenantsPanel({
                             ) : (
                               <span>—</span>
                             )}
+                          </div>
+                          <div className="inline-flex items-center gap-1.5 text-[11px] text-slate-600">
+                            <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
+                            <span className="truncate max-w-[180px]" title={tenant.address || "No address provided"}>
+                              {tenant.address || <span className="text-slate-400 italic">No address provided</span>}
+                            </span>
                           </div>
                         </div>
                       </td>
@@ -577,6 +588,11 @@ export default function TenantsPanel({
                   </div>
                 </div>
 
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
+                  <p className="font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Address</p>
+                  <p className="mt-1 font-medium text-slate-800">{viewingTenant.address || "No address provided"}</p>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
                     <p className="font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Property</p>
@@ -675,6 +691,16 @@ export default function TenantsPanel({
                     onChange={(e) => setEditPhone(e.target.value)}
                     className="h-9 text-xs"
                     placeholder="e.g. 09123456789"
+                  />
+                </div>
+
+                <div>
+                  <label className="block mb-1 font-semibold text-slate-700">Address</label>
+                  <Input
+                    value={editAddress}
+                    onChange={(e) => setEditAddress(e.target.value)}
+                    className="h-9 text-xs"
+                    placeholder="Tenant residential address"
                   />
                 </div>
 

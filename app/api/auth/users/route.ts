@@ -27,8 +27,8 @@ export async function GET(request: NextRequest) {
     }
     const safeUsers = users.map(u => {
       const safeUser = sanitizeResponse(u);
-      // Only administrators may view other users' residential addresses.
-      if (auth.user?.role !== "admin") delete (safeUser as Record<string, unknown>).address;
+      // Only administrators and owners may view other users' residential addresses.
+      if (auth.user?.role !== "admin" && auth.user?.role !== "owner") delete (safeUser as Record<string, unknown>).address;
       return safeUser;
     });
     return NextResponse.json({ success: true, users: safeUsers });

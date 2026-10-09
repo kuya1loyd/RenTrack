@@ -1219,7 +1219,7 @@ export async function getTenants() {
       name: u.name,
       email: u.email || "",
       phone: u.phone || "",
-      address: u.address || "",
+      address: u.address || tr?.address || "",
       occupation: tr?.occupation || "",
       emergencyContact: tr?.emergency_contact || "",
       emergencyPhone: tr?.emergency_phone || "",

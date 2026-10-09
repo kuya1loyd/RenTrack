@@ -1113,6 +1113,7 @@ export default function OwnerDashboard() {
                           <p className="text-xs text-text-secondary">{tenant.propertyName} • {tenant.unitNumber}</p>
                           <p className="text-xs text-text-tertiary">{formatCurrency(tenant.rentAmount || 0)}/mo</p>
                           {tenant.phone && <p className="text-xs text-text-secondary">{tenant.phone}</p>}
+                          {tenant.address && <p className="text-xs text-text-tertiary">{tenant.address}</p>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -2170,6 +2171,10 @@ export default function OwnerDashboard() {
               <div className="p-4 rounded-xl border border-border space-y-2">
                 <p className="text-sm"><span className="font-medium">Property:</span> {reviewAssignment.propertyName}</p>
                 <p className="text-sm"><span className="font-medium">Unit:</span> {reviewAssignment.unitNumber}</p>
+                {reviewAssignment.phone && (
+                  <p className="text-sm"><span className="font-medium">Phone:</span> {reviewAssignment.phone}</p>
+                )}
+                <p className="text-sm"><span className="font-medium">Address:</span> {reviewAssignment.address || "No address provided"}</p>
                 <p className="text-sm"><span className="font-medium">Rental Rate:</span> {formatCurrency(reviewAssignment.rentAmount || 0)}/mo</p>
                 <p className="text-sm"><span className="font-medium">Status:</span> {reviewAssignment.assignmentStatus}</p>
               </div>
