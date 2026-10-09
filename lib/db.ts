@@ -1830,9 +1830,17 @@ export async function ensureUploadsTable(): Promise<boolean> {
         "ALTER TABLE public.uploads DROP CONSTRAINT IF EXISTS uploads_user_id_fkey",
       ];
       for (const sql of statements) {
-        await admin.rpc("exec_sql", { sql }).catch(() => null);
+        try {
+          await admin.rpc("exec_sql", { sql });
+        } catch {
+          // ignore error if exec_sql rpc is not present
+        }
       }
-      await admin.rpc("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" }).catch(() => null);
+      try {
+        await admin.rpc("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
+      } catch {
+        // ignore
+      }
       return true;
     })().catch(() => false);
   }
