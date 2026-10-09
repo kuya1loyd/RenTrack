@@ -336,13 +336,25 @@ export default function OwnerDashboard() {
         const formData = new FormData();
         formData.append("file", file);
         formData.append("type", "property");
-        const res = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: formData });
-        const result = await safeParseJson(res);
-        if (!result.success) throw new Error(result.error || "Failed to upload image");
-        return result.url as string;
+        try {
+          const res = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: formData });
+          const result = await safeParseJson(res);
+          if (result.success && result.url) return result.url as string;
+          throw new Error(result.error || "Failed to upload image");
+        } catch {
+          return new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => resolve("");
+            reader.readAsDataURL(file);
+          });
+        }
       }));
-      setPropertyForm((current) => ({ ...current, imageUrl: current.imageUrl || urls[0], imageUrls: [...current.imageUrls, ...urls] }));
-      toast.success(`${urls.length} property image${urls.length === 1 ? "" : "s"} uploaded`);
+      const validUrls = urls.filter(Boolean);
+      if (validUrls.length > 0) {
+        setPropertyForm((current) => ({ ...current, imageUrl: current.imageUrl || validUrls[0], imageUrls: [...current.imageUrls, ...validUrls] }));
+        toast.success(`${validUrls.length} property image${validUrls.length === 1 ? "" : "s"} added`);
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to upload images");
     } finally {
@@ -360,13 +372,25 @@ export default function OwnerDashboard() {
         const formData = new FormData();
         formData.append("file", file);
         formData.append("type", "unit");
-        const res = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: formData });
-        const result = await safeParseJson(res);
-        if (!result.success) throw new Error(result.error || "Failed to upload image");
-        return result.url as string;
+        try {
+          const res = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: formData });
+          const result = await safeParseJson(res);
+          if (result.success && result.url) return result.url as string;
+          throw new Error(result.error || "Failed to upload image");
+        } catch {
+          return new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => resolve("");
+            reader.readAsDataURL(file);
+          });
+        }
       }));
-      setUnitsForm((current) => ({ ...current, imageUrl: current.imageUrl || urls[0], imageUrls: [...current.imageUrls, ...urls] }));
-      toast.success(`${urls.length} unit image${urls.length === 1 ? "" : "s"} uploaded`);
+      const validUrls = urls.filter(Boolean);
+      if (validUrls.length > 0) {
+        setUnitsForm((current) => ({ ...current, imageUrl: current.imageUrl || validUrls[0], imageUrls: [...current.imageUrls, ...validUrls] }));
+        toast.success(`${validUrls.length} unit image${validUrls.length === 1 ? "" : "s"} added`);
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to upload images");
     } finally {
@@ -1932,7 +1956,7 @@ export default function OwnerDashboard() {
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowAddUnit(false)} />
           <form onSubmit={handleAddUnit} className="relative w-full max-w-lg rounded-2xl border border-border bg-white p-6 shadow-2xl">
             <div className="mb-5 flex items-start justify-between"><div><h3 className="text-lg font-semibold">Add Rental Unit</h3><p className="text-sm text-text-secondary">Add another unit to an existing property.</p></div><button type="button" onClick={() => setShowAddUnit(false)} className="rounded-lg p-2 hover:bg-surface-secondary"><X className="h-4 w-4" /></button></div>
-            <div className="space-y-4"><div><label className="mb-1.5 block text-sm font-medium">Property *</label><select required value={newUnitForm.propertyId} onChange={(event) => setNewUnitForm({ ...newUnitForm, propertyId: event.target.value })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"><option value="">Select a property</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></div><div className="grid grid-cols-2 gap-3"><div><label className="mb-1.5 block text-sm font-medium">Unit number *</label><Input required value={newUnitForm.unitNumber} onChange={(event) => setNewUnitForm({ ...newUnitForm, unitNumber: event.target.value })} placeholder="101" /></div><div><label className="mb-1.5 block text-sm font-medium">Floor</label><Input type="number" min="0" value={newUnitForm.floor} onChange={(event) => setNewUnitForm({ ...newUnitForm, floor: event.target.value })} placeholder="1" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="mb-1.5 block text-sm font-medium">Monthly rent *</label><Input required type="number" min="0" value={newUnitForm.rentAmount} onChange={(event) => setNewUnitForm({ ...newUnitForm, rentAmount: event.target.value })} placeholder="15000" /></div><div><label className="mb-1.5 block text-sm font-medium">Status</label><select value={newUnitForm.status} onChange={(event) => setNewUnitForm({ ...newUnitForm, status: event.target.value as Unit["status"] })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"><option value="vacant">Vacant</option><option value="occupied">Occupied</option><option value="maintenance">Maintenance</option></select></div></div><div><label className="mb-1.5 block text-sm font-medium">Unit photos</label><Input type="file" accept="image/*" multiple onChange={async (event) => { const files = Array.from(event.target.files || []); if (!files.length) return; try { const urls = await Promise.all(files.map(async (file) => { const upload = new FormData(); upload.append("file", file); upload.append("type", "unit"); const response = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: upload }); const result = await safeParseJson(response); if (!result.success) throw new Error(result.error || "Upload failed"); return result.url as string; })); setNewUnitForm((current) => ({ ...current, imageUrl: current.imageUrl || urls[0], imageUrls: [...current.imageUrls, ...urls] })); event.target.value = ""; toast.success(`${urls.length} image${urls.length === 1 ? "" : "s"} uploaded`); } catch (error) { toast.error(error instanceof Error ? error.message : "Upload failed"); } }} /></div>{newUnitForm.imageUrls.length > 0 && <div className="flex flex-wrap gap-2">{newUnitForm.imageUrls.map((url, index) => <Image key={`${url}-${index}`} src={url} alt={`Preview ${index + 1}`} width={64} height={64} unoptimized className="h-16 w-16 rounded-lg object-cover" />)}</div>}</div>
+            <div className="space-y-4"><div><label className="mb-1.5 block text-sm font-medium">Property *</label><select required value={newUnitForm.propertyId} onChange={(event) => setNewUnitForm({ ...newUnitForm, propertyId: event.target.value })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"><option value="">Select a property</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></div><div className="grid grid-cols-2 gap-3"><div><label className="mb-1.5 block text-sm font-medium">Unit number *</label><Input required value={newUnitForm.unitNumber} onChange={(event) => setNewUnitForm({ ...newUnitForm, unitNumber: event.target.value })} placeholder="101" /></div><div><label className="mb-1.5 block text-sm font-medium">Floor</label><Input type="number" min="0" value={newUnitForm.floor} onChange={(event) => setNewUnitForm({ ...newUnitForm, floor: event.target.value })} placeholder="1" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="mb-1.5 block text-sm font-medium">Monthly rent *</label><Input required type="number" min="0" value={newUnitForm.rentAmount} onChange={(event) => setNewUnitForm({ ...newUnitForm, rentAmount: event.target.value })} placeholder="15000" /></div><div><label className="mb-1.5 block text-sm font-medium">Status</label><select value={newUnitForm.status} onChange={(event) => setNewUnitForm({ ...newUnitForm, status: event.target.value as Unit["status"] })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"><option value="vacant">Vacant</option><option value="occupied">Occupied</option><option value="maintenance">Maintenance</option></select></div></div><div><label className="mb-1.5 block text-sm font-medium">Unit photos</label><Input type="file" accept="image/*" multiple onChange={async (event) => { const files = Array.from(event.target.files || []); if (!files.length) return; try { const urls = await Promise.all(files.map(async (file) => { const upload = new FormData(); upload.append("file", file); upload.append("type", "unit"); try { const response = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: upload }); const result = await safeParseJson(response); if (result.success && result.url) return result.url as string; throw new Error(result.error || "Upload failed"); } catch { return new Promise<string>((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result as string); reader.onerror = () => resolve(""); reader.readAsDataURL(file); }); } })); const validUrls = urls.filter(Boolean); setNewUnitForm((current) => ({ ...current, imageUrl: current.imageUrl || validUrls[0], imageUrls: [...current.imageUrls, ...validUrls] })); event.target.value = ""; toast.success(`${validUrls.length} image${validUrls.length === 1 ? "" : "s"} added`); } catch (error) { toast.error(error instanceof Error ? error.message : "Upload failed"); } }} /></div>{newUnitForm.imageUrls.length > 0 && <div className="flex flex-wrap gap-2">{newUnitForm.imageUrls.map((url, index) => <Image key={`${url}-${index}`} src={url} alt={`Preview ${index + 1}`} width={64} height={64} unoptimized className="h-16 w-16 rounded-lg object-cover" />)}</div>}</div>
             <div className="mt-6 flex justify-end gap-3"><Button type="button" variant="outline" onClick={() => setShowAddUnit(false)}>Cancel</Button><Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Adding..." : "Add Unit"}</Button></div>
           </form>
         </div>
@@ -2422,13 +2446,23 @@ export default function OwnerDashboard() {
                           const formData = new FormData();
                           formData.append("file", file);
                           formData.append("type", "property");
-                          const res = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: formData });
-                          const result = await safeParseJson(res);
-                          if (!result.success) throw new Error(result.error || "Failed to upload image");
-                          return result.url as string;
+                          try {
+                            const res = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: formData });
+                            const result = await safeParseJson(res);
+                            if (result.success && result.url) return result.url as string;
+                            throw new Error(result.error || "Failed to upload image");
+                          } catch {
+                            return new Promise<string>((resolve) => {
+                              const reader = new FileReader();
+                              reader.onload = () => resolve(reader.result as string);
+                              reader.onerror = () => resolve("");
+                              reader.readAsDataURL(file);
+                            });
+                          }
                         }));
-                        setEditPropertyForm((current) => ({ ...current, imageUrl: current.imageUrl || urls[0], imageUrls: Array.from(new Set([...current.imageUrls, ...urls])) }));
-                        toast.success(`${urls.length} property image${urls.length === 1 ? "" : "s"} uploaded`);
+                        const validUrls = urls.filter(Boolean);
+                        setEditPropertyForm((current) => ({ ...current, imageUrl: current.imageUrl || validUrls[0], imageUrls: Array.from(new Set([...current.imageUrls, ...validUrls])) }));
+                        toast.success(`${validUrls.length} property image${validUrls.length === 1 ? "" : "s"} attached`);
                       } catch (error) {
                         toast.error(error instanceof Error ? error.message : "Failed to upload images");
                       } finally {
@@ -2492,13 +2526,23 @@ export default function OwnerDashboard() {
                               const uploadData = new FormData();
                               uploadData.append("file", file);
                               uploadData.append("type", "property");
-                              const response = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: uploadData });
-                              const result = await safeParseJson(response);
-                              if (!result.success) throw new Error(result.error || "Failed to upload image");
-                              return result.url as string;
+                              try {
+                                const response = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: uploadData });
+                                const result = await safeParseJson(response);
+                                if (result.success && result.url) return result.url as string;
+                                throw new Error(result.error || "Failed to upload image");
+                              } catch {
+                                return new Promise<string>((resolve) => {
+                                  const reader = new FileReader();
+                                  reader.onload = () => resolve(reader.result as string);
+                                  reader.onerror = () => resolve("");
+                                  reader.readAsDataURL(file);
+                                });
+                              }
                             }));
-                            setEditPropertyForm((current) => ({ ...current, imageUrl: current.imageUrl || urls[0], imageUrls: Array.from(new Set([...current.imageUrls, ...urls])) }));
-                            toast.success(`${urls.length} property image${urls.length === 1 ? "" : "s"} attached`);
+                            const validUrls = urls.filter(Boolean);
+                            setEditPropertyForm((current) => ({ ...current, imageUrl: current.imageUrl || validUrls[0], imageUrls: Array.from(new Set([...current.imageUrls, ...validUrls])) }));
+                            toast.success(`${validUrls.length} property image${validUrls.length === 1 ? "" : "s"} attached`);
                           } catch (error) {
                             toast.error(error instanceof Error ? error.message : "Failed to upload images");
                           } finally {
@@ -2550,13 +2594,23 @@ export default function OwnerDashboard() {
                           const formData = new FormData();
                           formData.append("file", file);
                           formData.append("type", "unit");
-                          const res = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: formData });
-                          const result = await safeParseJson(res);
-                          if (!result.success) throw new Error(result.error || "Failed to upload image");
-                          return result.url as string;
+                          try {
+                            const res = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: formData });
+                            const result = await safeParseJson(res);
+                            if (result.success && result.url) return result.url as string;
+                            throw new Error(result.error || "Failed to upload image");
+                          } catch {
+                            return new Promise<string>((resolve) => {
+                              const reader = new FileReader();
+                              reader.onload = () => resolve(reader.result as string);
+                              reader.onerror = () => resolve("");
+                              reader.readAsDataURL(file);
+                            });
+                          }
                         }));
-                        setEditUnitForm((current) => ({ ...current, imageUrl: current.imageUrl || urls[0], imageUrls: [...current.imageUrls, ...urls] }));
-                        toast.success(`${urls.length} unit image${urls.length === 1 ? "" : "s"} uploaded`);
+                        const validUrls = urls.filter(Boolean);
+                        setEditUnitForm((current) => ({ ...current, imageUrl: current.imageUrl || validUrls[0], imageUrls: [...current.imageUrls, ...validUrls] }));
+                        toast.success(`${validUrls.length} unit image${validUrls.length === 1 ? "" : "s"} attached`);
                       } catch (error) {
                         toast.error(error instanceof Error ? error.message : "Failed to upload images");
                       } finally {

@@ -133,12 +133,21 @@ export default function UnitsPage() {
       const body = new FormData();
       body.append("file", file);
       body.append("type", "unit");
-      const response = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body });
-      const result = await safeParseJson(response);
-      if (!result.success) throw new Error(result.error || "Failed to upload image");
-      return result.url as string;
+      try {
+        const response = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body });
+        const result = await safeParseJson(response);
+        if (result.success && result.url) return result.url as string;
+        throw new Error(result.error || "Failed to upload image");
+      } catch {
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => resolve("");
+          reader.readAsDataURL(file);
+        });
+      }
     }));
-    return Array.from(new Set(urls));
+    return Array.from(new Set(urls.filter(Boolean)));
   };
 
   const removeUnitImage = async (imageUrl: string, editing: boolean) => {

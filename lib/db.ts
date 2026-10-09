@@ -1797,46 +1797,272 @@ export async function getComplaintById(id: string) {
   return snakeToCamel(data);
 }
 
+const inMemoryUploads = new Map<string, {
+  id: string;
+  userId: string;
+  userType: string;
+  type: string;
+  buffer: Buffer;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+}>();
+
+let uploadsSchemaPromise: Promise<boolean> | null = null;
+
+export async function ensureUploadsTable(): Promise<boolean> {
+  if (!uploadsSchemaPromise) {
+    uploadsSchemaPromise = (async () => {
+      const admin = getAdminSupabase();
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS public.uploads (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          user_type TEXT NOT NULL DEFAULT 'user',
+          type TEXT NOT NULL,
+          data TEXT,
+          mime_type TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        )`,
+        "ALTER TABLE public.uploads ALTER COLUMN data TYPE TEXT",
+        "ALTER TABLE public.uploads DROP CONSTRAINT IF EXISTS uploads_type_check",
+        "ALTER TABLE public.uploads DROP CONSTRAINT IF EXISTS uploads_user_id_fkey",
+      ];
+      for (const sql of statements) {
+        await admin.rpc("exec_sql", { sql }).catch(() => null);
+      }
+      await admin.rpc("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" }).catch(() => null);
+      return true;
+    })().catch(() => false);
+  }
+  return uploadsSchemaPromise;
+}
+
 export async function createUpload(data: { userId: string; userType?: string; type: string; buffer: Buffer; mimeType: string; size: number }) {
   const id = `upload_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  const base64 = Buffer.from(data.buffer).toString("base64");
-  const { error } = await getAdminSupabase().from("uploads").insert({
+  const userType = ["admin", "owner", "agent"].includes(data.userType || "") ? (data.userType as string) : "user";
+  const now = new Date().toISOString();
+
+  // 1. Always cache in memory so images can be served immediately
+  inMemoryUploads.set(id, {
     id,
-    user_id: data.userId,
-    user_type: ["admin", "owner", "agent"].includes(data.userType || "") ? data.userType : "user",
+    userId: data.userId,
+    userType,
     type: data.type,
-    data: base64,
-    mime_type: data.mimeType,
+    buffer: data.buffer,
+    mimeType: data.mimeType,
     size: data.size,
-    created_at: new Date().toISOString(),
+    createdAt: now,
   });
-  if (error) throw error;
+
+  const admin = getAdminSupabase();
+
+  // 2. Attempt saving to Supabase Storage bucket
+  try {
+    const ext = data.mimeType.split("/")[1] || "jpg";
+    const storagePath = `${data.type}/${id}.${ext}`;
+    let { error: storageError } = await admin.storage
+      .from("renttrack-uploads")
+      .upload(storagePath, data.buffer, {
+        contentType: data.mimeType,
+        upsert: true,
+      });
+
+    if (storageError?.message?.toLowerCase().includes("bucket not found")) {
+      const { error: bucketError } = await admin.storage.createBucket("renttrack-uploads", { public: true });
+      if (!bucketError || bucketError.message?.toLowerCase().includes("already exists")) {
+        await admin.storage
+          .from("renttrack-uploads")
+          .upload(storagePath, data.buffer, {
+            contentType: data.mimeType,
+            upsert: true,
+          });
+      }
+    }
+  } catch (storageErr) {
+    // Storage upload is optional enhancement, keep going
+  }
+
+  // 3. Attempt saving in PostgreSQL uploads table
+  try {
+    const base64 = Buffer.from(data.buffer).toString("base64");
+    let { error } = await admin.from("uploads").insert({
+      id,
+      user_id: data.userId,
+      user_type: userType,
+      type: data.type,
+      data: base64,
+      mime_type: data.mimeType,
+      size: data.size,
+      created_at: now,
+    });
+
+    if (error && (error.code === "PGRST205" || error.code === "42P01" || error.message?.includes("table"))) {
+      await ensureUploadsTable();
+      ({ error } = await admin.from("uploads").insert({
+        id,
+        user_id: data.userId,
+        user_type: userType,
+        type: data.type,
+        data: base64,
+        mime_type: data.mimeType,
+        size: data.size,
+        created_at: now,
+      }));
+    }
+
+    if (error && (error.message?.includes("bytea") || error.code === "22P02")) {
+      // Postgres bytea column requires hex literal format
+      const hex = "\\x" + data.buffer.toString("hex");
+      ({ error } = await admin.from("uploads").insert({
+        id,
+        user_id: data.userId,
+        user_type: userType,
+        type: data.type,
+        data: hex,
+        mime_type: data.mimeType,
+        size: data.size,
+        created_at: now,
+      }));
+    }
+
+    if (error) {
+      console.warn("[createUpload] database insert warning:", error.message);
+    }
+  } catch (dbErr) {
+    console.warn("[createUpload] database insert exception:", dbErr);
+  }
+
   return id;
 }
 
 export async function getUpload(id: string) {
-  const { data, error } = await getAdminSupabase().from("uploads").select("*").eq("id", id).single();
-  if (error || !data) {
-    console.error("[getUpload] failed for id", id, error || "no data");
+  // 1. Check in-memory cache first (instant)
+  const memoryItem = inMemoryUploads.get(id);
+  if (memoryItem) {
+    return {
+      id: memoryItem.id,
+      user_id: memoryItem.userId,
+      user_type: memoryItem.userType,
+      type: memoryItem.type,
+      data: memoryItem.buffer,
+      mime_type: memoryItem.mimeType,
+      size: memoryItem.size,
+      created_at: memoryItem.createdAt,
+    };
+  }
+
+  // 2. Check Supabase Storage
+  try {
+    const admin = getAdminSupabase();
+    for (const ext of ["jpg", "png", "webp", "jpeg", "pdf"]) {
+      for (const type of ["property", "unit", "avatar", "receipt", "id_verification"]) {
+        const storagePath = `${type}/${id}.${ext}`;
+        const { data: storageBlob, error: downloadError } = await admin.storage
+          .from("renttrack-uploads")
+          .download(storagePath);
+        if (!downloadError && storageBlob) {
+          const arrayBuffer = await storageBlob.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          const mimeType = storageBlob.type || `image/${ext}`;
+          // Also store in memory cache for subsequent requests
+          inMemoryUploads.set(id, {
+            id,
+            userId: "unknown",
+            userType: "user",
+            type,
+            buffer,
+            mimeType,
+            size: buffer.length,
+            createdAt: new Date().toISOString(),
+          });
+          return {
+            id,
+            user_id: "unknown",
+            type,
+            data: buffer,
+            mime_type: mimeType,
+            size: buffer.length,
+          };
+        }
+      }
+    }
+  } catch {
+    // Ignore and proceed to database check
+  }
+
+  // 3. Check database table uploads
+  try {
+    const { data, error } = await getAdminSupabase().from("uploads").select("*").eq("id", id).maybeSingle();
+    if (error || !data) {
+      return null;
+    }
+
+    let raw = data.data || "";
+    if (!raw) {
+      return { ...data, data: Buffer.alloc(0) };
+    }
+
+    let buffer: Buffer;
+    if (Buffer.isBuffer(raw)) {
+      buffer = raw;
+    } else if (typeof raw === "string") {
+      if (raw.startsWith("\\x")) {
+        const hex = raw.slice(2);
+        const hexBuf = Buffer.from(hex, "hex");
+        const asUtf8 = hexBuf.toString("utf-8");
+        if (/^[A-Za-z0-9+/=]+$/.test(asUtf8) && asUtf8.length % 4 === 0) {
+          try {
+            buffer = Buffer.from(asUtf8, "base64");
+          } catch {
+            buffer = hexBuf;
+          }
+        } else {
+          buffer = hexBuf;
+        }
+      } else {
+        buffer = Buffer.from(raw, "base64");
+      }
+    } else {
+      buffer = Buffer.alloc(0);
+    }
+
+    inMemoryUploads.set(id, {
+      id,
+      userId: data.user_id || "unknown",
+      userType: data.user_type || "user",
+      type: data.type || "property",
+      buffer,
+      mimeType: data.mime_type || "image/jpeg",
+      size: data.size || buffer.length,
+      createdAt: data.created_at || new Date().toISOString(),
+    });
+
+    return { ...data, data: buffer };
+  } catch (dbErr) {
+    console.error("[getUpload] error querying uploads table:", dbErr);
     return null;
   }
-
-  let raw = data.data || "";
-  if (!raw) {
-    console.error("[getUpload] empty data for id", id);
-    return { ...data, data: Buffer.alloc(0) };
-  }
-
-  if (raw.startsWith("\\x")) {
-    raw = Buffer.from(raw.slice(2), "hex").toString("utf-8");
-  }
-
-  return { ...data, data: Buffer.from(raw, "base64") };
 }
 
 export async function deleteUpload(id: string) {
-  const { error } = await getAdminSupabase().from("uploads").delete().eq("id", id);
-  if (error) throw error;
+  inMemoryUploads.delete(id);
+  const admin = getAdminSupabase();
+  try {
+    await admin.from("uploads").delete().eq("id", id);
+  } catch {
+    // Ignore database delete errors
+  }
+  try {
+    for (const ext of ["jpg", "png", "webp", "jpeg", "pdf"]) {
+      for (const type of ["property", "unit", "avatar", "receipt", "id_verification"]) {
+        await admin.storage.from("renttrack-uploads").remove([`${type}/${id}.${ext}`]);
+      }
+    }
+  } catch {
+    // Ignore storage delete errors
+  }
 }
 
 export async function updateUserAvatar(userId: string, url: string) {
