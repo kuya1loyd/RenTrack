@@ -1255,7 +1255,7 @@ export default function AgentDashboard() {
                                     )}
                                     {Number(tenant.rentAmount) > 0 && (
                                       <span className="font-semibold text-emerald-700">
-                                        {formatCurrency(tenant.rentAmount)} / mo
+                                        {formatCurrency(Number(tenant.rentAmount) || 0)} / mo
                                       </span>
                                     )}
                                     {(tenant.contractStart || tenant.contractEnd) && (

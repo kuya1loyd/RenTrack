@@ -5,13 +5,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(amount: number): string {
+export function formatCurrency(amount: number | undefined | null): string {
+  const numericAmount = typeof amount === "number" && !Number.isNaN(amount) ? amount : (Number(amount) || 0);
   return new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
     currencyDisplay: "symbol",
     minimumFractionDigits: 2,
-  }).format(amount);
+  }).format(numericAmount);
 }
 
 export function formatDate(date: Date | string | undefined | null): string {
