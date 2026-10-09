@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAgentApplication, getAgentApplications, initDatabase, getAdminSupabase, createNotification, reviewAgentApplication, reopenAgentApplication, removeRejectedAgentApplication, createUser, createLoginOtp, deleteUser, findUserByEmail } from "@/lib/db";
 import { requireRole } from "@/lib/api-security";
-import { createRentTrackEmailTemplate, createVerificationOtpEmailHtml, getSiteUrl, sendEmail } from "@/lib/mail";
+import { createRentTrackEmailTemplate, createAccountCredentialsEmailHtml, getSiteUrl, sendEmail } from "@/lib/mail";
 import { randomBytes } from "crypto";
 
 const LOCATIONS = ["Cebu", "Manila", "Davao", "Butuan"];
@@ -136,7 +136,6 @@ export async function PATCH(request: NextRequest) {
         false,
         auth.user?.role === "owner" ? auth.userId : undefined
       );
-      const otp = await createLoginOtp(agent.id, 15);
 
       let reviewedApplication;
       try {
@@ -148,26 +147,23 @@ export async function PATCH(request: NextRequest) {
 
       let emailSent = false;
       const origin = getSiteUrl(request.nextUrl.origin);
-      const verifyUrl = `${origin}/verify-otp?email=${encodeURIComponent(application.email)}`;
       const loginUrl = `${origin}/login?email=${encodeURIComponent(application.email)}`;
-      const devShowOtp = process.env.DEV_SHOW_OTP === "true";
 
       try {
         await sendEmail({
           to: application.email,
-          subject: "Your RentTrack agent account is ready - Verify Your Account",
-          text: `Hello ${application.name},\n\nYour agent application has been approved.\n\nUsername: ${application.email}\nTemporary password: ${temporaryPassword}\n\nYour 6-Digit Verification Code: ${otp}\n\nPlease verify your account before logging in:\n${verifyUrl}\n\nOr sign in at: ${loginUrl}\n(You will be prompted to enter your verification code.)\n\nPlease change your password after signing in.`,
-          html: createVerificationOtpEmailHtml({
+          subject: "Your RentTrack agent account is ready",
+          text: `Hello ${application.name},\n\nYour agent application has been approved and your RentTrack agent account is ready.\n\nUsername / Email: ${application.email}\nTemporary password: ${temporaryPassword}\nRole: agent\n\nSign in at: ${loginUrl}\n\nNote: When you sign in with these details, a 6-digit verification code will be sent to your email to verify your identity and activate your account.\n\nPlease change your temporary password after logging in.`,
+          html: createAccountCredentialsEmailHtml({
             title: "Your Agent Account is Ready",
             name: application.name,
-            code: otp,
-            verifyUrl,
-            loginUrl,
+            role: "agent",
             credentials: {
               email: application.email,
               password: temporaryPassword,
               role: "agent",
             },
+            loginUrl,
           }),
         });
         emailSent = true;

@@ -239,15 +239,6 @@ function LoginContent() {
                       Reset here
                     </motion.button>
                   </p>
-                  <p className="text-xs text-text-secondary">
-                    Need verification?{" "}
-                    <Link
-                      href={`/verify-otp${email ? `?email=${encodeURIComponent(email)}` : ""}`}
-                      className="text-primary-600 font-semibold hover:underline"
-                    >
-                      Verify here
-                    </Link>
-                  </p>
                 </div>
 
                 <Button

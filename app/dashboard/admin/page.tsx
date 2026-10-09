@@ -385,7 +385,7 @@ export default function AdminDashboard() {
       });
       const data = await parseJsonSafely(res);
       if (data.success) {
-        toast.success(`Account for ${newUserForm.name} created successfully. Verification code sent to ${newUserForm.email}.`);
+        toast.success(`Account for ${newUserForm.name} created successfully. Login details sent to ${newUserForm.email}.`);
         setShowCreateUserModal(false);
         setNewUserForm({
           name: "",
@@ -507,7 +507,7 @@ export default function AdminDashboard() {
       if (data.success) {
         await fetch("/api/data/tenants", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ id: data.user?.id, name: formData.name, email: formData.email, phone: formData.phone, address: formData.address }) });
         if (data.emailSent) {
-          toast.success(`Tenant account created. Login details and verification code were emailed to ${formData.email}.`);
+          toast.success(`Tenant account created. Login details were emailed to ${formData.email}.`);
         } else {
           toast.error(data.emailStatus === "not_configured"
             ? "Tenant account created, but no login email was sent because SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS."

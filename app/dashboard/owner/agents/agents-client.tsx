@@ -196,7 +196,7 @@ export default function OwnerAgentsPage() {
       setCommissionRateInput(String(agent.commissionRate ?? 0));
       setAgentForm({ name: "", email: "", password: "", phone: "", address: "", gender: "", birthdate: "" });
       if (agent.emailSent) {
-        toast.success(`Agent account created. Login credentials and verification code were emailed to ${agent.email}.`);
+        toast.success(`Agent account created. Login details were emailed to ${agent.email}.`);
       } else {
         toast.error(agent.emailStatus === "not_configured"
           ? "Agent account created, but no login email was sent because SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS."

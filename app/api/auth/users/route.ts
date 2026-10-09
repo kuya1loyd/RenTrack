@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllUsers, findUserById, findUserByEmail, deleteUser, createUser, createLoginOtp, initDatabase } from "@/lib/db";
+import { getAllUsers, findUserById, findUserByEmail, deleteUser, createUser, initDatabase } from "@/lib/db";
 import {
   requireRole, sanitizeResponse,
 } from "@/lib/api-security";
 import { logAudit } from "@/lib/db";
-import { createRentTrackEmailTemplate, createVerificationOtpEmailHtml, getSiteUrl, isSmtpConfigured, sendEmail } from "@/lib/mail";
+import { createAccountCredentialsEmailHtml, getSiteUrl, isSmtpConfigured, sendEmail } from "@/lib/mail";
 
 export async function GET(request: NextRequest) {
   try {
@@ -71,36 +71,32 @@ export async function POST(request: NextRequest) {
     }
 
     const createdBy = (role === "agent" && auth.user?.role === "owner") ? auth.userId : (auth.userId || undefined);
-    // Newly created accounts require email/OTP verification to log in
+    // Newly created accounts require email/OTP verification when logging in
     const user = await createUser(name, email, password, role, phone || undefined, undefined, address || undefined, false, createdBy);
-    const otp = await createLoginOtp(user.id, 15);
     await logAudit(auth.userId, "user_created", { createdUserId: user.id, name: user.name, role: user.role, emailVerified: false }, (request as any).ip, (request as any).headers?.get("user-agent"));
 
     let emailSent = false;
     let emailStatus: "sent" | "not_configured" | "failed" = "not_configured";
     const origin = getSiteUrl(request.nextUrl.origin);
-    const verifyUrl = `${origin}/verify-otp?email=${encodeURIComponent(user.email)}`;
     const loginUrl = `${origin}/login?email=${encodeURIComponent(user.email)}`;
-    const devShowOtp = process.env.DEV_SHOW_OTP === "true";
 
     try {
       await sendEmail({
         to: user.email,
         subject: role === "agent"
-          ? "Your RentTrack agent account is ready - Verify Your Account"
-          : `Your RentTrack ${role} account has been created - Verify Your Account`,
-        text: `Hello ${user.name},\n\nYour RentTrack account has been created.\n\nUsername: ${user.email}\nPassword: ${password}\nRole: ${user.role}\n\nYour 6-Digit Verification Code: ${otp}\n\nPlease verify your account before logging in:\n${verifyUrl}\n\nOr sign in at: ${loginUrl}\n(You will be prompted to enter your verification code.)\n\nPlease change your password after signing in.`,
-        html: createVerificationOtpEmailHtml({
-          title: role === "agent" ? "Your Agent Account is Ready" : `Your ${role.charAt(0).toUpperCase() + role.slice(1)} Account is Ready`,
+          ? "Your RentTrack agent account details"
+          : `Your RentTrack ${role} account details`,
+        text: `Hello ${user.name},\n\nYour RentTrack ${role} account has been created.\n\nUsername / Email: ${user.email}\nTemporary Password: ${password}\nRole: ${user.role}\n\nSign in at: ${loginUrl}\n\nNote: When you sign in with these details, a 6-digit verification code will be sent to your email to verify your identity and activate your account.\n\nPlease change your temporary password after logging in.`,
+        html: createAccountCredentialsEmailHtml({
+          title: role === "agent" ? "Your Agent Account Details" : `Your ${role.charAt(0).toUpperCase() + role.slice(1)} Account Details`,
           name: user.name,
-          code: otp,
-          verifyUrl,
-          loginUrl,
+          role: user.role,
           credentials: {
             email: user.email,
             password,
             role: user.role,
           },
+          loginUrl,
         }),
       });
       emailSent = true;
@@ -115,8 +111,6 @@ export async function POST(request: NextRequest) {
       user: sanitizeResponse(user),
       emailSent,
       emailStatus,
-      needsOtp: true,
-      ...(devShowOtp ? { devOtp: otp } : {}),
     });
   } catch (error) {
     console.error("Create user error:", error);

@@ -273,3 +273,88 @@ export function createVerificationOtpEmailHtml({
     </div>
   `;
 }
+
+export function createAccountCredentialsEmailHtml({
+  title,
+  name,
+  role,
+  credentials,
+  loginUrl,
+}: {
+  title: string;
+  name: string;
+  role?: string;
+  credentials: { email: string; password?: string; role?: string };
+  loginUrl: string;
+}) {
+  const siteUrl = getSiteUrl("");
+  const logoUrl = `${siteUrl}/images/landing/logo.png`;
+  const escapedTitle = escapeHtml(title);
+  const escapedName = escapeHtml(name);
+  const formattedRole = role ? escapeHtml(role.charAt(0).toUpperCase() + role.slice(1)) : "User";
+  const year = new Date().getFullYear();
+
+  return `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 640px; margin: 0 auto; padding: 0; background: #f3f4f6; color: #1f2937;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #f3f4f6; padding: 36px 0;">
+        <tr>
+          <td align="center">
+            <table width="100%" style="max-width: 560px; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.06);">
+              <tr>
+                <td style="background: linear-gradient(135deg, #1e3a8a, #2563eb); padding: 36px; text-align: center;">
+                  <img src="${logoUrl}" alt="RentTrack" style="height: 52px; width: auto; margin-bottom: 12px; border-radius: 50%;" onerror="this.style.display='none'" />
+                  <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.02em;">RentTrack</h1>
+                  <p style="color: rgba(255,255,255,0.85); margin: 6px 0 0; font-size: 13px;">HedgeHomes Realty and Brokerage</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 36px 36px 28px;">
+                  <h2 style="color: #0f172a; margin: 0 0 12px; font-size: 20px; font-weight: 700;">${escapedTitle}</h2>
+                  <p style="color: #334155; line-height: 1.6; margin: 0 0 8px; font-size: 15px;">Hello <strong>${escapedName}</strong>,</p>
+                  <p style="color: #475569; line-height: 1.6; margin: 0 0 20px; font-size: 14px;">
+                    Your RentTrack ${formattedRole} account has been created by an administrator or property owner. Below are your account login details:
+                  </p>
+                  
+                  <div style="margin: 20px 0; padding: 18px 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;">
+                    <p style="margin: 0 0 12px; font-size: 13px; font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: 0.05em;">Your Login Details</p>
+                    <p style="margin: 6px 0; font-size: 14px; color: #475569;"><strong>Email / Username:</strong> <span style="font-family: monospace; color: #0f172a; font-weight: 600;">${escapeHtml(credentials.email)}</span></p>
+                    ${credentials.password ? `<p style="margin: 6px 0; font-size: 14px; color: #475569;"><strong>Temporary Password:</strong> <code style="background: #e2e8f0; padding: 3px 8px; border-radius: 4px; font-family: monospace; color: #0f172a; font-weight: 600;">${escapeHtml(credentials.password)}</code></p>` : ""}
+                    ${credentials.role ? `<p style="margin: 6px 0; font-size: 14px; color: #475569;"><strong>Role:</strong> <span style="text-transform: capitalize; color: #0f172a; font-weight: 600;">${escapeHtml(credentials.role)}</span></p>` : ""}
+                  </div>
+
+                  <div style="margin: 20px 0; padding: 14px 18px; background: #eff6ff; border-left: 4px solid #2563eb; border-radius: 8px;">
+                    <p style="margin: 0; font-size: 13px; color: #1e40af; line-height: 1.5;">
+                      <strong>Security Note:</strong> When you log in for the first time with these details, a 6-digit verification code will be sent to your email to verify your identity and activate your account.
+                    </p>
+                  </div>
+
+                  <table cellpadding="0" cellspacing="0" border="0" style="margin: 28px 0 20px; width: 100%;">
+                    <tr>
+                      <td align="center">
+                        <a href="${escapeHtml(loginUrl)}" style="display: inline-block; padding: 13px 36px; background: #2563eb; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 14px; box-shadow: 0 4px 12px rgba(37,99,235,0.25);">Go to Login</a>
+                      </td>
+                    </tr>
+                  </table>
+                  <p style="margin: 0 0 20px; font-size: 12px; color: #94a3b8; text-align: center; word-break: break-all;">
+                    Or visit:<br />
+                    <a href="${escapeHtml(loginUrl)}" style="color: #2563eb;">${escapeHtml(loginUrl)}</a>
+                  </p>
+
+                  <p style="margin: 24px 0 0; font-size: 12px; color: #94a3b8; line-height: 1.5; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+                    Please change your password after logging in. For your security, never share your temporary password with anyone.
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="background: #f8fafc; padding: 20px 36px; text-align: center; border-top: 1px solid #e2e8f0;">
+                  <p style="color: #94a3b8; margin: 0; font-size: 11px;">© ${year} RentTrack. All rights reserved.</p>
+                  <p style="color: #94a3b8; margin: 4px 0 0; font-size: 11px;">HedgeHomes Realty and Brokerage</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </div>
+  `;
+}
