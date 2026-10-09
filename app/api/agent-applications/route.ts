@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAgentApplication, getAgentApplications, initDatabase, getAdminSupabase, createNotification, reviewAgentApplication, reopenAgentApplication, removeRejectedAgentApplication, createUser, createLoginOtp, deleteUser, findUserByEmail } from "@/lib/db";
+import { createAgentApplication, getAgentApplications, initDatabase, getAdminSupabase, createNotification, reviewAgentApplication, reopenAgentApplication, removeRejectedAgentApplication, createUser, deleteUser, findUserByEmail } from "@/lib/db";
 import { requireRole } from "@/lib/api-security";
 import { createRentTrackEmailTemplate, createAccountCredentialsEmailHtml, getSiteUrl, sendEmail } from "@/lib/mail";
 import { randomBytes } from "crypto";
@@ -182,8 +182,6 @@ export async function PATCH(request: NextRequest) {
         agent,
         emailSent,
         ...(!emailSent ? { temporaryPassword } : {}),
-        needsOtp: true,
-        ...(devShowOtp ? { devOtp: otp } : {}),
       });
     }
 
