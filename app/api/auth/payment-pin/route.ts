@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findUserById, setUserPaymentPin, initDatabase } from "@/lib/db";
-import { getSessionUserId } from "@/lib/security";
-import bcrypt from "bcryptjs";
+import { setUserPaymentPin, initDatabase } from "@/lib/db";
 import {
-  requireAuth, validateApiRequest, withSecurityHeaders, withCorsHeaders,
-  sanitizeObject, getClientIp
+  requireAuth, validateApiRequest,
 } from "@/lib/api-security";
 import { logAudit } from "@/lib/db";
 

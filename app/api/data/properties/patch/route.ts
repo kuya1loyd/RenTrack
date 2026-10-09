@@ -8,7 +8,7 @@ import { logAudit, getAdminSupabase } from "@/lib/db";
 
 const ALLOWED_PROPERTY_FIELDS = [
   "name", "location", "type", "units", "occupiedUnits",
-  "monthlyRevenue", "status", "imageUrl", "imageUrls", "features", "condition", "availabilityStatus"
+  "monthlyRevenue", "status", "latitude", "longitude", "imageUrl", "imageUrls", "features", "condition", "availabilityStatus"
 ];
 
 export async function PATCH(request: NextRequest) {
@@ -38,6 +38,12 @@ export async function PATCH(request: NextRequest) {
       if (dbKey === "features") {
         if (!Array.isArray(val) || val.some((feature) => typeof feature !== "string")) continue;
         updates[dbKey] = val.slice(0, 30);
+      } else if (dbKey === "latitude" || dbKey === "longitude") {
+        const coordinate = Number(val);
+        const min = dbKey === "latitude" ? -90 : -180;
+        const max = dbKey === "latitude" ? 90 : 180;
+        if (!Number.isFinite(coordinate) || coordinate < min || coordinate > max) continue;
+        updates[dbKey] = coordinate;
       } else if (dbKey === "image_urls") {
         if (!Array.isArray(val) || val.some((url) => typeof url !== "string")) continue;
         updates[dbKey] = Array.from(new Set(val)).slice(0, 20);

@@ -11,8 +11,11 @@ export interface Property {
   type: "house" | "condominium";
   units: number;
   occupiedUnits: number;
+  latitude?: number;
+  longitude?: number;
   monthlyRevenue: number;
   status: "active" | "inactive";
+  description?: string;
   createdAt: string;
   createdBy: string;
   imageUrl?: string;
@@ -55,6 +58,8 @@ export interface TenantRecord {
   status: "active" | "inactive";
   assignmentStatus?: "pending" | "confirmed" | "rejected";
   createdBy?: string;
+  isAssisted?: boolean;
+  assistReason?: string;
   createdAt: string;
   avatarUrl?: string;
   idVerificationUrl?: string;
@@ -88,6 +93,7 @@ export interface UserRecord {
   gender?: string;
   birthdate?: string;
   country?: string;
+  commissionRate?: number;
 }
 
 export interface Payment {
@@ -102,7 +108,7 @@ export interface Payment {
   paymentDate: string;
   dueDate: string;
   status: "paid" | "pending" | "overdue" | "partial";
-  paymentMethod: "cash" | "upload_receipt";
+  paymentMethod: "cash" | "upload_receipt" | "gcash";
   paymentMethodNote?: string;
   bankName?: string;
   accountNumber?: string;
@@ -141,6 +147,7 @@ export interface AgentApplication {
   resumeName?: string;
   resumeMimeType?: string;
   status: "pending" | "approved" | "rejected";
+  rejectionReason?: string;
   createdAt: string;
 }
 
@@ -156,55 +163,84 @@ export interface AuditLog {
 
 // ─── API Helper ────────────────────────────────────────────────────────────
 
+export async function safeParseJson(res: Response) {
+  try {
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      return await res.json();
+    }
+    const text = await res.text();
+    return { success: false, error: text || `Server error (${res.status})` };
+  } catch {
+    return { success: false, error: `Invalid response from server (${res.status})` };
+  }
+}
+
 async function apiGet(url: string) {
   try {
     const res = await fetch(url, { credentials: "include", next: { revalidate: 0 } });
     if (!res.ok) {
       return { success: false, error: `Request failed with status ${res.status}` };
     }
-    return await res.json();
+    return await safeParseJson(res);
   } catch {
     return { success: false, error: "Request unavailable" };
   }
 }
 
 async function apiPost(url: string, body: any) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    credentials: "include",
-  });
-  return res.json();
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      credentials: "include",
+    });
+    return await safeParseJson(res);
+  } catch {
+    return { success: false, error: "Network request failed" };
+  }
 }
 
 async function apiPostForm(url: string, formData: FormData) {
-  const res = await fetch(url, {
-    method: "POST",
-    body: formData,
-    credentials: "include",
-  });
-  return res.json();
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    });
+    return await safeParseJson(res);
+  } catch {
+    return { success: false, error: "Network request failed" };
+  }
 }
 
 async function apiPatch(url: string, body: any) {
-  const res = await fetch(url, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    credentials: "include",
-  });
-  return res.json();
+  try {
+    const res = await fetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      credentials: "include",
+    });
+    return await safeParseJson(res);
+  } catch {
+    return { success: false, error: "Network request failed" };
+  }
 }
 
 async function apiDelete(url: string, body: any) {
-  const res = await fetch(url, {
-    method: "DELETE",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    credentials: "include",
-  });
-  return res.json();
+  try {
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      credentials: "include",
+    });
+    return await safeParseJson(res);
+  } catch {
+    return { success: false, error: "Network request failed" };
+  }
 }
 
 // ─── Properties ────────────────────────────────────────────────────────────
@@ -373,11 +409,17 @@ export async function notifyAdmins(data: Omit<Notification, "id" | "createdAt" |
 
 export async function markNotificationRead(id: string): Promise<boolean> {
   const result = await apiPatch("/api/data/notifications", { id });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("renttrack-notifications-updated"));
+  }
   return result.success;
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
   await apiPatch("/api/data/notifications", { userId, action: "markAllRead" });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("renttrack-notifications-updated"));
+  }
 }
 
 export async function getUnreadCount(userId: string): Promise<number> {
@@ -423,6 +465,9 @@ export async function getMessages(otherUserId: string): Promise<Message[]> {
 
 export async function markAllMessagesRead(otherUserId: string): Promise<void> {
   await apiPatch(`/api/messages/${encodeURIComponent(otherUserId)}`, { action: "markAllRead" });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("renttrack-notifications-updated"));
+  }
 }
 
 export async function getUnreadMessageCount(): Promise<number> {
@@ -441,10 +486,18 @@ export async function uploadMessageAttachment(file: File, type: "image" | "audio
 
 export async function getAgents(): Promise<UserRecord[]> {
   const result = await apiGet("/api/auth/users/agents");
-  if (result.success && result.users) {
-    return result.users.filter((u: UserRecord) => u.role === "agent");
+  if (result.success && Array.isArray(result.users)) {
+    return result.users.filter((user: UserRecord) => user.role === "agent");
   }
   return [];
+}
+
+export async function getOwnerAgents(): Promise<UserRecord[]> {
+  const result = await apiGet("/api/auth/users?role=agent");
+  if (!result.success || !Array.isArray(result.users)) {
+    throw new Error(result.error || "Failed to load owner agents");
+  }
+  return result.users;
 }
 
 export async function registerAgent(data: {
@@ -457,7 +510,7 @@ export async function registerAgent(data: {
   gender?: string;
   birthdate?: string;
   country?: string;
-}): Promise<UserRecord & { needsOtp?: boolean; devOtp?: string }> {
+}): Promise<UserRecord & { needsOtp?: boolean; devOtp?: string; emailSent?: boolean; emailStatus?: "sent" | "not_configured" | "failed" }> {
   const result = await apiPost("/api/auth/users", { ...data, role: "agent" });
   if (result && result.success) {
     return {
@@ -475,7 +528,9 @@ export async function registerAgent(data: {
       country: data.country,
       needsOtp: result.needsOtp,
       devOtp: result.devOtp,
-    } as UserRecord & { needsOtp?: boolean; devOtp?: string };
+      emailSent: result.emailSent === true,
+      emailStatus: result.emailStatus,
+    } as UserRecord & { needsOtp?: boolean; devOtp?: string; emailSent?: boolean; emailStatus?: "sent" | "not_configured" | "failed" };
   }
 
   throw new Error(result?.error || result?.message || "Failed to register agent");
@@ -486,8 +541,16 @@ export async function getAgentApplications(status?: string): Promise<AgentApplic
   return result.success ? result.applications : [];
 }
 
-export async function reviewAgentApplication(id: string, status: "approved" | "rejected") {
-  return apiPatch("/api/agent-applications", { id, status });
+export async function reviewAgentApplication(id: string, status: "approved" | "rejected", rejectionReason?: string) {
+  return apiPatch("/api/agent-applications", { id, status, rejectionReason });
+}
+
+export async function reopenAgentApplication(id: string) {
+  return apiPatch("/api/agent-applications", { id, action: "reopen" });
+}
+
+export async function deleteRejectedAgentApplication(id: string) {
+  return apiDelete("/api/agent-applications", { id });
 }
 
 // ─── Dashboard Data ────────────────────────────────────────────────────────
@@ -765,9 +828,15 @@ export async function updateUserRole(userId: string, role: string): Promise<bool
   return result.success;
 }
 
-export async function updateUser(userId: string, data: Partial<Pick<UserRecord, "name" | "email" | "phone" | "address" | "idVerificationStatus">>): Promise<UserRecord | null> {
+export async function updateUser(userId: string, data: Partial<Pick<UserRecord, "name" | "email" | "phone" | "address" | "idVerificationStatus" | "commissionRate">>): Promise<UserRecord | null> {
   const result = await apiPatch("/api/auth/users/patch", { userId, data });
-  return result.success ? (result.user || data as any) : null;
+  if (!result.success) {
+    throw new Error(result.error || "Failed to update user");
+  }
+  if (!result.user) {
+    throw new Error("User update response did not include the updated user");
+  }
+  return result.user;
 }
 
 export async function resetAgentData(userId: string): Promise<boolean> {
@@ -822,18 +891,16 @@ export interface ChatInquiry {
 }
 
 export async function getInquiries(): Promise<ChatInquiry[]> {
-  try {
-    const result = await apiGet("/api/chat/inquiries");
-    return result.success ? result.inquiries : [];
-  } catch {
-    return [];
-  }
+  const result = await apiGet("/api/chat/inquiries");
+  if (!result.success) throw new Error(result.error || "Failed to load inquiries");
+  if (!Array.isArray(result.inquiries)) throw new Error("Inquiry response was invalid");
+  return result.inquiries;
 }
 
 export async function getUnreadInquiryCount(): Promise<number> {
-  const result = await apiGet("/api/chat/inquiries");
-  if (!result.success) return 0;
-  return (result.inquiries || []).filter((inq: any) => inq.status === "new").length;
+  const result = await apiGet("/api/chat/inquiries?count=true");
+  if (!result.success) throw new Error(result.error || "Failed to load unread inquiries");
+  return typeof result.count === "number" ? result.count : 0;
 }
 
 export async function updateInquiryStatus(id: string, status: string, replyText?: string): Promise<{ success: boolean; emailSent?: boolean }> {
@@ -843,4 +910,9 @@ export async function updateInquiryStatus(id: string, status: string, replyText?
     window.dispatchEvent(new Event("renttrack-notifications-updated"));
   }
   return result;
+}
+
+export async function updateInquiryProperty(id: string, propertyId: string | null): Promise<void> {
+  const result = await apiPatch("/api/chat/inquiries", { id, propertyId });
+  if (!result.success) throw new Error(result.error || "Failed to update inquiry category");
 }

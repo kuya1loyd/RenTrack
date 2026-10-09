@@ -9,11 +9,26 @@ const MAX_REPLY_LENGTH = 5000;
 
 export async function GET(request: NextRequest) {
   try {
+    await initDatabase();
     const auth = await requireRole(request, ["admin", "owner", "agent"]);
     if (auth instanceof NextResponse) return auth;
 
     const url = new URL(request.url);
     const countOnly = url.searchParams.get("count") === "true";
+
+    if (countOnly) {
+      let countQuery = getAdminSupabase()
+        .from("chat_messages")
+        .select("id", { count: "exact", head: true })
+        .or("status.eq.new,status.is.null");
+      if (auth.user.role === "agent") {
+        countQuery = countQuery.eq("agent_id", auth.userId);
+      }
+      const { count, error } = await countQuery;
+      if (error) throw error;
+      const response = NextResponse.json({ success: true, count: count || 0 });
+      return withSecurityHeaders(withCorsHeaders(request, response));
+    }
 
     let inquiries: any[] = [];
     try {
@@ -54,12 +69,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (countOnly) {
-      const unreadCount = inquiries.filter((inq) => (inq.status || "new") === "new").length;
-      const response = NextResponse.json({ success: true, count: unreadCount });
-      return withSecurityHeaders(withCorsHeaders(request, response));
-    }
-
     const response = NextResponse.json({ success: true, inquiries });
     return withSecurityHeaders(withCorsHeaders(request, response));
   } catch (err) {
@@ -86,19 +95,45 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const { id, status, replyText } = body;
     const sanitizedId = sanitizeString(String(id || ""), 128);
-    const sanitizedStatus = sanitizeString(String(status || ""), 32);
+    const hasStatus = typeof status === "string";
+    const sanitizedStatus = hasStatus ? sanitizeString(status, 32) : "";
     const sanitizedReplyText = typeof replyText === "string" ? sanitizeString(replyText, MAX_REPLY_LENGTH).trim() : "";
-    const isReadOnlyUpdate = sanitizedStatus === "read" && !sanitizedReplyText;
+    const hasPropertyId = Object.prototype.hasOwnProperty.call(body, "propertyId");
+    const isReadOnlyUpdate = sanitizedStatus === "read" && !sanitizedReplyText && !hasPropertyId;
 
-    if (!sanitizedId || !sanitizedStatus) {
-      const response = NextResponse.json({ success: false, error: "ID and status are required" }, { status: 400 });
+    if (!sanitizedId || (!hasStatus && !hasPropertyId)) {
+      const response = NextResponse.json({ success: false, error: "ID and an inquiry update are required" }, { status: 400 });
       return withSecurityHeaders(withCorsHeaders(request, response));
     }
 
     const validStatuses = ["new", "read", "replied"];
-    if (!validStatuses.includes(sanitizedStatus)) {
+    if (hasStatus && !validStatuses.includes(sanitizedStatus)) {
       const response = NextResponse.json({ success: false, error: "Invalid inquiry status" }, { status: 400 });
       return withSecurityHeaders(withCorsHeaders(request, response));
+    }
+
+    let nextPropertyId: string | null = null;
+    if (hasPropertyId) {
+      if (body.propertyId !== null && typeof body.propertyId !== "string") {
+        const response = NextResponse.json({ success: false, error: "Choose a valid inquiry category" }, { status: 400 });
+        return withSecurityHeaders(withCorsHeaders(request, response));
+      }
+      nextPropertyId = typeof body.propertyId === "string"
+        ? sanitizeString(body.propertyId, 128).trim() || null
+        : null;
+      if (nextPropertyId && auth.user.role === "agent") {
+        const { data: property, error } = await getAdminSupabase()
+          .from("properties")
+          .select("id")
+          .eq("id", nextPropertyId)
+          .eq("agent_id", auth.userId)
+          .maybeSingle();
+        if (error) throw error;
+        if (!property) {
+          const response = NextResponse.json({ success: false, error: "Choose one of your assigned properties" }, { status: 403 });
+          return withSecurityHeaders(withCorsHeaders(request, response));
+        }
+      }
     }
 
     // A read polling loop should not block actual replies. This keeps the agent's reply path responsive.
@@ -110,7 +145,9 @@ export async function PATCH(request: NextRequest) {
     let emailSent = false;
     let replyToken = "";
     try {
-      const updates: Record<string, string> = { status: sanitizedStatus };
+      const updates: Record<string, string | null> = {};
+      if (hasStatus) updates.status = sanitizedStatus;
+      if (hasPropertyId) updates.property_id = nextPropertyId;
       if (sanitizedReplyText) {
         replyToken = randomBytes(32).toString("hex");
         updates.reply_text = sanitizedReplyText;
@@ -119,15 +156,29 @@ export async function PATCH(request: NextRequest) {
         updates.reply_token = replyToken;
       }
 
-      const { data: inquiry } = await getAdminSupabase().from("chat_messages").select("sender_email, sender_name, text").eq("id", sanitizedId).maybeSingle();
-      const { error } = await getAdminSupabase().from("chat_messages").update(updates).eq("id", sanitizedId);
+      let inquiryQuery = getAdminSupabase().from("chat_messages")
+        .select("sender_email, sender_name, text")
+        .eq("id", sanitizedId);
+      let updateQuery = getAdminSupabase().from("chat_messages").update(updates).eq("id", sanitizedId);
+      if (auth.user.role === "agent") {
+        inquiryQuery = inquiryQuery.eq("agent_id", auth.userId);
+        updateQuery = updateQuery.eq("agent_id", auth.userId);
+      }
+      const { data: inquiry, error: inquiryError } = await inquiryQuery.maybeSingle();
+      if (inquiryError) throw inquiryError;
+      if (!inquiry) {
+        const response = NextResponse.json({ success: false, error: "Inquiry not found" }, { status: 404 });
+        return withSecurityHeaders(withCorsHeaders(request, response));
+      }
+      const { error } = await updateQuery;
 
       if (error) throw error;
 
       const shouldSendEmail = !!sanitizedReplyText && !!inquiry?.sender_email;
       console.log("[Inquiry] PATCH update prepared:", {
         id: sanitizedId,
-        status: sanitizedStatus,
+        status: sanitizedStatus || undefined,
+        propertyId: hasPropertyId ? nextPropertyId : undefined,
         hasReplyText: !!sanitizedReplyText,
         shouldSendEmail,
         senderEmail: inquiry?.sender_email,

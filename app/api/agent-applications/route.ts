@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAgentApplication, getAgentApplications, initDatabase, getAdminSupabase, createNotification, reviewAgentApplication, createUser, deleteUser, findUserByEmail } from "@/lib/db";
+import { createAgentApplication, getAgentApplications, initDatabase, getAdminSupabase, createNotification, reviewAgentApplication, reopenAgentApplication, removeRejectedAgentApplication, createUser, deleteUser, findUserByEmail } from "@/lib/db";
 import { requireRole } from "@/lib/api-security";
 import { createRentTrackEmailTemplate, getSiteUrl, sendEmail } from "@/lib/mail";
 import { randomBytes } from "crypto";
@@ -8,6 +8,7 @@ const LOCATIONS = ["Cebu", "Manila", "Davao", "Butuan"];
 
 export async function POST(request: NextRequest) {
   try {
+    await initDatabase();
     const form = await request.formData();
     const name = String(form.get("name") || "").trim();
     const email = String(form.get("email") || "").trim().toLowerCase();
@@ -38,19 +39,47 @@ export async function POST(request: NextRequest) {
       resumeMimeType: resume.type,
     });
 
-    // Send owner notifications in background without blocking response
-    void (async () => {
-      try {
-        const owners = await getAdminSupabase().schema("public").from("users").select("id").in("role", ["owner", "admin"]);
-        await Promise.all((owners.data || []).map((owner: { id: string }) => createNotification({
-          userId: owner.id, title: "New Agent Applicant", message: `${name} applied to become an agent in ${address}.`, type: "system", read: false,
-        })));
-      } catch (notifError) {
-        console.warn("Owner notification failed:", notifError);
-      }
-    })();
+    let confirmationEmailSent = false;
+    try {
+      await sendEmail({
+        to: email,
+        subject: "We received your RentTrack agent application",
+        text: `Hello ${name},\n\nThank you for applying to become a RentTrack agent. We received your application for ${address} and our team will review it. We will email you when a decision has been made.`,
+        html: createRentTrackEmailTemplate({
+          title: "Application received",
+          body: `Hello ${name},\n\nThank you for applying to become a RentTrack agent. We received your application and our team will review it. We will email you when a decision has been made.`,
+          messageBlock: `Application: Agent\nLocation: ${address}`,
+          footerNote: "This is an automated confirmation. Please keep this email for your records.",
+        }),
+      });
+      confirmationEmailSent = true;
+    } catch (emailError) {
+      console.error("Agent application confirmation email failed:", emailError);
+    }
 
-    return NextResponse.json({ success: true, application });
+    try {
+      const { data: owners, error: ownersError } = await getAdminSupabase()
+        .schema("public")
+        .from("users")
+        .select("id")
+        .in("role", ["owner", "admin"]);
+      if (ownersError) throw ownersError;
+
+      const notificationResults = await Promise.allSettled((owners || []).map((owner: { id: string }) => createNotification({
+        userId: owner.id,
+        title: "New Agent Applicant",
+        message: `${name} applied to become an agent in ${address}.`,
+        type: "system",
+        read: false,
+      })));
+      notificationResults.forEach((result) => {
+        if (result.status === "rejected") console.warn("Owner notification failed:", result.reason);
+      });
+    } catch (notifError) {
+      console.warn("Owner notification failed:", notifError);
+    }
+
+    return NextResponse.json({ success: true, application, confirmationEmailSent });
   } catch (error: any) {
     console.error("Agent application error:", error);
     const errorMessage = error?.message || (typeof error === "string" ? error : "Unable to submit application");
@@ -73,8 +102,18 @@ export async function PATCH(request: NextRequest) {
   const auth = await requireRole(request, ["owner", "admin"]);
   if (auth instanceof NextResponse) return auth;
   try {
-    const { id, status } = await request.json();
+    await initDatabase();
+    const { id, status, action, rejectionReason: rawRejectionReason } = await request.json();
+    if (action === "reopen") {
+      if (!id) return NextResponse.json({ success: false, error: "Application ID is required" }, { status: 400 });
+      const application = await reopenAgentApplication(id);
+      return NextResponse.json({ success: true, application });
+    }
     if (!id || !["approved", "rejected"].includes(status)) return NextResponse.json({ success: false, error: "Invalid review request" }, { status: 400 });
+    const rejectionReason = typeof rawRejectionReason === "string" ? rawRejectionReason.trim() : "";
+    if (status === "rejected" && (!rejectionReason || rejectionReason.length > 1000)) {
+      return NextResponse.json({ success: false, error: "A rejection reason of 1 to 1000 characters is required" }, { status: 400 });
+    }
 
     if (status === "approved") {
       const application = (await getAgentApplications("pending")).find((item) => item.id === id);
@@ -93,7 +132,8 @@ export async function PATCH(request: NextRequest) {
         application.phone || undefined,
         undefined,
         application.address,
-        true
+        true,
+        auth.user?.role === "owner" ? auth.userId : undefined
       );
 
       let reviewedApplication;
@@ -125,14 +165,66 @@ export async function PATCH(request: NextRequest) {
         console.error("Approved agent credentials email failed:", emailError);
       }
 
-      await createNotification({ userId: auth.userId, title: "Agent application approved", message: `${application.name}'s agent account was created.`, type: "system", read: false });
+      try {
+        await createNotification({ userId: auth.userId, title: "Agent application approved", message: `${application.name}'s agent account was created.`, type: "system", read: false });
+      } catch (notificationError) {
+        console.warn("Agent review notification failed:", notificationError);
+      }
       return NextResponse.json({ success: true, application: reviewedApplication, agent, emailSent, ...(!emailSent ? { temporaryPassword } : {}) });
     }
 
-    const application = await reviewAgentApplication(id, status, auth.userId);
-    await createNotification({ userId: auth.userId, title: `Agent application ${status}`, message: `${application.name}'s application was ${status}.`, type: "system", read: false });
-    return NextResponse.json({ success: true, application });
-  } catch {
-    return NextResponse.json({ success: false, error: "Unable to review application" }, { status: 500 });
+    const application = await reviewAgentApplication(id, status, auth.userId, rejectionReason);
+    let emailSent = false;
+    try {
+      await sendEmail({
+        to: application.email,
+        subject: "An update on your RentTrack agent application",
+        text: `Hello ${application.name},\n\nThank you for applying to become a RentTrack agent. After reviewing your application, we are unable to move forward at this time.\n\nReason: ${rejectionReason}\n\nThank you for your interest in RentTrack.`,
+        html: createRentTrackEmailTemplate({
+          title: "Application update",
+          body: `Hello ${application.name},\n\nThank you for applying to become a RentTrack agent. After reviewing your application, we are unable to move forward at this time. The reason is included below.`,
+          messageBlock: `Reason for rejection:\n${rejectionReason}`,
+          footerNote: "Thank you for your interest in RentTrack.",
+        }),
+      });
+      emailSent = true;
+    } catch (emailError) {
+      console.error("Agent application rejection email failed:", emailError);
+    }
+    try {
+      await createNotification({ userId: auth.userId, title: `Agent application ${status}`, message: `${application.name}'s application was ${status}.`, type: "system", read: false });
+    } catch (notificationError) {
+      console.warn("Agent review notification failed:", notificationError);
+    }
+    return NextResponse.json({ success: true, application, emailSent });
+  } catch (error) {
+    console.error("Agent application review failed:", error);
+    const message = error && typeof error === "object" && "message" in error && typeof error.message === "string"
+      ? error.message
+      : error instanceof Error && error.message
+        ? error.message
+        : "Unable to review application";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const auth = await requireRole(request, ["owner", "admin"]);
+  if (auth instanceof NextResponse) return auth;
+
+  try {
+    const { id } = await request.json();
+    if (typeof id !== "string" || !id.trim()) {
+      return NextResponse.json({ success: false, error: "Application ID is required" }, { status: 400 });
+    }
+
+    const removed = await removeRejectedAgentApplication(id.trim());
+    if (!removed) {
+      return NextResponse.json({ success: false, error: "Rejected application not found" }, { status: 404 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Rejected agent application removal failed:", error);
+    return NextResponse.json({ success: false, error: "Unable to remove rejected application" }, { status: 500 });
   }
 }

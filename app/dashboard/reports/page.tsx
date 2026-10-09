@@ -16,7 +16,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from "recharts";
 
-const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
+const COLORS = ["#2563eb", "#10b981", "#f59e0b", "#ef4444", "#0f172a"];
 
 function downloadCSV(filename: string, rows: Record<string, unknown>[]) {
   if (!rows.length) return;
@@ -89,59 +89,47 @@ export default function ReportsPage() {
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-      {/* 📊 Reports Hero — Analytics Style */}
-      <motion.div whileHover={{ scale: 1.01 }} transition={{ duration: 0.2 }} className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-gray-900 via-slate-800 to-gray-900 p-8 sm:p-10 border border-white/5">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-violet-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl" />
-        <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+      <section className="flex flex-col gap-3 rounded-xl border border-blue-100 bg-[#eaf3ff] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white/80 text-xs font-medium mb-3 border border-white/10">
-              <BarChart3 className="h-3 w-3" />
-              Analytics Suite
-            </div>
-            <h2 className="text-3xl font-bold text-white tracking-tight">Reports & Analytics</h2>
-            <p className="text-white/60 text-sm mt-1.5">View insights and performance metrics for your rental portfolio</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Owner finance</p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-950">Financial Reports</h2>
+            <p className="mt-1 text-xs text-slate-600 sm:text-sm">Collections, property performance, and tenant portfolio insights.</p>
           </div>
-          <Button className="bg-white text-gray-900 hover:bg-gray-100 shadow-lg hover:shadow-xl transition-all" onClick={exportReport}><Download className="h-4 w-4 mr-1.5" />Download Report</Button>
-        </div>
-      </motion.div>
+          <Button className="h-9 border border-blue-700 bg-blue-700 text-white hover:bg-blue-800" onClick={exportReport}><Download className="h-4 w-4 mr-1.5" />Download Report</Button>
+      </section>
 
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
         {[
-          { label: "Total Collected", value: formatCurrency(totalCollected), icon: DollarSign, color: "from-green-500 to-green-600" },
-          { label: "Receivables", value: formatCurrency(totalReceivables), icon: TrendingUp, color: "from-amber-500 to-amber-600" },
-          { label: "Active Tenants", value: tenants.filter(t => t.status === "active").length, icon: Users, color: "from-primary-500 to-primary-600" },
-          { label: "Occupied Units", value: units.filter(u => u.status === "occupied").length, icon: Home, color: "from-secondary-500 to-secondary-600" },
+          { label: "Total collected", value: formatCurrency(totalCollected), icon: DollarSign, tone: "text-emerald-700 bg-emerald-50" },
+          { label: "Receivables", value: formatCurrency(totalReceivables), icon: TrendingUp, tone: "text-amber-700 bg-amber-50" },
+          { label: "Active tenants", value: tenants.filter(t => t.status === "active").length, icon: Users, tone: "text-blue-700 bg-blue-50" },
+          { label: "Occupied units", value: units.filter(u => u.status === "occupied").length, icon: Home, tone: "text-slate-700 bg-slate-100" },
         ].map((stat, i) => (
-          <motion.div key={i} whileHover={{ scale: 1.02, y: -2 }} transition={{ duration: 0.2 }}>
-            <Card className="hover:shadow-lg transition-all duration-300">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-text-secondary">{stat.label}</p>
-                    <p className="text-lg font-bold text-foreground mt-0.5">{stat.value}</p>
-                  </div>
-                  <div className={cn("h-9 w-9 rounded-lg bg-gradient-to-br flex items-center justify-center text-white", stat.color)}>
-                    <stat.icon className="h-4 w-4" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
+          <Card key={i} className="border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+            <CardContent className="flex items-center justify-between gap-2 p-3 sm:p-4">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{stat.label}</p>
+                <p className="mt-1 truncate text-base font-bold tabular-nums text-slate-900 sm:text-lg">{stat.value}</p>
+              </div>
+              <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", stat.tone)}>
+                <stat.icon className="h-4 w-4" />
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+        <TabsList className="border border-[#dce8f5] bg-white">
           <TabsTrigger value="collections">Collections</TabsTrigger>
           <TabsTrigger value="properties">Properties</TabsTrigger>
           <TabsTrigger value="tenants">Tenants</TabsTrigger>
         </TabsList>
 
         <TabsContent value="collections">
-          <Card>
-            <CardHeader>
+          <Card className="overflow-hidden border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+            <CardHeader className="border-b border-slate-100 bg-[#f6f9fd] px-4 py-3 sm:px-5">
               <CardTitle>Collection Trends</CardTitle>
               <CardDescription>Monthly payment collection performance</CardDescription>
             </CardHeader>
@@ -168,22 +156,26 @@ export default function ReportsPage() {
         </TabsContent>
 
         <TabsContent value="properties">
-          <Card>
-            <CardHeader>
+          <Card className="overflow-hidden border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+            <CardHeader className="border-b border-slate-100 bg-[#f6f9fd] px-4 py-3 sm:px-5">
               <CardTitle>Property Performance</CardTitle>
               <CardDescription>Revenue and occupancy by property</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={propData.length ? propData : [{ name: "No data", revenue: 0, units: 0, occupied: 0 }]}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                    <XAxis dataKey="name" className="text-xs text-text-tertiary" />
-                    <YAxis className="text-xs text-text-tertiary" />
-                    <Tooltip contentStyle={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "12px" }} />
-                    <Bar dataKey="revenue" name="Monthly Revenue" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                {propData.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-sm text-text-secondary">No property performance data available yet.</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={propData}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                      <XAxis dataKey="name" className="text-xs text-text-tertiary" />
+                      <YAxis className="text-xs text-text-tertiary" />
+                      <Tooltip contentStyle={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "12px" }} />
+                      <Bar dataKey="revenue" name="Monthly Revenue" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -191,8 +183,8 @@ export default function ReportsPage() {
 
         <TabsContent value="tenants">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
+            <Card className="overflow-hidden border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+              <CardHeader className="border-b border-slate-100 bg-[#f6f9fd] px-4 py-3 sm:px-5">
                 <CardTitle>Tenant Overview</CardTitle>
                 <CardDescription>Current tenant status distribution</CardDescription>
               </CardHeader>
@@ -221,8 +213,8 @@ export default function ReportsPage() {
                 </div>
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader>
+            <Card className="overflow-hidden border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+              <CardHeader className="border-b border-slate-100 bg-[#f6f9fd] px-4 py-3 sm:px-5">
                 <CardTitle>Quick Stats</CardTitle>
                 <CardDescription>Key metrics at a glance</CardDescription>
               </CardHeader>

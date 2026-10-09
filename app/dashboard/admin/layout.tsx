@@ -1,21 +1,27 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/lib/auth";
-import { getNotifications, markNotificationRead, markAllNotificationsRead, getUnreadCount, getConversations, Notification, Conversation } from "@/lib/data";
+import { getNotifications, markNotificationRead, markAllNotificationsRead, getUnreadCount, getConversations, getUnreadMessageCount, getProperties, getUnits, Notification, Conversation, Property, Unit } from "@/lib/data";
 import AdminSidebar from "@/components/admin-sidebar";
 import AccountRequestReviewModal from "@/components/account-request-review-modal";
+import MessagingPanel from "@/components/messaging-panel";
+import MessagingModal from "@/components/messaging-modal";
 import { Avatar } from "@/components/ui/avatar";
-import { Bell, ChevronDown } from "lucide-react";
+import { Bell, ChevronDown, Menu, User, Settings } from "lucide-react";
 import { getNotificationDashboardHref } from "@/lib/notification-routing";
+import { AdminDataProvider } from "@/lib/admin-data-store";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeTab = searchParams.get("tab") || "overview";
+  const reduceMotion = useReducedMotion();
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -24,6 +30,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [accountRequests, setAccountRequests] = useState<Conversation[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedAccountRequest, setSelectedAccountRequest] = useState<Conversation | null>(null);
+
+  // Messaging Modal State
+  const [showMessages, setShowMessages] = useState(false);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -41,10 +54,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   }, [user]);
 
+  const refreshMessagesCount = useCallback(async () => {
+    try {
+      const count = await getUnreadMessageCount();
+      setUnreadMessagesCount(count);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     if (user) {
       getNotifications(user.id).then(setNotifications).catch(() => setNotifications([]));
       refreshNotificationsCount();
+      refreshMessagesCount();
+      Promise.all([getProperties(user), getUnits(user)])
+        .then(([p, u]) => {
+          setProperties(p || []);
+          setUnits(u || []);
+        })
+        .catch(() => {});
       getConversations().then((convs) => {
         setConversations(convs);
         const requests = convs.filter((c) => c.lastMessage?.subject === "Account Creation Request");
@@ -54,13 +83,34 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         setAccountRequests([]);
       });
     }
-  }, [user, refreshNotificationsCount]);
+  }, [user, refreshNotificationsCount, refreshMessagesCount]);
+
+  useEffect(() => {
+    const handleOpenMessages = (event: Event) => {
+      const customEvent = event as CustomEvent<{ otherUser?: Conversation["otherUser"] }>;
+      if (customEvent.detail?.otherUser) {
+        setSelectedConversation({
+          userId: customEvent.detail.otherUser.id,
+          otherUser: customEvent.detail.otherUser,
+          lastMessage: null as any,
+          unreadCount: 0,
+        });
+        setShowMessages(false);
+      } else {
+        setShowMessages(true);
+      }
+    };
+
+    window.addEventListener("renttrack-open-messages", handleOpenMessages);
+    return () => window.removeEventListener("renttrack-open-messages", handleOpenMessages);
+  }, []);
 
   useEffect(() => {
     const handleRefresh = () => {
       if (!user) return;
       getNotifications(user.id).then(setNotifications).catch(() => {});
       refreshNotificationsCount();
+      refreshMessagesCount();
       getConversations().then((convs) => {
         const requests = convs.filter((c) => c.lastMessage?.subject === "Account Creation Request");
         setAccountRequests(requests);
@@ -69,7 +119,22 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     window.addEventListener("renttrack-notifications-updated", handleRefresh);
     return () => window.removeEventListener("renttrack-notifications-updated", handleRefresh);
-  }, [user, refreshNotificationsCount]);
+  }, [user, refreshNotificationsCount, refreshMessagesCount]);
+
+  useEffect(() => {
+    if (!user) return;
+    const refreshNotifications = () => {
+      getNotifications(user.id).then(setNotifications).catch(() => {});
+      refreshNotificationsCount();
+      refreshMessagesCount();
+    };
+    const interval = window.setInterval(refreshNotifications, 30_000);
+    window.addEventListener("focus", refreshNotifications);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshNotifications);
+    };
+  }, [user, refreshNotificationsCount, refreshMessagesCount]);
 
   useEffect(() => {
     document.documentElement.classList.remove("dark");
@@ -91,14 +156,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         }).catch(() => undefined);
       }
     }
-    void markNotificationRead(notification.id).catch(() => undefined);
-    try {
-      const updated = await getNotifications(user?.id);
-      setNotifications(updated);
-      refreshNotificationsCount();
-    } catch {
-      // ignore
+
+    if (!notification.read) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n))
+      );
+      setUnreadNotificationsCount((prev) => Math.max(0, prev - 1));
+      await markNotificationRead(notification.id).catch(() => {});
     }
+
     if (!isAccountCreationRequest) {
       router.push(getNotificationDashboardHref(notification, user?.role || "admin"));
     }
@@ -144,31 +210,40 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <div className="min-h-screen flex w-full bg-gradient-to-br from-gray-50 to-blue-50/30 dark:from-gray-900 dark:to-gray-800">
+    <AdminDataProvider userId={user.id}>
+    <div className="min-h-screen flex w-full bg-[#f3f7fc]">
       {/* Sidebar - fixed on all screens */}
-      <AdminSidebar />
+      <AdminSidebar mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
 
       {/* Main Area - offset for fixed sidebar */}
         <motion.div
-          initial={{ opacity: 0 }}
+          initial={reduceMotion ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.4 }}
-          className="flex-1 flex flex-col lg:ml-[220px] w-full min-h-screen"
+          transition={{ duration: reduceMotion ? 0 : 0.22 }}
+          className="flex min-h-screen w-full flex-1 flex-col lg:ml-56"
         >
           {/* Top Header */}
           <motion.header
-            initial={{ y: -20, opacity: 0 }}
+            initial={reduceMotion ? false : { y: -12, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 0.4, delay: 0.1 }}
-            className="sticky top-0 z-30 h-14 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 sm:px-6"
+            transition={{ duration: reduceMotion ? 0 : 0.22 }}
+            className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur sm:px-6"
           >
-          {/* Left side - empty or breadcrumb */}
           <div className="flex items-center gap-3">
-            <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 capitalize">Admin Console</h2>
+            <button
+              type="button"
+              onClick={() => setMobileSidebarOpen(true)}
+              aria-label="Open navigation menu"
+              className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 lg:hidden"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <h2 className="text-sm font-semibold text-slate-900">Admin Panel</h2>
           </div>
 
           {/* Right side - Notifications */}
           <div className="flex items-center gap-2">
+
             {/* Notification Bell */}
             <div className="relative">
               <button
@@ -176,14 +251,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 className="relative p-2 rounded-lg text-gray-500 dark:text-gray-400 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
               >
                 <Bell className="h-5 w-5" />
-                {unreadNotificationsCount > 0 && (
+                {Math.max(unreadNotificationsCount, notifications.filter((n) => !n.read).length) > 0 && (
                   <motion.span
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                    className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-lg"
+                    className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-lg"
                   >
-                    {unreadNotificationsCount}
+                    {Math.max(unreadNotificationsCount, notifications.filter((n) => !n.read).length) > 99
+                      ? "99+"
+                      : Math.max(unreadNotificationsCount, notifications.filter((n) => !n.read).length)}
                   </motion.span>
                 )}
               </button>
@@ -197,8 +274,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     transition={{ duration: 0.15 }}
                     className="absolute top-full mt-2 right-0 w-80 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg z-50"
                   >
-                    <div className="border-b border-gray-200 dark:border-gray-700 px-4 py-3">
+                    <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-4 py-3">
                       <h3 className="font-semibold text-gray-900 dark:text-white">Notifications</h3>
+                      {notifications.some((n) => !n.read) && (
+                        <button
+                          onClick={async () => {
+                            if (!user) return;
+                            setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+                            setUnreadNotificationsCount(0);
+                            await markAllNotificationsRead(user.id).catch(() => {});
+                          }}
+                          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                        >
+                          Mark all read
+                        </button>
+                      )}
                     </div>
                     <div className="max-h-80 overflow-y-auto">
                       {notifications.length === 0 ? (
@@ -208,9 +298,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             <button
                               key={n.id}
                               onClick={() => handleNotificationClick(n)}
-                              className="w-full text-left p-4 border-b border-gray-100 dark:border-gray-700 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                              className={`w-full text-left p-4 border-b border-gray-100 dark:border-gray-700 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
+                                !n.read ? "bg-blue-50/40" : ""
+                              }`}
                             >
-                            <p className="text-sm font-medium text-gray-900 dark:text-white">{n.title}</p>
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm font-medium text-gray-900 dark:text-white">{n.title}</p>
+                              {!n.read && <span className="h-2 w-2 rounded-full bg-blue-600 shrink-0 mt-1.5" />}
+                            </div>
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{n.message}</p>
                           </button>
                         ))
@@ -226,48 +321,81 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 onClick={() => setShowUserMenu(!showUserMenu)}
                 className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
-                <Avatar src={user.avatarUrl || "/images/admin-avatar.svg"} alt={`${user.name} profile picture`} fallback={user.name.split(" ").map((word) => word[0]).join("").slice(0, 2).toUpperCase()} size="sm" />
+                <Avatar src={user.avatarUrl || "/images/admin-avatar.jpg"} alt={`${user.name} profile picture`} fallback={user.name.split(" ").map((word) => word[0]).join("").slice(0, 2).toUpperCase()} size="sm" />
                 <span className="hidden sm:block text-sm font-medium text-gray-700 dark:text-gray-300">{user.name?.split(' ')[0] || "Admin"}</span>
                 <ChevronDown className={`h-4 w-4 text-gray-500 dark:text-gray-400 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} />
               </button>
               <AnimatePresence initial={false}>
                 {showUserMenu && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute top-full mt-2 right-0 w-72 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg z-50"
-                  >
-                    <div className="p-3 border-b border-gray-200 dark:border-gray-700">
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{user.name}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.email}</p>
-                    </div>
-                    <div className="p-2 space-y-0.5">
-                      {conversations.length > 0 && (
-                        <div className="border-t border-gray-200 dark:border-gray-700 pt-1 mt-1">
-                          <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-secondary">Messages</p>
-                          {conversations.slice(0, 5).map((conv) => (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute top-full mt-2 right-0 w-72 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl z-50 overflow-hidden"
+                    >
+                      <div className="p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{user.name}</p>
+                          <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                            Admin
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">{user.email}</p>
+                      </div>
+                      <div className="p-2 space-y-1">
+                        <Link
+                          href="/dashboard/admin?tab=settings"
+                          onClick={() => setShowUserMenu(false)}
+                          className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition-colors w-full cursor-pointer ${
+                            activeTab === "settings"
+                              ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 font-semibold"
+                              : "text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          }`}
+                        >
+                          <Settings className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                          <span>Settings</span>
+                        </Link>
+
+
+                        {conversations.length > 0 && (
+                          <div className="border-t border-gray-200 dark:border-gray-700 pt-1 mt-1">
                             <button
-                              key={conv.userId}
+                              type="button"
                               onClick={() => {
                                 setShowUserMenu(false);
-                                if (conv.lastMessage?.subject === "Account Creation Request") {
-                                  setSelectedAccountRequest(conv);
-                                } else {
-                                  router.push(`/dashboard/admin?tab=messages&userId=${conv.userId}`);
-                                }
+                                setShowMessages(true);
                               }}
-                              className="w-full text-left px-3 py-2 rounded-lg hover:bg-surface-secondary transition-colors"
+                              className="w-full text-left px-3 py-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-text-secondary hover:text-foreground cursor-pointer"
                             >
-                              <p className="text-xs font-medium text-foreground truncate">{conv.otherUser?.name || "Unknown"}</p>
-                              <p className="text-[10px] text-text-secondary truncate">{conv.lastMessage?.body?.split('\n').slice(0, 2).join(' ')}</p>
+                              <span>Messages</span>
+                              <span className="text-blue-600 font-medium normal-case">Open Inbox</span>
                             </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
+                            {conversations.slice(0, 5).map((conv) => (
+                              <button
+                                key={conv.userId}
+                                type="button"
+                                onClick={() => {
+                                  setShowUserMenu(false);
+                                  if (conv.lastMessage?.subject === "Account Creation Request") {
+                                    setSelectedAccountRequest(conv);
+                                  } else {
+                                    setSelectedConversation(conv);
+                                  }
+                                }}
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-surface-secondary transition-colors cursor-pointer"
+                              >
+                                <p className="text-xs font-medium text-foreground truncate">{conv.otherUser?.name || "Unknown"}</p>
+                                <p className="text-[10px] text-text-secondary truncate">{conv.lastMessage?.body?.split('\n').slice(0, 2).join(' ')}</p>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  </>
                 )}
               </AnimatePresence>
             </div>
@@ -275,16 +403,45 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </motion.header>
 
         {/* Page Content */}
-        <main className="flex-1 w-full p-4 sm:p-6 lg:p-8 overflow-auto">
+        <main className="flex-1 w-full overflow-auto p-4 sm:p-6">
           <motion.div
             key={activeTab}
-            initial={{ opacity: 0, y: 20, scale: 0.98 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.4, ease: [0.21, 0.47, 0.32, 0.98] }}
+            transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.21, 0.47, 0.32, 0.98] }}
           >
             {children}
           </motion.div>
         </main>
+
+        {/* Messaging Panel Modal */}
+        <AnimatePresence>
+          {showMessages && (
+            <MessagingPanel
+              isOpen={showMessages}
+              onClose={() => setShowMessages(false)}
+              onSelectConversation={(conv) => {
+                setSelectedConversation(conv);
+                setShowMessages(false);
+              }}
+              asModal
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Direct Conversation Messaging Modal */}
+        {selectedConversation?.otherUser && (
+          <MessagingModal
+            isOpen={Boolean(selectedConversation?.otherUser)}
+            onClose={() => setSelectedConversation(null)}
+            otherUser={selectedConversation.otherUser}
+            properties={properties.map((p) => ({
+              ...p,
+              unitNames: units.filter((u) => u.propertyId === p.id).map((u) => u.unitNumber),
+            }))}
+          />
+        )}
+
         <AccountRequestReviewModal
           request={selectedAccountRequest}
           onClose={() => setSelectedAccountRequest(null)}
@@ -297,5 +454,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         />
       </motion.div>
     </div>
+    </AdminDataProvider>
   );
 }

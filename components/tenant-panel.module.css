@@ -1,0 +1,227 @@
+.shell {
+  --tenant-ink: #08143c;
+  --tenant-muted: #496b99;
+  --tenant-blue: #1955ff;
+  --tenant-border: #e1ecfa;
+  min-height: 100vh;
+  background: #f1f5f9;
+  color: var(--tenant-ink);
+}
+
+.main {
+  min-height: 100vh;
+  min-width: 0;
+  padding: 84px clamp(16px, 3.5vw, 48px) 40px;
+}
+
+.content { width: 100%; max-width: 1660px; margin: 0 auto; }
+.dashboard { display: flex; flex-direction: column; gap: 20px; padding-bottom: 32px; }
+
+.bar {
+  position: fixed;
+  z-index: 40;
+  inset: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  height: 78px;
+  padding: 0 32px;
+  color: #fff;
+  background: linear-gradient(110deg, #10438e, #104692 72%, #0d408a);
+  box-shadow: 0 1px 0 #0e3e8420;
+}
+
+.brand { display: flex; align-items: center; gap: 14px; flex-shrink: 0; font-size: 26px; font-weight: 750; letter-spacing: -0.8px; }
+.brand > span:last-child { color: #fff; }
+.brand > span:last-child > span { color: #a8caff; }
+.brandMark { display: grid; place-items: center; width: 50px; height: 48px; border-radius: 13px; color: #fff; background: linear-gradient(145deg, #309dff, #1888fa); box-shadow: inset 0 1px 4px #71c2ff70, 0 3px 8px #00246530; }
+.brandMark svg { width: 27px; height: 27px; stroke-width: 2.8; }
+.desktopLinks { display: flex; align-items: center; gap: 3px; flex: 1; }
+.navLink { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 13px; border-radius: 11px; font-size: 14px; font-weight: 500; white-space: nowrap; transition: background 150ms; }
+.navLink svg { height: 20px; width: 20px; flex-shrink: 0; color: #d0e4ff; }
+.navLink:hover { background: #ffffff13; }
+.navLink.active { background: #2b67c6; font-weight: 650; box-shadow: inset 0 1px 0 #ffffff09; }
+.navLink.active svg { color: #fff; }
+.barControls { display: flex; align-items: center; gap: 24px; margin-left: auto; }
+.iconButton { display: grid; place-items: center; position: relative; width: 42px; height: 42px; border-radius: 10px; transition: background 150ms; cursor: pointer; }
+.iconButton:hover, .accountButton:hover { background: #ffffff13; }
+.iconButton svg { width: 23px; height: 23px; }
+.notificationBadge { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 20px; background: #ff626b; font-size: 9px; font-weight: 700; line-height: 1; }
+.account { position: relative; }
+.accountButton { display: flex; align-items: center; gap: 12px; padding: 3px 7px; min-height: 54px; border-radius: 12px; cursor: pointer; transition: background 150ms; }
+.avatar { position: relative; display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border: 2px solid #ffffffb3; border-radius: 50%; background: #f6fbff; color: #1551ad; font-size: 17px; font-weight: 700; }
+.avatar img { height: 100%; width: 100%; border-radius: inherit; object-fit: cover; }
+.avatar::after { content: ""; position: absolute; bottom: -1px; right: -2px; height: 13px; width: 13px; border: 2px solid #94c0e6; border-radius: 50%; background: #7bceb0; }
+.accountText { min-width: 110px; max-width: 175px; text-align: left; }
+.accountText strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 650; }
+.accountText span { display: block; margin-top: 2px; font-size: 13px; color: #abc8ed; }
+.accountChevron { margin-left: 12px; width: 18px; height: 18px; color: #deebff; }
+.accountMenu { position: absolute; right: 0; top: calc(100% + 11px); width: 255px; padding: 8px; border: 1px solid #e1ecfa; border-radius: 15px; background: #fff; color: #204775; box-shadow: 0 10px 40px #163e742b; }
+.accountMenu a, .accountMenu button { display: flex; align-items: center; gap: 11px; min-height: 41px; width: 100%; padding: 0 11px; border-radius: 9px; font-size: 13px; cursor: pointer; }
+.accountMenu a:hover, .accountMenu button:hover { background: #f1f7ff; }
+.accountMenu svg { width: 17px; height: 17px; color: #6a87ae; }
+.accountMenuLabel { padding: 10px 11px 5px; font-size: 10px; letter-spacing: 1.1px; text-transform: uppercase; color: #6d86a7; }
+.menuDivider { margin: 6px 4px; border-top: 1px solid #e8eff8; }
+.mobileToggle { display: none; }
+.mobileBackdrop { position: fixed; inset: 78px 0 0; z-index: 45; background: #0a25474d; }
+.mobileDrawer { position: fixed; inset: 78px auto 0 0; z-index: 50; width: min(340px, 88vw); padding: 20px 16px; overflow-y: auto; background: #fbfdff; box-shadow: 6px 0 25px #18345824; }
+.notifications { position: fixed; right: 32px; top: 90px; z-index: 60; width: min(384px, calc(100vw - 32px)); overflow: hidden; border-radius: 15px; border: 1px solid #dfebfb; background: white; box-shadow: 0 12px 40px #153d702e; }
+.bar a:focus-visible, .bar button:focus-visible { outline: 2px solid #a2ceff; outline-offset: 3px; }
+
+.hero { position: relative; isolation: isolate; display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 174px; padding: 22px 34px; overflow: hidden; border: 1px solid #d4e6ff; border-radius: 15px; background: #e8f2ff; }
+.hero::before { position: absolute; z-index: -2; inset: 0; content: ""; background-image: url("/images/favicon/Landing%20page%20and%20login%20page.png"); background-size: cover; background-position: center 53%; }
+.hero::after { position: absolute; z-index: -1; inset: 0; content: ""; background: linear-gradient(105deg, rgb(237 245 255 / 96%) 0%, rgb(234 243 255 / 92%) 52%, rgb(220 234 255 / 88%) 100%); }
+.heroCopy { position: relative; z-index: 1; }
+.eyebrow { color: var(--tenant-blue); font-size: 14px; line-height: 20px; font-weight: 750; letter-spacing: 1.65px; text-transform: uppercase; }
+.hero h1 { margin-top: 4px; font-size: 34px; line-height: 42px; font-weight: 780; letter-spacing: -0.8px; }
+.heroDescription { margin-top: 3px; color: #3f608d; font-size: 18px; line-height: 27px; }
+.assignment { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; width: fit-content; max-width: 100%; margin-top: 12px; padding: 6px 13px; border: 1px solid rgb(176 204 243 / 78%); border-radius: 999px; background: rgb(255 255 255 / 76%); box-shadow: 0 2px 8px rgb(40 81 145 / 8%); backdrop-filter: blur(5px); color: var(--tenant-muted); font-size: 16px; line-height: 24px; }
+.assignment svg { width: 20px; height: 20px; color: var(--tenant-blue); stroke-width: 2.3; }
+.heroArt { position: absolute; z-index: -1; bottom: -9px; right: 19%; width: 400px; height: 175px; opacity: 0.81; object-fit: contain; object-position: center bottom; }
+.primaryButton, .outlineButton { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 12px; min-height: 40px; padding: 0 20px; border-radius: 10px; font-size: 13px; font-weight: 650; line-height: 20px; transition: background 150ms, box-shadow 150ms; }
+.primaryButton { background: var(--tenant-blue); color: #fff; border: 1px solid var(--tenant-blue); box-shadow: 0 2px 4px #1554ff0e; }
+.primaryButton:hover { background: #1249de; box-shadow: 0 3px 10px #1554ff22; }
+.outlineButton { color: #2c4f7e; border: 1px solid #d4e2f5; background: #fff; }
+.outlineButton:hover { background: #f2f7ff; border-color: #a9c6ee; }
+.primaryButton svg, .outlineButton svg { width: 16px; height: 16px; }
+.heroButton { position: relative; z-index: 1; min-height: 47px; padding: 0 21px; font-size: 14px; }
+.primaryButton:focus-visible, .outlineButton:focus-visible, .textLink:focus-visible { outline: 2px solid #1955ff; outline-offset: 4px; }
+
+.summaryGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+.panel { border: 1px solid var(--tenant-border); border-radius: 15px; background: #fff; box-shadow: 0 2px 3px #21477708; }
+.summaryContent { display: flex; align-items: flex-start; gap: 22px; min-height: 138px; padding: 19px 22px 20px; }
+.summaryIcon { display: grid; place-items: center; flex-shrink: 0; width: 64px; height: 65px; border-radius: 22px; }
+.summaryIcon svg { width: 33px; height: 33px; stroke-width: 2.3; }
+.blueIcon { color: #225bff; background: #eaf2ff; }
+.greenIcon { color: #00aa77; background: #e2fbf0; }
+.amberIcon { color: #ec8500; background: #fff5db; }
+.violetIcon { color: #6835ff; background: #f0ebff; }
+.pesoIcon { display: grid; place-items: center; width: 31px; height: 31px; border: 3px solid currentColor; border-radius: 50%; font-size: 20px; font-weight: 550; line-height: 1; }
+.summaryCopy { min-width: 0; padding-top: 6px; }
+.summaryLabel { color: var(--tenant-muted); font-size: 14px; line-height: 20px; }
+.summaryValue { margin-top: 8px; color: var(--tenant-ink); font-size: 24px; line-height: 30px; font-weight: 760; letter-spacing: -0.35px; overflow-wrap: anywhere; }
+.summaryDetail { margin-top: 6px; color: #5a7bad; font-size: 13px; line-height: 19px; }
+
+.homes { padding: 21px 27px 24px; }
+.homesHeader { display: flex; justify-content: space-between; align-items: center; gap: 22px; margin-bottom: 16px; }
+.homes h2 { margin-top: 2px; font-size: 25px; line-height: 31px; font-weight: 760; letter-spacing: -0.55px; }
+.homesSubtitle { margin-top: 3px; color: var(--tenant-muted); font-size: 16px; line-height: 24px; }
+.homesActions { display: flex; align-items: center; flex-wrap: wrap; gap: 15px; }
+.homesEmpty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 164px; padding: 18px; border: 1px dashed #cbdfff; border-radius: 12px; background: #f7fbff; text-align: center; }
+.homesEmpty > svg { width: 29px; height: 29px; color: #829abd; stroke-width: 2.2; }
+.homesEmptyTitle { margin-top: 13px; font-size: 16px; line-height: 21px; font-weight: 700; color: #12376a; }
+.homesEmptyDescription { margin-top: 5px; font-size: 13px; line-height: 20px; color: #557aab; }
+.textLink { display: inline-flex; align-items: center; justify-content: center; gap: 8px; color: var(--tenant-blue); font-size: 13px; font-weight: 550; line-height: 20px; white-space: nowrap; }
+.textLink:hover { color: #1247d8; text-decoration: underline; text-underline-offset: 3px; }
+.textLink svg { width: 15px; height: 15px; }
+.homesEmpty .textLink { margin-top: 12px; font-weight: 650; }
+.detailsGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.detailHeader { display: flex; flex-direction: row; align-items: center; gap: 30px; padding: 18px 26px 15px; }
+.detailHeader > * { margin: 0; }
+.detailHeader .textLink { margin-left: auto; }
+.detailIcon { display: grid; place-items: center; flex-shrink: 0; height: 62px; width: 62px; border-radius: 21px; }
+.detailIcon svg { height: 31px; width: 31px; stroke-width: 2.3; }
+.detailTitle { color: #153b71; font-size: 16px; font-weight: 730; line-height: 24px; letter-spacing: -0.2px; }
+.detailDescription { margin-top: 4px; color: #5a7bad; font-size: 13px; line-height: 20px; }
+.detailContent { padding: 4px 26px 24px; }
+.paymentEmpty { display: flex; min-height: 164px; flex-direction: column; align-items: center; justify-content: center; border-radius: 11px; background: #f7fbff; color: #5a7bad; font-size: 13px; }
+.paymentEmpty svg { width: 28px; height: 28px; margin-bottom: 10px; color: #8aa1bf; }
+.paymentEmpty strong { margin-bottom: 4px; font-size: 14px; color: #244b7a; }
+.rentalGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.rentalItem { min-width: 0; padding: 13px; border-radius: 11px; background: #f7fbff; }
+.rentalItem svg { margin-bottom: 9px; height: 17px; width: 17px; color: #366dea; }
+.rentalItem p:first-of-type { color: #6681a7; font-size: 11px; }
+.rentalItem p:last-of-type { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #244b7a; font-size: 13px; font-weight: 650; }
+
+@media (min-width: 1600px) {
+  .bar { padding-inline: 40px; gap: 48px; }
+  .brand { min-width: 230px; }
+  .desktopLinks { gap: 6px; }
+  .navLink { padding: 0 19px; }
+  .accountText { min-width: 118px; }
+  .barControls { gap: 29px; }
+}
+@media (max-width: 1450px) {
+  .bar { gap: 20px; padding-inline: 24px; }
+  .brand { font-size: 23px; gap: 10px; }
+  .brandMark { height: 44px; width: 44px; }
+  .navLink { padding-inline: 10px; font-size: 13px; gap: 7px; }
+  .barControls { gap: 14px; }
+  .accountText { min-width: 88px; max-width: 125px; }
+  .accountChevron { margin-left: 0; }
+  .summaryContent { gap: 15px; padding-inline: 18px; }
+  .summaryIcon { height: 58px; width: 56px; border-radius: 18px; }
+  .summaryValue { font-size: 21px; }
+  .heroArt { right: 20%; opacity: 0.65; width: 330px; }
+}
+@media (max-width: 1250px) {
+  .desktopLinks { display: none; }
+  .mobileToggle { display: grid; }
+  .summaryGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .homesHeader { align-items: flex-start; }
+  .homesActions { gap: 8px; justify-content: flex-end; }
+  .primaryButton, .outlineButton { padding-inline: 15px; }
+  .heroArt { right: 18%; width: 280px; opacity: 0.36; }
+  .detailHeader { gap: 18px; padding-inline: 20px; }
+  .detailContent { padding-inline: 20px; }
+}
+@media (max-width: 900px) {
+  .hero h1 { font-size: 29px; line-height: 37px; }
+  .heroDescription { font-size: 15px; }
+  .hero { padding-inline: 25px; }
+  .heroArt { display: none; }
+  .homesHeader { flex-direction: column; gap: 16px; }
+  .homesActions { justify-content: flex-start; }
+  .detailsGrid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .bar { height: 70px; padding-inline: 16px; gap: 12px; }
+  .brand { font-size: 22px; gap: 10px; }
+  .brandMark { width: 40px; height: 40px; border-radius: 11px; }
+  .brandMark svg { width: 23px; height: 23px; }
+  .barControls { gap: 3px; }
+  .accountText, .accountChevron { display: none; }
+  .accountButton { padding-inline: 5px; gap: 0; }
+  .avatar { width: 35px; height: 35px; font-size: 13px; }
+  .avatar::after { width: 11px; height: 11px; }
+  .iconButton { width: 35px; height: 40px; }
+  .iconButton svg { width: 21px; height: 21px; }
+  .main { padding: 90px 16px 24px; }
+  .dashboard { gap: 16px; }
+  .hero { min-height: 244px; flex-direction: column; align-items: flex-start; gap: 18px; padding: 23px 22px; }
+  .eyebrow { font-size: 11px; letter-spacing: 1.3px; }
+  .hero h1 { margin-top: 5px; font-size: 27px; line-height: 34px; }
+  .heroDescription { margin-top: 7px; font-size: 14px; line-height: 22px; }
+  .assignment { margin-top: 10px; padding: 5px 10px; font-size: 13px; line-height: 20px; gap: 7px; }
+  .heroButton { min-height: 43px; font-size: 13px; padding-inline: 15px; }
+  .summaryGrid { gap: 12px; }
+  .summaryContent { min-height: 177px; flex-direction: column; gap: 10px; padding: 17px 16px; }
+  .summaryIcon { width: 45px; height: 45px; border-radius: 15px; }
+  .summaryIcon svg { height: 25px; width: 25px; }
+  .pesoIcon { width: 25px; height: 25px; border-width: 2px; font-size: 16px; }
+  .summaryCopy { padding: 0; }
+  .summaryLabel { font-size: 12px; line-height: 18px; }
+  .summaryValue { margin-top: 4px; font-size: 19px; line-height: 25px; letter-spacing: -0.3px; }
+  .summaryDetail { margin-top: 4px; font-size: 11px; line-height: 16px; }
+  .homes { padding: 20px; }
+  .homes h2 { font-size: 22px; line-height: 29px; }
+  .homesSubtitle { font-size: 13px; line-height: 21px; }
+  .homesActions { gap: 8px; }
+  .primaryButton, .outlineButton { padding-inline: 12px; gap: 7px; font-size: 12px; }
+  .homesEmpty { min-height: 190px; padding-inline: 15px; }
+  .homesEmptyTitle { font-size: 14px; }
+  .homesEmptyDescription { font-size: 12px; }
+  .detailHeader { gap: 13px; padding: 18px 18px 16px; }
+  .detailIcon { width: 47px; height: 47px; border-radius: 16px; }
+  .detailIcon svg { width: 25px; height: 25px; }
+  .detailTitle { font-size: 14px; }
+  .detailDescription { font-size: 11px; margin-top: 2px; }
+  .detailHeader .textLink { font-size: 11px; gap: 4px; }
+  .detailContent { padding-inline: 18px; }
+  .rentalGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mobileBackdrop, .mobileDrawer { top: 70px; }
+  .notifications { top: 80px; right: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shell *, .bar * { scroll-behavior: auto; transition-duration: 0ms; }
+}

@@ -42,6 +42,8 @@ export async function POST(request: NextRequest) {
       { key: "location", type: "string", maxLength: 500 },
       { key: "type", type: "string", maxLength: 20 },
       { key: "units", type: "number" },
+      { key: "latitude", type: "number" },
+      { key: "longitude", type: "number" },
       { key: "monthlyRevenue", type: "number" },
       { key: "status", type: "string", maxLength: 20 },
       { key: "imageUrl", type: "string", maxLength: 5000000 },
@@ -59,6 +61,11 @@ export async function POST(request: NextRequest) {
 
     if (!sanitized.name || !sanitized.location) {
       return NextResponse.json({ success: false, error: "Name and location are required" }, { status: 400 });
+    }
+    if ((sanitized.latitude === undefined) !== (sanitized.longitude === undefined)
+      || (sanitized.latitude !== undefined && (sanitized.latitude < -90 || sanitized.latitude > 90))
+      || (sanitized.longitude !== undefined && (sanitized.longitude < -180 || sanitized.longitude > 180))) {
+      return NextResponse.json({ success: false, error: "Provide valid latitude and longitude together" }, { status: 400 });
     }
 
     const property = await createProperty(sanitized, auth.userId);

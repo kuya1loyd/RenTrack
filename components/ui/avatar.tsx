@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 interface AvatarProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -26,6 +27,9 @@ export function Avatar({
   ...props
 }: AvatarProps) {
   const [error, setError] = React.useState(false);
+  const normalizedSrc = src && src.trim() ? src.trim() : null;
+  const isLocalRoute = !!normalizedSrc && !/^https?:\/\//i.test(normalizedSrc) && !normalizedSrc.startsWith("//");
+  const isUploadRoute = !!normalizedSrc && /(\/api\/auth\/upload\/|\/api\/auth\/upload$)/.test(normalizedSrc);
 
   return (
     <div
@@ -36,10 +40,13 @@ export function Avatar({
       )}
       {...props}
     >
-      {src && !error ? (
-        <img
-          src={src}
+      {normalizedSrc && !error ? (
+        <Image
+          src={normalizedSrc}
           alt={alt}
+          width={80}
+          height={80}
+          unoptimized={isLocalRoute || isUploadRoute || /^https?:\/\/localhost(?::\d+)?\//i.test(normalizedSrc)}
           className="h-full w-full object-cover"
           onError={() => setError(true)}
         />
@@ -51,4 +58,3 @@ export function Avatar({
     </div>
   );
 }
-

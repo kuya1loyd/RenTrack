@@ -2,14 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Users, Star, Shield, CheckCircle, Building2, Sparkles, Mail } from "lucide-react";
+import { Users, CheckCircle, Sparkles, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Avatar } from "@/components/ui/avatar";
-import { useAuth } from "@/lib/auth";
 import { getAgents, UserRecord } from "@/lib/data";
-import { cn, getInitials } from "@/lib/utils";
+import { getInitials } from "@/lib/utils";
 import { toast } from "sonner";
 import MessagingModal from "@/components/messaging-modal";
 
@@ -24,7 +22,6 @@ const item = {
 };
 
 export default function TenantRentManagerPage() {
-  const { user } = useAuth();
   const [agents, setAgents] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState<UserRecord | null>(null);
@@ -86,7 +83,7 @@ export default function TenantRentManagerPage() {
             viewport={{ once: true, margin: "-80px" }}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
           >
-            {agents.map((agent, idx) => (
+            {agents.map((agent) => (
               <motion.div
                 key={agent.id}
                 variants={item}

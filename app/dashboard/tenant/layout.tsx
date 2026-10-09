@@ -3,13 +3,15 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createPortal } from "react-dom";
-import { ChevronDown, User, LogOut, X, Loader2 } from "lucide-react";
+import { LogOut, Loader2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import TenantNavbar from "@/components/tenant-navbar";
+import MessagingPanel from "@/components/messaging-panel";
+import MessagingModal from "@/components/messaging-modal";
+import { Conversation, getProperties, getUnits, Property, Unit } from "@/lib/data";
+import styles from "@/components/tenant-panel.module.css";
 
 export default function TenantLayout({ children }: { children: React.ReactNode }) {
   const { user, logout, isAuthenticated, isLoading } = useAuth();
@@ -18,15 +20,51 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
 
+  // Global Tenant Messaging Modal State
+  const [showMessages, setShowMessages] = useState(false);
+  const [activeChatUser, setActiveChatUser] = useState<NonNullable<Conversation["otherUser"]> | null>(null);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.push("/");
     }
   }, [isLoading, isAuthenticated, router]);
 
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([getProperties(user), getUnits(user)])
+      .then(([p, u]) => {
+        setProperties(p || []);
+        setUnits(u || []);
+      })
+      .catch(() => {});
+  }, [user]);
+
+  const propertiesWithUnits = properties.map((property) => ({
+    ...property,
+    unitNames: units.filter((unit) => unit.propertyId === property.id).map((unit) => unit.unitNumber),
+  }));
+
+  useEffect(() => {
+    const handleOpenMessages = (event: Event) => {
+      const customEvent = event as CustomEvent<{ otherUser?: Conversation["otherUser"] }>;
+      if (customEvent.detail?.otherUser) {
+        setActiveChatUser(customEvent.detail.otherUser as NonNullable<Conversation["otherUser"]>);
+        setShowMessages(false);
+      } else {
+        setShowMessages(true);
+      }
+    };
+
+    window.addEventListener("renttrack-open-messages", handleOpenMessages);
+    return () => window.removeEventListener("renttrack-open-messages", handleOpenMessages);
+  }, []);
+
   if (isLoading) {
     return (
-      <div className="dark min-h-screen flex items-center justify-center bg-[#080d17]">
+      <div className="min-h-screen flex items-center justify-center bg-[#f4f9ff]">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -41,7 +79,7 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
 
   if (!user || !isAuthenticated) {
     return (
-      <div className="dark min-h-screen flex items-center justify-center bg-[#080d17]">
+      <div className="min-h-screen flex items-center justify-center bg-[#f4f9ff]">
         <div className="text-center">
           <p className="text-gray-600 font-medium">Redirecting to login...</p>
         </div>
@@ -50,20 +88,48 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
   }
 
   return (
-    <div className="min-h-screen bg-white text-gray-900">
+    <div className={styles.shell}>
       <TenantNavbar />
 
       {/* Main Content */}
-      <main className="pt-16 px-4 sm:px-6 lg:px-8 bg-white">
+      <main id="tenant-main-content" className={styles.main}>
         <motion.div
           key={pathname}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
+          className={styles.content}
         >
           {children}
         </motion.div>
       </main>
+
+      {/* Global Tenant Messaging Panel Modal */}
+      <AnimatePresence>
+        {showMessages && (
+          <MessagingPanel
+            isOpen={showMessages}
+            onClose={() => setShowMessages(false)}
+            onSelectConversation={(conv) => {
+              if (conv.otherUser) {
+                setActiveChatUser(conv.otherUser as NonNullable<Conversation["otherUser"]>);
+              }
+              setShowMessages(false);
+            }}
+            asModal
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Direct Chat Messaging Modal */}
+      {activeChatUser && (
+        <MessagingModal
+          isOpen={true}
+          onClose={() => setActiveChatUser(null)}
+          otherUser={activeChatUser}
+          properties={propertiesWithUnits}
+        />
+      )}
 
       {showLogoutModal && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center">

@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUserId, getCurrentUser } from "@/lib/security";
+import { getSessionUserId } from "@/lib/security";
 import { findUserById, logAudit } from "@/lib/db";
 import {
   withSecurityHeaders,
   withCorsHeaders,
   validateContentType,
   checkRequestSize,
-  sanitizeObject,
   getClientIp,
   getUserAgent,
 } from "@/lib/security-headers";
-import { checkRateLimit, recordFailedAttempt, checkVerifyRateLimit, clearVerifyRateLimit, MAX_LOGIN_ATTEMPTS, LOCKOUT_DURATION_MS } from "@/lib/auth-security";
-
 export { getClientIp, getUserAgent } from "@/lib/security-headers";
 export { checkRateLimit, recordFailedAttempt } from "@/lib/auth-security";
 export { withSecurityHeaders, withCorsHeaders, sanitizeObject, validateContentType, checkRequestSize } from "@/lib/security-headers";

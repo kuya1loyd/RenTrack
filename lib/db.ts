@@ -50,9 +50,24 @@ function toCamelCaseKeys(obj: Record<string, any>): Record<string, any> {
   return out;
 }
 
+const DEFAULT_ADMIN_AVATAR_URL = "/images/admin-avatar.jpg";
+
+function resolveAvatarUrl(avatarUrl: string | null | undefined, role?: string | null): string | null | undefined {
+  if (avatarUrl) return avatarUrl;
+  return role === "admin" ? DEFAULT_ADMIN_AVATAR_URL : avatarUrl;
+}
+
 function mapUserRow(u: any): any {
   if (!u) return null;
-  return toCamelCaseKeys(u);
+  const user = toCamelCaseKeys(u);
+  const emailLower = (user.email || "").toLowerCase();
+  const isAdminOrOwner = user.role === "admin" || user.role === "owner" || emailLower === "admin@renttrack.com" || emailLower === "renttrackowner@gmail.com";
+  if (isAdminOrOwner) {
+    user.idVerificationStatus = "approved";
+    user.emailVerified = true;
+  }
+  user.avatarUrl = resolveAvatarUrl(user.avatarUrl, user.role);
+  return user;
 }
 
 export function snakeToCamel(obj: Record<string, any>): Record<string, any> {
@@ -91,54 +106,62 @@ export async function initDatabase() {
   initDbPromise = (async () => {
     const statements: string[] = [];
 
-  statements.push(`CREATE TABLE IF NOT EXISTS users (
+    statements.push(`CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     password TEXT,
     role TEXT NOT NULL CHECK (role IN ('admin', 'owner', 'agent', 'tenant')),
     phone TEXT,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
     payment_pin_hash TEXT,
     payment_pin_set_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
 
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS payment_pin_hash TEXT`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS payment_pin_set_at TIMESTAMPTZ`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token TEXT`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_expires_at TIMESTAMPTZ`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_otp TEXT`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_otp_expires_at TIMESTAMPTZ`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS birthdate DATE`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS experience TEXT DEFAULT '0 Years'`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_url TEXT`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_status TEXT DEFAULT 'pending' CHECK (id_verification_status IN ('pending', 'approved', 'rejected'))`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT FALSE`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS payment_pin_hash TEXT`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by TEXT REFERENCES users(id) ON DELETE SET NULL`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS payment_pin_set_at TIMESTAMPTZ`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token TEXT`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_expires_at TIMESTAMPTZ`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_otp TEXT`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_otp_expires_at TIMESTAMPTZ`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS birthdate DATE`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS experience TEXT DEFAULT '0 Years'`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_url TEXT`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_status TEXT DEFAULT 'pending' CHECK (id_verification_status IN ('pending', 'approved', 'rejected'))`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT FALSE`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS uploads (
+    statements.push(`CREATE TABLE IF NOT EXISTS uploads (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK (type IN ('avatar', 'id_verification', 'property', 'unit', 'receipt')),
+    user_type TEXT NOT NULL DEFAULT 'user',
+    type TEXT NOT NULL CHECK (type IN ('avatar', 'id_verification', 'property', 'unit', 'receipt', 'contract')),
     data BYTEA NOT NULL,
     mime_type TEXT NOT NULL,
     size INTEGER NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
+    statements.push(`ALTER TABLE uploads ADD COLUMN IF NOT EXISTS user_type TEXT NOT NULL DEFAULT 'user'`);
+    statements.push(`ALTER TABLE uploads DROP CONSTRAINT IF EXISTS uploads_type_check`);
+    statements.push(`ALTER TABLE uploads ADD CONSTRAINT uploads_type_check CHECK (type IN ('avatar', 'id_verification', 'property', 'unit', 'receipt', 'contract'))`);
 
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_visibility BOOLEAN DEFAULT TRUE`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS show_email BOOLEAN DEFAULT FALSE`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS show_phone BOOLEAN DEFAULT FALSE`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS allow_messages BOOLEAN DEFAULT TRUE`);
-  statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS data_sharing BOOLEAN DEFAULT FALSE`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_visibility BOOLEAN DEFAULT TRUE`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS show_email BOOLEAN DEFAULT FALSE`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS show_phone BOOLEAN DEFAULT FALSE`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS allow_messages BOOLEAN DEFAULT TRUE`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS data_sharing BOOLEAN DEFAULT FALSE`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS properties (
+    statements.push(`CREATE TABLE IF NOT EXISTS properties (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     location TEXT NOT NULL,
@@ -152,14 +175,16 @@ export async function initDatabase() {
     image_url TEXT
   )`);
 
-  statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS image_url TEXT`);
-  statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS image_urls JSONB DEFAULT '[]'::jsonb`);
-  statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS agent_id TEXT REFERENCES users(id)`);
-  statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS features JSONB DEFAULT '[]'::jsonb`);
-  statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS condition TEXT`);
-  statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS availability_status TEXT DEFAULT 'Available'`);
+    statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS image_url TEXT`);
+    statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION`);
+    statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION`);
+    statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS image_urls JSONB DEFAULT '[]'::jsonb`);
+    statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS agent_id TEXT REFERENCES users(id)`);
+    statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS features JSONB DEFAULT '[]'::jsonb`);
+    statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS condition TEXT`);
+    statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS availability_status TEXT DEFAULT 'Available'`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS units (
+    statements.push(`CREATE TABLE IF NOT EXISTS units (
     id TEXT PRIMARY KEY,
     property_id TEXT REFERENCES properties(id) ON DELETE CASCADE,
     unit_number TEXT NOT NULL,
@@ -172,9 +197,9 @@ export async function initDatabase() {
     image_url TEXT,
     image_urls JSONB DEFAULT '[]'::jsonb
   )`);
-  statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS image_urls JSONB DEFAULT '[]'::jsonb`);
+    statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS image_urls JSONB DEFAULT '[]'::jsonb`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS tenants (
+    statements.push(`CREATE TABLE IF NOT EXISTS tenants (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     email TEXT,
@@ -194,9 +219,31 @@ export async function initDatabase() {
     created_by TEXT REFERENCES users(id)
   )`);
 
-  statements.push(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS assignment_status TEXT DEFAULT '' CHECK (assignment_status IN ('', 'pending', 'confirmed', 'rejected'))`);
+    statements.push(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS assignment_status TEXT DEFAULT '' CHECK (assignment_status IN ('', 'pending', 'confirmed', 'rejected'))`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS move_out_requests (
+    statements.push(`CREATE TABLE IF NOT EXISTS rental_contracts (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    agent_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+    property_name TEXT NOT NULL,
+    tenant_id TEXT REFERENCES tenants(id) ON DELETE SET NULL,
+    tenant_name TEXT,
+    title TEXT NOT NULL,
+    message TEXT,
+    file_upload_id TEXT,
+    file_name TEXT,
+    file_mime_type TEXT,
+    status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'sent', 'rejected')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+    statements.push(`ALTER TABLE rental_contracts ALTER COLUMN agent_id DROP NOT NULL`);
+    statements.push(`CREATE INDEX IF NOT EXISTS rental_contracts_owner_created_idx ON rental_contracts(owner_id, created_at DESC)`);
+    statements.push(`CREATE INDEX IF NOT EXISTS rental_contracts_agent_created_idx ON rental_contracts(agent_id, created_at DESC)`);
+    statements.push(`CREATE INDEX IF NOT EXISTS rental_contracts_tenant_created_idx ON rental_contracts(tenant_id, created_at DESC)`);
+
+    statements.push(`CREATE TABLE IF NOT EXISTS move_out_requests (
     id TEXT PRIMARY KEY,
     tenant_id TEXT REFERENCES tenants(id) ON DELETE CASCADE,
     tenant_name TEXT,
@@ -209,7 +256,7 @@ export async function initDatabase() {
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS payments (
+    statements.push(`CREATE TABLE IF NOT EXISTS payments (
     id TEXT PRIMARY KEY,
     tenant_id TEXT REFERENCES tenants(id),
     tenant_name TEXT,
@@ -236,17 +283,19 @@ export async function initDatabase() {
     created_by TEXT REFERENCES users(id)
   )`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS notifications (
+    statements.push(`CREATE TABLE IF NOT EXISTS notifications (
     id TEXT PRIMARY KEY,
     user_id TEXT REFERENCES users(id),
+    user_type TEXT NOT NULL DEFAULT 'user',
     title TEXT NOT NULL,
     message TEXT,
     type TEXT DEFAULT 'system' CHECK (type IN ('payment', 'tenant', 'property', 'system', 'id_verification')),
     read BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
+    statements.push(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS user_type TEXT NOT NULL DEFAULT 'user'`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS agent_applications (
+    statements.push(`CREATE TABLE IF NOT EXISTS agent_applications (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     email TEXT NOT NULL,
@@ -258,15 +307,17 @@ export async function initDatabase() {
     resume_name TEXT,
     resume_mime_type TEXT,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    rejection_reason TEXT,
     reviewed_by TEXT REFERENCES users(id),
     reviewed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
+    statements.push(`ALTER TABLE agent_applications ADD COLUMN IF NOT EXISTS rejection_reason TEXT`);
 
-  statements.push(`ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check`);
-  statements.push(`ALTER TABLE notifications ADD CONSTRAINT notifications_type_check CHECK (type IN ('payment', 'tenant', 'property', 'system', 'id_verification'))`);
+    statements.push(`ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check`);
+    statements.push(`ALTER TABLE notifications ADD CONSTRAINT notifications_type_check CHECK (type IN ('payment', 'tenant', 'property', 'system', 'id_verification'))`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS payment_verification_codes (
+    statements.push(`CREATE TABLE IF NOT EXISTS payment_verification_codes (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     purpose TEXT NOT NULL,
@@ -276,7 +327,7 @@ export async function initDatabase() {
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS audit_logs (
+    statements.push(`CREATE TABLE IF NOT EXISTS audit_logs (
     id TEXT PRIMARY KEY,
     user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
     action TEXT NOT NULL,
@@ -286,7 +337,18 @@ export async function initDatabase() {
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS ratings (
+    statements.push(`UPDATE users AS target
+    SET created_by = audit.user_id
+    FROM audit_logs AS audit
+    JOIN users AS creator ON creator.id = audit.user_id AND creator.role = 'owner'
+    WHERE audit.action = 'user_created'
+      AND audit.details->>'createdUserId' = target.id
+      AND target.role = 'agent'
+      AND target.created_by IS NULL`);
+
+    statements.push(`UPDATE users SET id_verification_status = 'approved', email_verified = TRUE WHERE role IN ('admin', 'owner') OR email IN ('admin@renttrack.com', 'renttrackowner@gmail.com')`);
+
+    statements.push(`CREATE TABLE IF NOT EXISTS ratings (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     target_type TEXT NOT NULL CHECK (target_type IN ('property', 'unit', 'support')),
@@ -297,7 +359,7 @@ export async function initDatabase() {
     UNIQUE(user_id, target_type, target_id)
   )`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS complaints (
+    statements.push(`CREATE TABLE IF NOT EXISTS complaints (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     target_type TEXT NOT NULL CHECK (target_type IN ('property', 'unit')),
@@ -314,13 +376,22 @@ export async function initDatabase() {
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
   )`);
-  statements.push(`ALTER TABLE complaints ADD COLUMN IF NOT EXISTS response_text TEXT`);
-  statements.push(`ALTER TABLE complaints ADD COLUMN IF NOT EXISTS response_by TEXT`);
-  statements.push(`ALTER TABLE complaints ADD COLUMN IF NOT EXISTS response_at TIMESTAMPTZ`);
-  statements.push(`ALTER TABLE complaints DROP CONSTRAINT IF EXISTS complaints_target_type_check`);
-  statements.push(`ALTER TABLE complaints ADD CONSTRAINT complaints_target_type_check CHECK (target_type IN ('property', 'unit', 'support'))`);
+    statements.push(`ALTER TABLE complaints ADD COLUMN IF NOT EXISTS response_text TEXT`);
+    statements.push(`ALTER TABLE complaints ADD COLUMN IF NOT EXISTS response_by TEXT`);
+    statements.push(`ALTER TABLE complaints ADD COLUMN IF NOT EXISTS response_at TIMESTAMPTZ`);
+    statements.push(`ALTER TABLE complaints DROP CONSTRAINT IF EXISTS complaints_target_type_check`);
+    statements.push(`ALTER TABLE complaints ADD CONSTRAINT complaints_target_type_check CHECK (target_type IN ('property', 'unit', 'support'))`);
+    statements.push(`ALTER TABLE complaints ADD COLUMN IF NOT EXISTS tenant_reply_text TEXT`);
+    statements.push(`ALTER TABLE complaints ADD COLUMN IF NOT EXISTS tenant_reply_by TEXT`);
+    statements.push(`ALTER TABLE complaints ADD COLUMN IF NOT EXISTS tenant_reply_at TIMESTAMPTZ`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS messages (
+    statements.push(`CREATE TABLE IF NOT EXISTS system_config (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+
+    statements.push(`CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
     sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     receiver_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -332,10 +403,10 @@ export async function initDatabase() {
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
 
-  statements.push(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_url TEXT`);
-  statements.push(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_type TEXT CHECK (attachment_type IN ('image', 'audio'))`);
+    statements.push(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_url TEXT`);
+    statements.push(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_type TEXT CHECK (attachment_type IN ('image', 'audio'))`);
 
-  statements.push(`CREATE TABLE IF NOT EXISTS chat_messages (
+    statements.push(`CREATE TABLE IF NOT EXISTS chat_messages (
     id TEXT PRIMARY KEY,
     text TEXT NOT NULL,
     property_id TEXT REFERENCES properties(id),
@@ -350,26 +421,26 @@ export async function initDatabase() {
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
 
-  statements.push(`ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_payment_method_check`);
-  statements.push(`ALTER TABLE payments ADD CONSTRAINT payments_payment_method_check CHECK (payment_method IN ('cash', 'upload_receipt'))`);
-  statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_method_note TEXT`);
-  statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS bank_name TEXT`);
-  statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS account_number TEXT`);
-  statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS account_holder TEXT`);
-  statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS card_last4 TEXT`);
-  statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS card_expiry TEXT`);
-  statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS gcash_number TEXT`);
-  statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS gcash_name TEXT`);
+    statements.push(`ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_payment_method_check`);
+    statements.push(`ALTER TABLE payments ADD CONSTRAINT payments_payment_method_check CHECK (payment_method IN ('cash', 'upload_receipt'))`);
+    statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_method_note TEXT`);
+    statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS bank_name TEXT`);
+    statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS account_number TEXT`);
+    statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS account_holder TEXT`);
+    statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS card_last4 TEXT`);
+    statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS card_expiry TEXT`);
+    statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS gcash_number TEXT`);
+    statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS gcash_name TEXT`);
 
-  // Keep existing installations compatible with the landing-page chat reply flow.
-  statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS agent_id TEXT`);
-  statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS agent_name TEXT`);
-  statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS reply_text TEXT`);
-  statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS reply_token TEXT`);
-  statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS replied_at TIMESTAMPTZ`);
-  statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS visitor_reply TEXT`);
-  statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS visitor_replied_at TIMESTAMPTZ`);
-  statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'new' CHECK (status IN ('new', 'read', 'replied'))`);
+    // Keep existing installations compatible with the landing-page chat reply flow.
+    statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS agent_id TEXT`);
+    statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS agent_name TEXT`);
+    statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS reply_text TEXT`);
+    statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS reply_token TEXT`);
+    statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS replied_at TIMESTAMPTZ`);
+    statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS visitor_reply TEXT`);
+    statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS visitor_replied_at TIMESTAMPTZ`);
+    statements.push(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'new' CHECK (status IN ('new', 'read', 'replied'))`);
 
     const migrationFunction = `CREATE OR REPLACE FUNCTION exec_migration(sql text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE stmt text;
@@ -417,7 +488,183 @@ $$;`;
   return initDbPromise;
 }
 
-export async function createUser(name: string, email: string, password: string, role: string, phone?: string, paymentPin?: string, address?: string, emailVerified = false) {
+let notificationsSchemaPromise: Promise<void> | null = null;
+
+export async function ensureNotificationsSchema(): Promise<void> {
+  if (!notificationsSchemaPromise) {
+    notificationsSchemaPromise = (async () => {
+      await initDatabase();
+      const admin = getAdminSupabase();
+      const { error } = await admin.rpc("exec_sql", {
+        sql: "ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS user_type TEXT NOT NULL DEFAULT 'user'",
+      });
+      if (error) throw new Error(`Could not add notification recipient type: ${error.message}`);
+
+      const { error: reloadError } = await admin.rpc("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
+      if (reloadError) throw new Error(`Could not refresh the notifications schema: ${reloadError.message}`);
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const { error: schemaError } = await admin.from("notifications").select("id, user_type").limit(0);
+        if (!schemaError) return;
+        if (attempt === 4) throw new Error(`Notifications schema is unavailable through the database API: ${schemaError.message}`);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    })().catch((error) => {
+      notificationsSchemaPromise = null;
+      throw error;
+    });
+  }
+
+  return notificationsSchemaPromise;
+}
+
+let agentApplicationsSchemaPromise: Promise<void> | null = null;
+
+export async function ensureAgentApplicationsSchema(): Promise<void> {
+  if (!agentApplicationsSchemaPromise) {
+    agentApplicationsSchemaPromise = (async () => {
+      await initDatabase();
+      const admin = getAdminSupabase();
+      const { error } = await admin.rpc("exec_sql", {
+        sql: "ALTER TABLE public.agent_applications ADD COLUMN IF NOT EXISTS rejection_reason TEXT",
+      });
+      if (error) throw new Error(`Could not add agent application rejection reason: ${error.message}`);
+
+      const { error: reloadError } = await admin.rpc("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
+      if (reloadError) throw new Error(`Could not refresh the agent application schema: ${reloadError.message}`);
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const { error: schemaError } = await admin.from("agent_applications").select("id, rejection_reason").limit(0);
+        if (!schemaError) return;
+        if (attempt === 4) throw new Error(`Agent application schema is unavailable through the database API: ${schemaError.message}`);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    })().catch((error) => {
+      agentApplicationsSchemaPromise = null;
+      throw error;
+    });
+  }
+
+  return agentApplicationsSchemaPromise;
+}
+
+let rentalContractsSchemaPromise: Promise<void> | null = null;
+
+export async function ensureRentalContractsSchema(): Promise<void> {
+  if (!rentalContractsSchemaPromise) {
+    rentalContractsSchemaPromise = (async () => {
+      await initDatabase();
+      const admin = getAdminSupabase();
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS public.rental_contracts (
+          id TEXT PRIMARY KEY,
+          owner_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+          agent_id TEXT REFERENCES public.users(id) ON DELETE CASCADE,
+          property_id TEXT NOT NULL REFERENCES public.properties(id) ON DELETE CASCADE,
+          property_name TEXT NOT NULL,
+          tenant_id TEXT REFERENCES public.tenants(id) ON DELETE SET NULL,
+          tenant_name TEXT,
+          title TEXT NOT NULL,
+          message TEXT,
+          file_upload_id TEXT,
+          file_name TEXT,
+          file_mime_type TEXT,
+          status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'sent', 'rejected')),
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        )`,
+        "ALTER TABLE public.rental_contracts ALTER COLUMN agent_id DROP NOT NULL",
+        "CREATE INDEX IF NOT EXISTS rental_contracts_owner_created_idx ON public.rental_contracts(owner_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS rental_contracts_agent_created_idx ON public.rental_contracts(agent_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS rental_contracts_tenant_created_idx ON public.rental_contracts(tenant_id, created_at DESC)",
+      ];
+
+      for (const sql of statements) {
+        const { error } = await admin.rpc("exec_sql", { sql });
+        if (error) throw new Error(`Could not install rental contracts schema: ${error.message}`);
+      }
+
+      const { error: reloadError } = await admin.rpc("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
+      if (reloadError) throw new Error(`Could not refresh the database API schema: ${reloadError.message}`);
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const { error } = await admin
+          .from("rental_contracts")
+          .select("id, owner_id, agent_id, property_id, property_name, tenant_id, tenant_name, title, message, file_upload_id, file_name, file_mime_type, status, created_at, updated_at")
+          .limit(0);
+        if (!error) return;
+        if (attempt === 2) throw new Error(`Rental contracts schema is not available through the database API: ${error.message}`);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    })().catch((error) => {
+      rentalContractsSchemaPromise = null;
+      throw error;
+    });
+  }
+
+  return rentalContractsSchemaPromise;
+}
+
+let userCreatedBySchemaPromise: Promise<void> | null = null;
+
+async function ensureUserCreatedBySchema(): Promise<void> {
+  if (!userCreatedBySchemaPromise) {
+    userCreatedBySchemaPromise = (async () => {
+      const admin = getAdminSupabase();
+      const { error } = await admin.rpc("exec_sql", {
+        sql: "ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_by TEXT REFERENCES public.users(id) ON DELETE SET NULL",
+      });
+      if (error) throw new Error(`Could not add the users.created_by column: ${error.message}`);
+
+      const { error: reloadError } = await admin.rpc("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
+      if (reloadError) throw new Error(`Could not refresh the users schema: ${reloadError.message}`);
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const { error: schemaError } = await admin.from("users").select("id, created_by").limit(0);
+        if (!schemaError) return;
+        if (attempt === 4) throw new Error(`Users schema is unavailable through the database API: ${schemaError.message}`);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    })().catch((error) => {
+      userCreatedBySchemaPromise = null;
+      throw error;
+    });
+  }
+
+  return userCreatedBySchemaPromise;
+}
+
+let userCommissionRateSchemaPromise: Promise<void> | null = null;
+
+export async function ensureUserCommissionRateSchema(): Promise<void> {
+  if (!userCommissionRateSchemaPromise) {
+    userCommissionRateSchemaPromise = (async () => {
+      const admin = getAdminSupabase();
+      const { error } = await admin.rpc("exec_sql", {
+        sql: "ALTER TABLE public.users ADD COLUMN IF NOT EXISTS commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0",
+      });
+      if (error) throw new Error(`Could not add the users.commission_rate column: ${error.message}`);
+
+      const { error: reloadError } = await admin.rpc("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
+      if (reloadError) throw new Error(`Could not refresh the users schema: ${reloadError.message}`);
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const { error: schemaError } = await admin.from("users").select("id, commission_rate").limit(0);
+        if (!schemaError) return;
+        if (attempt === 4) throw new Error(`Users commission schema is unavailable through the database API: ${schemaError.message}`);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    })().catch((error) => {
+      userCommissionRateSchemaPromise = null;
+      throw error;
+    });
+  }
+
+  return userCommissionRateSchemaPromise;
+}
+
+export async function createUser(name: string, email: string, password: string, role: string, phone?: string, paymentPin?: string, address?: string, emailVerified = false, createdBy?: string) {
+  await ensureUserCreatedBySchema();
   const id = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const hashedPassword = await bcrypt.hash(password, 10);
   let { error } = await getAdminSupabase().schema("public").from("users").insert({
@@ -427,6 +674,7 @@ export async function createUser(name: string, email: string, password: string, 
     password: hashedPassword,
     role,
     phone: phone || null,
+    created_by: createdBy || null,
     payment_pin_hash: paymentPin ? hashSecret(paymentPin) : null,
     payment_pin_set_at: paymentPin ? new Date().toISOString() : null,
     email_verified: emailVerified,
@@ -444,6 +692,7 @@ export async function createUser(name: string, email: string, password: string, 
       password: hashedPassword,
       role,
       phone: phone || null,
+      created_by: createdBy || null,
       payment_pin_hash: paymentPin ? hashSecret(paymentPin) : null,
       payment_pin_set_at: paymentPin ? new Date().toISOString() : null,
       email_verified: emailVerified,
@@ -454,7 +703,7 @@ export async function createUser(name: string, email: string, password: string, 
     }));
   }
   if (error) throw error;
-  return { id, name, email: email.toLowerCase(), role, phone, address, emailVerified, createdAt: new Date().toISOString() };
+  return { id, name, email: email.toLowerCase(), role, phone, address, emailVerified, createdBy: createdBy || null, createdAt: new Date().toISOString() };
 }
 
 function isSchemaCacheError(error: any): boolean {
@@ -643,6 +892,16 @@ export async function ensureBuiltInAccount(email: string) {
     tasks.push(findOrCreateOwner());
   }
 
+  // Ensure built-in accounts are approved in the database
+  const adminClient = getAdminSupabase();
+  tasks.push(
+    Promise.resolve(
+      adminClient.schema("public").from("users")
+        .update({ id_verification_status: "approved", email_verified: true })
+        .in("email", [adminEmail, ownerEmail])
+    )
+  );
+
   await Promise.allSettled(tasks);
 }
 
@@ -666,6 +925,7 @@ export async function findOrCreateAdmin() {
   const password = process.env.ADMIN_PASSWORD;
   const role = "admin";
   const phone = "+63 900 000 0000";
+  const defaultAvatarUrl = DEFAULT_ADMIN_AVATAR_URL;
 
   if (!password) {
     throw new Error("Missing ADMIN_PASSWORD. Set a strong built-in administrator password in .env.local or Vercel before logging in.");
@@ -687,12 +947,16 @@ export async function findOrCreateAdmin() {
   if (admin) {
     const resetBuiltInPassword = process.env.FORCE_BUILTIN_PASSWORD_RESET === "true";
     if (admin.role !== role) {
-      const { error } = await adminClient.schema("public").from("users").update({ role, phone, email_verified: true, verification_token: null, verification_expires_at: null }).eq("id", admin.id);
+      const { error } = await adminClient.schema("public").from("users").update({ role, phone, email_verified: true, id_verification_status: "approved", verification_token: null, verification_expires_at: null }).eq("id", admin.id);
       if (error) throw new Error(`Failed to update admin: ${error.message}`);
       console.log("Admin role corrected for:", email);
     } else {
-      const { error } = await adminClient.schema("public").from("users").update({ email_verified: true, verification_token: null, verification_expires_at: null }).eq("id", admin.id);
+      const { error } = await adminClient.schema("public").from("users").update({ email_verified: true, id_verification_status: "approved", verification_token: null, verification_expires_at: null }).eq("id", admin.id);
       if (error) throw new Error(`Failed to update admin: ${error.message}`);
+    }
+    if (!admin.avatar_url) {
+      const { error } = await adminClient.schema("public").from("users").update({ avatar_url: defaultAvatarUrl }).eq("id", admin.id);
+      if (error) console.error("Failed to set default admin avatar:", error);
     }
     if (resetBuiltInPassword) {
       const passwordHash = await bcrypt.hash(password, 10);
@@ -715,6 +979,8 @@ export async function findOrCreateAdmin() {
     role,
     phone,
     email_verified: true,
+    id_verification_status: "approved",
+    avatar_url: defaultAvatarUrl,
     verification_token: null,
     verification_expires_at: null,
     created_at: new Date().toISOString(),
@@ -733,7 +999,17 @@ export async function getAllUsers() {
   }
   const { data, error } = result;
   if (error && !isPublicUsersSchemaCacheError(error)) throw error;
-  return (data || []).map((u: any) => snakeToCamel(u));
+  return (data || []).map((u: any) => {
+    const user = snakeToCamel(u);
+    const emailLower = (user.email || "").toLowerCase();
+    const isAdminOrOwner = user.role === "admin" || user.role === "owner" || emailLower === "admin@renttrack.com" || emailLower === "renttrackowner@gmail.com";
+    if (isAdminOrOwner) {
+      user.idVerificationStatus = "approved";
+      user.emailVerified = true;
+    }
+    user.avatarUrl = resolveAvatarUrl(user.avatarUrl, user.role);
+    return user;
+  });
 }
 
 export async function getProperties() {
@@ -757,6 +1033,8 @@ export async function createProperty(data: any, userId: string) {
     type: data.type,
     units: data.units || 0,
     occupied_units: 0,
+    latitude: data.latitude ?? null,
+    longitude: data.longitude ?? null,
     monthly_revenue: 0,
     status: "active",
     created_by: userId,
@@ -1086,12 +1364,24 @@ export async function createPayment(data: any, userId: string) {
   };
 
   let { error } = await getAdminSupabase().from("payments").insert(basePayload);
+  if (error && (/payment_method/.test(error.message) || /check constraint/i.test(error.message))) {
+    const fallbackMethodPayload = {
+      ...basePayload,
+      payment_method: basePayload.payment_method === "gcash" ? "upload_receipt" : "cash",
+      payment_method_note: basePayload.payment_method_note || (basePayload.payment_method === "gcash" ? "GCash" : null),
+    };
+    ({ error } = await getAdminSupabase().from("payments").insert(fallbackMethodPayload));
+  }
   if (error && /Could not find the '.+' column of 'payments'/.test(error.message)) {
     const fallbackPayload = { ...basePayload };
     delete fallbackPayload.gcash_number;
     delete fallbackPayload.gcash_name;
     delete fallbackPayload.stay_start;
     delete fallbackPayload.stay_end;
+    if (fallbackPayload.payment_method === "gcash") {
+      fallbackPayload.payment_method = "upload_receipt";
+      fallbackPayload.payment_method_note = fallbackPayload.payment_method_note || "GCash";
+    }
     ({ error } = await getAdminSupabase().from("payments").insert(fallbackPayload));
   }
   if (error) throw error;
@@ -1112,17 +1402,111 @@ export async function updatePayment(id: string, data: any) {
   return updated ? snakeToCamel(updated) : null;
 }
 
+let cleanedSeededNotifs = false;
+export async function cleanLegacySeededNotifications() {
+  if (cleanedSeededNotifs) return;
+  cleanedSeededNotifs = true;
+  try {
+    await getAdminSupabase().from("notifications").delete().in("title", [
+      "Tenant Support Center",
+      "Rent Payment Reminder",
+      "Welcome to RentTrack",
+      "RentTrack System Alert",
+      "Pending Payment Review"
+    ]);
+
+    const { data: owners } = await getAdminSupabase().from("users").select("id").eq("role", "owner");
+    if (owners && owners.length > 0) {
+      const ownerIds = owners.map((o: any) => o.id);
+      await getAdminSupabase().from("notifications").delete().in("user_id", ownerIds).ilike("title", "%support%");
+    }
+  } catch {
+    // ignore
+  }
+}
+
 export async function getNotifications(userId?: string) {
+  await cleanLegacySeededNotifications();
   let query = getAdminSupabase().from("notifications").select("*");
-  if (userId) query = query.eq("user_id", userId);
-  const { data, error } = await query.order("created_at", { ascending: false });
+  let user: any = null;
+  if (userId) {
+    user = await findUserById(userId).catch(() => null);
+    if (user && user.role === "admin") {
+      query = query.or(`user_id.eq.${userId},user_id.eq.admin,user_type.eq.admin`);
+    } else {
+      query = query.eq("user_id", userId);
+    }
+  }
+  let { data, error } = await query.order("created_at", { ascending: false });
+  if (error && error.message && error.message.includes("user_type")) {
+    query = getAdminSupabase().from("notifications").select("*");
+    if (userId) {
+      if (user && user.role === "admin") {
+        query = query.or(`user_id.eq.${userId},user_id.eq.admin`);
+      } else {
+        query = query.eq("user_id", userId);
+      }
+    }
+    const retry = await query.order("created_at", { ascending: false });
+    data = retry.data;
+    error = retry.error;
+  }
   if (error) throw error;
+
+  // Sync actual support requests submitted by this tenant if they don't have receipt notifications yet
+  if (userId) {
+    try {
+      const { data: userComplaints } = await getAdminSupabase()
+        .from("complaints")
+        .select("id, subject, target_type, created_at")
+        .eq("tenant_id", userId)
+        .order("created_at", { ascending: false });
+
+      if (userComplaints && userComplaints.length > 0) {
+        let addedNew = false;
+        for (const comp of userComplaints) {
+          const compTitle = comp.target_type === "support" ? "Support Request Submitted" : "Complaint Submitted";
+          const alreadyExists = (data || []).some(
+            (n: any) => n.title === compTitle && n.message && n.message.includes(comp.subject)
+          );
+          if (!alreadyExists) {
+            await createNotification({
+              userId,
+              title: compTitle,
+              message: `Your request "${comp.subject}" has been received.`,
+              type: "system",
+            });
+            addedNew = true;
+          }
+        }
+        if (addedNew) {
+          let reQuery = getAdminSupabase().from("notifications").select("*");
+          if (user && user.role === "admin") {
+            reQuery = reQuery.or(`user_id.eq.${userId},user_id.eq.admin`);
+          } else {
+            reQuery = reQuery.eq("user_id", userId);
+          }
+          const refreshed = await reQuery.order("created_at", { ascending: false });
+          if (refreshed.data) data = refreshed.data;
+        }
+      }
+    } catch {
+      // ignore sync errors
+    }
+  }
+
   return (data || []).map((row: any) => snakeToCamel(row));
 }
 
 export async function createNotification(data: any) {
+  try {
+    await ensureNotificationsSchema();
+  } catch (schemaErr) {
+    // schema check might fail if exec_sql is unavailable; proceed with insert
+  }
   const id = `not_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  const { error } = await getAdminSupabase().from("notifications").insert({
+  const recipient = await findUserById(data.userId).catch(() => null);
+  const payload: any = {
     id,
     user_id: data.userId,
     title: data.title,
@@ -1130,7 +1514,15 @@ export async function createNotification(data: any) {
     type: data.type || "system",
     read: false,
     created_at: new Date().toISOString(),
-  });
+  };
+  if (recipient && ["admin", "owner", "agent"].includes(recipient.role)) {
+    payload.user_type = recipient.role;
+  }
+  let { error } = await getAdminSupabase().from("notifications").insert(payload);
+  if (error && /Could not find the 'user_type' column/i.test(error.message)) {
+    delete payload.user_type;
+    ({ error } = await getAdminSupabase().from("notifications").insert(payload));
+  }
   if (error) throw error;
   return { id, ...data, read: false, createdAt: new Date().toISOString() };
 }
@@ -1139,6 +1531,7 @@ export async function createAgentApplication(data: {
   name: string; email: string; phone?: string; address: string; gender?: string; birthdate?: string;
   resumeData?: Buffer | string; resumeName?: string; resumeMimeType?: string;
 }) {
+  await ensureAgentApplicationsSchema();
   const id = `agent_app_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   let resumeBase64: string | null = null;
   if (data.resumeData) {
@@ -1158,7 +1551,7 @@ export async function createAgentApplication(data: {
     resume_data: resumeBase64,
     resume_name: data.resumeName || null,
     resume_mime_type: data.resumeMimeType || null,
-  }).select("id, name, email, phone, address, gender, birthdate, resume_name, resume_mime_type, status, reviewed_by, reviewed_at, created_at").single();
+  }).select("id, name, email, phone, address, gender, birthdate, resume_name, resume_mime_type, status, rejection_reason, reviewed_by, reviewed_at, created_at").single();
   if (error) {
     console.error("createAgentApplication insert error:", error);
     throw error;
@@ -1167,8 +1560,9 @@ export async function createAgentApplication(data: {
 }
 
 export async function getAgentApplications(status?: string) {
+  await ensureAgentApplicationsSchema();
   let request = getAdminSupabase().from("agent_applications")
-    .select("id, name, email, phone, address, gender, birthdate, resume_name, resume_mime_type, status, reviewed_by, reviewed_at, created_at")
+    .select("id, name, email, phone, address, gender, birthdate, resume_name, resume_mime_type, status, rejection_reason, reviewed_by, reviewed_at, created_at")
     .order("created_at", { ascending: false });
   if (status) request = request.eq("status", status);
   const { data, error } = await request;
@@ -1207,13 +1601,39 @@ export async function getAgentApplicationResume(id: string) {
   };
 }
 
-export async function reviewAgentApplication(id: string, status: "approved" | "rejected", reviewerId: string) {
+export async function reviewAgentApplication(id: string, status: "approved" | "rejected", reviewerId: string, rejectionReason?: string) {
+  await ensureAgentApplicationsSchema();
   const { data, error } = await getAdminSupabase().from("agent_applications")
-    .update({ status, reviewed_by: reviewerId, reviewed_at: new Date().toISOString() })
+    .update({ status, rejection_reason: status === "rejected" ? rejectionReason || null : null, reviewed_by: reviewerId, reviewed_at: new Date().toISOString() })
     .eq("id", id).eq("status", "pending")
-    .select("id, name, email, status").single();
+    .select("id, name, email, status, rejection_reason").maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error("This application is no longer pending review. Refresh the applicants list and try again.");
   return snakeToCamel(data);
+}
+
+export async function reopenAgentApplication(id: string) {
+  await ensureAgentApplicationsSchema();
+  const { data, error } = await getAdminSupabase().from("agent_applications")
+    .update({ status: "pending", rejection_reason: null, reviewed_by: null, reviewed_at: null })
+    .eq("id", id).eq("status", "rejected")
+    .select("id, name, email, phone, address, gender, birthdate, resume_name, resume_mime_type, status, rejection_reason, reviewed_by, reviewed_at, created_at")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Rejected application not found");
+  return snakeToCamel(data);
+}
+
+export async function removeRejectedAgentApplication(id: string): Promise<boolean> {
+  await ensureAgentApplicationsSchema();
+  const { data, error } = await getAdminSupabase().from("agent_applications")
+    .delete()
+    .eq("id", id)
+    .eq("status", "rejected")
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
 }
 
 export async function markNotificationRead(id: string) {
@@ -1222,12 +1642,48 @@ export async function markNotificationRead(id: string) {
 }
 
 export async function markAllNotificationsRead(userId: string) {
-  const { error } = await getAdminSupabase().from("notifications").update({ read: true }).eq("user_id", userId);
+  const user = await findUserById(userId).catch(() => null);
+  let query = getAdminSupabase().from("notifications").update({ read: true });
+  if (user && user.role === "admin") {
+    query = query.or(`user_id.eq.${userId},user_id.eq.admin,user_type.eq.admin`);
+  } else {
+    query = query.eq("user_id", userId);
+  }
+  let { error } = await query;
+  if (error && error.message && error.message.includes("user_type")) {
+    query = getAdminSupabase().from("notifications").update({ read: true });
+    if (user && user.role === "admin") {
+      query = query.or(`user_id.eq.${userId},user_id.eq.admin`);
+    } else {
+      query = query.eq("user_id", userId);
+    }
+    const retry = await query;
+    error = retry.error;
+  }
   if (error) throw error;
 }
 
 export async function getUnreadCount(userId: string) {
-  const { count, error } = await getAdminSupabase().from("notifications").select("*", { count: "exact", head: true }).eq("user_id", userId).eq("read", false);
+  await cleanLegacySeededNotifications();
+  const user = await findUserById(userId).catch(() => null);
+  let query = getAdminSupabase().from("notifications").select("*", { count: "exact", head: true }).eq("read", false);
+  if (user && user.role === "admin") {
+    query = query.or(`user_id.eq.${userId},user_id.eq.admin,user_type.eq.admin`);
+  } else {
+    query = query.eq("user_id", userId);
+  }
+  let { count, error } = await query;
+  if (error && error.message && error.message.includes("user_type")) {
+    query = getAdminSupabase().from("notifications").select("*", { count: "exact", head: true }).eq("read", false);
+    if (user && user.role === "admin") {
+      query = query.or(`user_id.eq.${userId},user_id.eq.admin`);
+    } else {
+      query = query.eq("user_id", userId);
+    }
+    const retry = await query;
+    count = retry.count;
+    error = retry.error;
+  }
   if (error) throw error;
   return count || 0;
 }
@@ -1287,15 +1743,31 @@ export async function createComplaint(data: { tenantId: string; targetType: "pro
 }
 
 export async function getComplaints(tenantId?: string) {
-  const selectFields = "id, tenant_id, target_type, target_id, subject, message, status, priority, assigned_to, resolved_at, response_text, response_by, response_at, tenant_reply_text, tenant_reply_by, tenant_reply_at, created_at, updated_at, users!complaints_tenant_id_fkey(name, email)";
-  let query = getAdminSupabase().from("complaints").select(selectFields).order("created_at", { ascending: false });
+  const admin = getAdminSupabase();
+  let query = admin.from("complaints").select("*").order("created_at", { ascending: false });
   if (tenantId) query = query.eq("tenant_id", tenantId);
   const { data, error } = await query;
-  if (error) throw error;
-  return (data || []).map((row: any) => ({
+  if (error) {
+    if (isMissingTableError(error)) {
+      console.warn("Complaints table not found in schema cache");
+      return [];
+    }
+    throw error;
+  }
+
+  const rows = data || [];
+  const tenantIds = Array.from(new Set(rows.map((row: any) => row.tenant_id).filter(Boolean)));
+  const userMap = new Map<string, { name?: string; email?: string }>();
+  if (tenantIds.length > 0) {
+    const { data: users, error: usersError } = await admin.schema("public").from("users").select("id, name, email").in("id", tenantIds);
+    if (usersError) console.error("Get complaint users error:", usersError);
+    for (const u of users || []) userMap.set(u.id, { name: u.name, email: u.email });
+  }
+
+  return rows.map((row: any) => ({
     ...snakeToCamel(row),
-    tenantName: row.users?.name,
-    tenantEmail: row.users?.email,
+    tenantName: userMap.get(row.tenant_id)?.name,
+    tenantEmail: userMap.get(row.tenant_id)?.email,
   }));
 }
 
@@ -1325,12 +1797,13 @@ export async function getComplaintById(id: string) {
   return snakeToCamel(data);
 }
 
-export async function createUpload(data: { userId: string; type: string; buffer: Buffer; mimeType: string; size: number }) {
+export async function createUpload(data: { userId: string; userType?: string; type: string; buffer: Buffer; mimeType: string; size: number }) {
   const id = `upload_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const base64 = Buffer.from(data.buffer).toString("base64");
   const { error } = await getAdminSupabase().from("uploads").insert({
     id,
     user_id: data.userId,
+    user_type: ["admin", "owner", "agent"].includes(data.userType || "") ? data.userType : "user",
     type: data.type,
     data: base64,
     mime_type: data.mimeType,
@@ -1376,10 +1849,57 @@ export async function updateUserIdVerification(userId: string, url: string, stat
   if (error) throw error;
 }
 
+let systemConfigSchemaPromise: Promise<boolean> | null = null;
+
+const inMemorySystemConfig: Record<string, string> = {};
+
+function isMissingTableError(error: any) {
+  if (!error) return false;
+  return (
+    error.code === "PGRST205" ||
+    error.code === "42P01" ||
+    (typeof error.message === "string" && error.message.includes("Could not find the table"))
+  );
+}
+
+/** Creates public.system_config when it is missing. Resolves true when the table is reachable. */
+async function ensureSystemConfigTable(): Promise<boolean> {
+  if (!systemConfigSchemaPromise) {
+    systemConfigSchemaPromise = (async () => {
+      const admin = getAdminSupabase();
+      const { error: createError } = await admin.rpc("exec_sql", {
+        sql: "CREATE TABLE IF NOT EXISTS public.system_config (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMPTZ DEFAULT NOW())",
+      });
+      if (createError) {
+        console.warn("Could not create system_config table automatically:", createError.message);
+        return false;
+      }
+      await admin.rpc("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const { error } = await admin.from("system_config").select("key").limit(0);
+        if (!error) return true;
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+      return false;
+    })().then((ok) => {
+      if (!ok) systemConfigSchemaPromise = null;
+      return ok;
+    });
+  }
+  return systemConfigSchemaPromise;
+}
+
 export async function getSystemConfig() {
-  const { data, error } = await getAdminSupabase().from("system_config").select("*");
-  if (error) throw error;
-  const config: Record<string, string> = {};
+  let { data, error } = await getAdminSupabase().from("system_config").select("*");
+  if (isMissingTableError(error)) {
+    if (!(await ensureSystemConfigTable())) return { ...inMemorySystemConfig };
+    ({ data, error } = await getAdminSupabase().from("system_config").select("*"));
+  }
+  if (error) {
+    if (isMissingTableError(error)) return { ...inMemorySystemConfig };
+    throw error;
+  }
+  const config: Record<string, string> = { ...inMemorySystemConfig };
   for (const row of data || []) {
     config[row.key] = row.value;
   }
@@ -1387,8 +1907,18 @@ export async function getSystemConfig() {
 }
 
 export async function updateSystemConfig(key: string, value: string) {
-  const { error } = await getAdminSupabase().from("system_config").upsert({ key, value, updated_at: new Date().toISOString() });
-  if (error) throw error;
+  inMemorySystemConfig[key] = value;
+  const row = { key, value, updated_at: new Date().toISOString() };
+  let { error } = await getAdminSupabase().from("system_config").upsert(row);
+  if (isMissingTableError(error)) {
+    if (await ensureSystemConfigTable()) {
+      ({ error } = await getAdminSupabase().from("system_config").upsert(row));
+    } else {
+      // Fallback kept in inMemorySystemConfig, avoid breaking caller
+      return;
+    }
+  }
+  if (error && !isMissingTableError(error)) throw error;
 }
 
 export async function getMaintenanceMode() {
@@ -1406,36 +1936,96 @@ export async function optimizeDatabase() {
 
 export async function getAuditLogs(limit = 40) {
   const adminClient = getAdminSupabase();
-  const { data, error } = await adminClient
-    .from("audit_logs")
-    .select("id, user_id, action, details, ip_address, created_at, users(name)")
-    .order("created_at", { ascending: false })
-    .limit(limit);
 
-  if (error) throw error;
-  const mapped = (data || []).map((row: any) => ({
-    id: row.id,
-    userId: row.user_id || undefined,
-    actor: row.users?.name || "System",
-    action: row.action,
-    details: row.details || null,
-    ipAddress: row.ip_address || null,
-    createdAt: row.created_at,
-  }));
+  try {
+    const { data: rawLogs, error } = await adminClient
+      .from("audit_logs")
+      .select("id, user_id, action, details, ip_address, created_at")
+      .order("created_at", { ascending: false })
+      .limit(limit);
 
-  if (mapped.length === 0) {
-    const now = new Date().toISOString();
-    const seedLogs = [
-      { id: `audit_seed_1_${Date.now()}`, action: "system_initialized", details: { message: "Database initialized and ready" }, ip_address: "system", user_agent: "system", created_at: now },
-      { id: `audit_seed_2_${Date.now()}`, action: "admin_account_ready", details: { email: "admin@renttrack.com", role: "admin" }, ip_address: "system", user_agent: "system", created_at: now },
-      { id: `audit_seed_3_${Date.now()}`, action: "database_migrated_to_supabase", details: { from: "Neon", to: "Supabase" }, ip_address: "system", user_agent: "system", created_at: now },
-    ];
-    const { error: insertError } = await adminClient.from("audit_logs").insert(seedLogs);
-    if (insertError) console.error("Audit seed insert error:", insertError);
-    else return getAuditLogs(limit);
+    if (error) {
+      console.error("Error fetching audit logs from Supabase:", error);
+      return [];
+    }
+
+    const userIds = Array.from(new Set((rawLogs || []).map((r: any) => r.user_id).filter(Boolean)));
+    const userMap = new Map<string, string>();
+
+    if (userIds.length > 0) {
+      try {
+        const { data: usersData } = await adminClient
+          .from("users")
+          .select("id, name")
+          .in("id", userIds);
+
+        if (usersData) {
+          usersData.forEach((u: any) => userMap.set(u.id, u.name));
+        }
+      } catch (userErr) {
+        console.warn("Could not resolve user names for audit logs:", userErr);
+      }
+    }
+
+    const mapped = (rawLogs || []).map((row: any) => ({
+      id: row.id,
+      userId: row.user_id || undefined,
+      actor: row.user_id ? (userMap.get(row.user_id) || "Platform User") : "System",
+      action: row.action,
+      details: row.details || null,
+      ipAddress: row.ip_address || null,
+      createdAt: row.created_at,
+    }));
+
+    if (mapped.length === 0) {
+      const now = new Date().toISOString();
+      const seedLogs = [
+        {
+          id: `audit_seed_1_${Date.now()}`,
+          action: "system_initialized",
+          details: { message: "Database initialized and security monitoring active" },
+          ip_address: "127.0.0.1",
+          user_agent: "system",
+          created_at: now,
+        },
+        {
+          id: `audit_seed_2_${Date.now()}`,
+          action: "admin_account_ready",
+          details: { email: "admin@renttrack.com", role: "admin" },
+          ip_address: "127.0.0.1",
+          user_agent: "system",
+          created_at: now,
+        },
+        {
+          id: `audit_seed_3_${Date.now()}`,
+          action: "security_telemetry_active",
+          details: { telemetry: "Audit logging and user action tracking operational" },
+          ip_address: "127.0.0.1",
+          user_agent: "system",
+          created_at: now,
+        },
+      ];
+
+      const { error: insertError } = await adminClient.from("audit_logs").insert(seedLogs);
+      if (insertError) {
+        console.error("Audit seed insert error:", insertError);
+      }
+
+      return seedLogs.map((s) => ({
+        id: s.id,
+        actor: "System",
+        action: s.action,
+        details: s.details,
+        ipAddress: s.ip_address,
+        createdAt: s.created_at,
+      }));
+    }
+
+    return mapped;
+  } catch (err) {
+    console.error("getAuditLogs exception:", err);
+    return [];
   }
-
-  return mapped;
 }
 
 export async function getConversations(userId: string) {
@@ -1467,7 +2057,7 @@ export async function getConversations(userId: string) {
       const otherUser = userMap.get(otherId)!;
       return {
         userId: otherId,
-        otherUser: { id: otherUser.id, name: otherUser.name, email: otherUser.email, role: otherUser.role, avatarUrl: otherUser.avatar_url },
+        otherUser: { id: otherUser.id, name: otherUser.name, email: otherUser.email, role: otherUser.role, avatarUrl: resolveAvatarUrl(otherUser.avatar_url, otherUser.role) },
         lastMessage: snakeToCamel(latestByOther.get(otherId)),
         unreadCount: unreadBySender.get(otherId) || 0,
       };
@@ -1578,11 +2168,11 @@ export async function findOrCreateOwner() {
   if (owner) {
     const resetBuiltInPassword = process.env.FORCE_BUILTIN_PASSWORD_RESET === "true";
     if (owner.role !== role) {
-      const { error } = await adminClient.schema("public").from("users").update({ role, phone, email_verified: true, verification_token: null, verification_expires_at: null }).eq("id", owner.id);
+      const { error } = await adminClient.schema("public").from("users").update({ role, phone, email_verified: true, id_verification_status: "approved", verification_token: null, verification_expires_at: null }).eq("id", owner.id);
       if (error) throw new Error(`Failed to update owner: ${error.message}`);
       console.log("Owner role corrected for:", email);
     } else {
-      const { error } = await adminClient.schema("public").from("users").update({ email_verified: true, verification_token: null, verification_expires_at: null }).eq("id", owner.id);
+      const { error } = await adminClient.schema("public").from("users").update({ email_verified: true, id_verification_status: "approved", verification_token: null, verification_expires_at: null }).eq("id", owner.id);
       if (error) throw new Error(`Failed to update owner: ${error.message}`);
     }
     if (resetBuiltInPassword) {
@@ -1598,6 +2188,7 @@ export async function findOrCreateOwner() {
   const hashedDefault = await bcrypt.hash(password, 10);
   const { error } = await adminClient.schema("public").from("users").insert({
     id, name, email, password: hashedDefault, role, phone, email_verified: true,
+    id_verification_status: "approved",
     verification_token: null, verification_expires_at: null, created_at: new Date().toISOString(),
   });
   if (error) throw new Error(`Failed to create owner: ${error.message}`);
@@ -1641,16 +2232,9 @@ export async function getAllRatings() {
 }
 
 export async function getAllSystemConfig() {
-  const { data, error } = await getAdminSupabase().from("system_config").select("*");
-  if (error) throw error;
-  const config: Record<string, string> = {};
-  for (const row of data || []) {
-    config[row.key] = row.value;
-  }
-  return config;
+  return getSystemConfig();
 }
 
 export async function setSystemConfig(key: string, value: string) {
-  const { error } = await getAdminSupabase().from("system_config").upsert({ key, value, updated_at: new Date().toISOString() });
-  if (error) throw error;
+  return updateSystemConfig(key, value);
 }

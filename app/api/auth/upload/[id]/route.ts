@@ -20,15 +20,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return withSecurityHeaders(withCorsHeaders(request, response));
     }
 
-    const isPublicListingImage = upload.type === "property" || upload.type === "unit";
-    const currentUser = await getCurrentUser(request);
-    const userId = getSessionUserId(request);
-    if (!isPublicListingImage && !currentUser) {
+    const isPublicUpload = ["property", "unit", "avatar"].includes(upload.type);
+    const currentUser = isPublicUpload ? null : await getCurrentUser(request);
+    const userId = isPublicUpload ? null : getSessionUserId(request);
+    if (!isPublicUpload && !currentUser) {
       const response = NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
       return withSecurityHeaders(withCorsHeaders(request, response));
     }
 
-    const canAccess = isPublicListingImage || upload.user_id === userId || ["admin", "owner", "agent"].includes(currentUser?.role || "");
+    const canAccess = isPublicUpload || upload.user_id === userId || ["admin", "owner", "agent"].includes(currentUser?.role || "");
     if (!canAccess) {
       const response = NextResponse.json({ success: false, error: "Access denied" }, { status: 403 });
       await logAudit(userId || "unknown", "upload_access_denied", { uploadId: resolvedParams.id }, getIp(request), request.headers.get("user-agent") || "unknown");
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const response = new NextResponse(buffer, {
       headers: {
         "Content-Type": upload.mime_type || "application/octet-stream",
-        "Cache-Control": isPublicListingImage ? "public, max-age=3600, immutable" : "private, max-age=3600",
+        "Cache-Control": isPublicUpload ? "public, max-age=3600, immutable" : "private, max-age=3600",
         "X-Content-Type-Options": "nosniff",
         "Content-Disposition": `inline; filename="upload_${resolvedParams.id}"`,
       },

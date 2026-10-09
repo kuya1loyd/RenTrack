@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useDragControls } from "framer-motion";
 import { X, Send, User, Image as ImageIcon, Mic, Square, Phone, Video, Home } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
@@ -60,6 +61,21 @@ export default function MessagingModal({ isOpen, onClose, otherUser, properties 
   const dragControls = useDragControls();
   const availableProperties = loadedProperties || [];
 
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   useEffect(() => {
     setLoadedProperties(properties);
   }, [properties]);
@@ -67,9 +83,9 @@ export default function MessagingModal({ isOpen, onClose, otherUser, properties 
   useEffect(() => {
     if (!isOpen || availableProperties.length > 0) return;
     Promise.all([getProperties(), getUnits()]).then(([propertyData, unitData]) => {
-      setLoadedProperties(propertyData.map((property: Property) => ({
+      setLoadedProperties((propertyData || []).map((property: Property) => ({
         ...property,
-        unitNames: unitData.filter((unit: Unit) => unit.propertyId === property.id).map((unit: Unit) => unit.unitNumber),
+        unitNames: (unitData || []).filter((unit: Unit) => unit?.propertyId === property.id).map((unit: Unit) => unit.unitNumber),
       })));
     }).catch(() => setLoadedProperties([]));
   }, [isOpen, availableProperties.length]);
@@ -79,7 +95,7 @@ export default function MessagingModal({ isOpen, onClose, otherUser, properties 
   };
 
   useEffect(() => {
-    if (isOpen && otherUser.id) {
+    if (isOpen && otherUser?.id) {
       setLoading(true);
       setMessages([]);
       setNewMessage("");
@@ -102,7 +118,7 @@ export default function MessagingModal({ isOpen, onClose, otherUser, properties 
         .finally(() => setLoading(false));
       scrollToBottom();
     }
-  }, [isOpen, otherUser.id]);
+  }, [isOpen, otherUser?.id]);
 
   useEffect(() => {
     scrollToBottom();
@@ -309,15 +325,16 @@ export default function MessagingModal({ isOpen, onClose, otherUser, properties 
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  if (!isOpen || !otherUser.id) return null;
+  if (!isOpen || !otherUser?.id) return null;
 
-  return (
-    <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4">
+  const modalContent = (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-0 sm:p-4">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="pointer-events-none absolute inset-0 bg-black/40"
+        className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+        onClick={onClose}
       />
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -329,7 +346,8 @@ export default function MessagingModal({ isOpen, onClose, otherUser, properties 
         dragListener={false}
         dragMomentum={false}
         dragElastic={0.05}
-        className="pointer-events-auto relative w-full h-full sm:h-[600px] sm:max-w-lg sm:rounded-3xl bg-white sm:shadow-2xl flex flex-col overflow-hidden"
+        className="relative z-10 w-full h-full sm:h-[600px] sm:max-w-lg sm:rounded-3xl bg-white sm:shadow-2xl flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Header - Messenger style */}
         <div
@@ -340,8 +358,11 @@ export default function MessagingModal({ isOpen, onClose, otherUser, properties 
         >
           <button
             type="button"
-            onClick={onClose}
-            className="h-9 w-9 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            className="h-9 w-9 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors cursor-pointer z-50 pointer-events-auto"
             aria-label="Close message"
           >
             <X className="h-5 w-5 text-white" />
@@ -646,4 +667,9 @@ export default function MessagingModal({ isOpen, onClose, otherUser, properties 
       </motion.div>
     </div>
   );
+
+  if (mounted && typeof document !== "undefined") {
+    return createPortal(modalContent, document.body);
+  }
+  return modalContent;
 }

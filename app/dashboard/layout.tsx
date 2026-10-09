@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { createPortal } from "react-dom";
 import {
@@ -20,7 +21,6 @@ import {
   X,
   AlertTriangle,
   User,
-  MessageSquare,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useRouter, usePathname } from "next/navigation";
@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { getNotifications, markNotificationRead, markAllNotificationsRead, getUnreadMessageCount, Notification } from "@/lib/data";
 import Link from "next/link";
 import MessagingPanel from "@/components/messaging-panel";
+import MessagingModal from "@/components/messaging-modal";
 import { getNotificationDashboardHref } from "@/lib/notification-routing";
 
 interface NavItem {
@@ -69,6 +70,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
+  const [selectedConversation, setSelectedConversation] = useState<any>(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [sidebarLoading, setSidebarLoading] = useState(false);
@@ -80,6 +82,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       router.push("/");
     }
   }, [isLoading, isAuthenticated, router]);
+
+  useEffect(() => {
+    // If user has a dedicated panel layout (tenant, admin, owner, agent), let that layout manage messaging
+    if (user?.role && ["tenant", "admin", "owner", "agent"].includes(user.role)) return;
+
+    const handleOpenMessages = (event: Event) => {
+      const customEvent = event as CustomEvent<{ otherUser?: any }>;
+      if (customEvent.detail?.otherUser) {
+        setSelectedConversation({
+          userId: customEvent.detail.otherUser.id,
+          otherUser: customEvent.detail.otherUser,
+        });
+        setShowMessages(false);
+      } else {
+        setShowMessages(true);
+      }
+    };
+
+    window.addEventListener("renttrack-open-messages", handleOpenMessages);
+    return () => window.removeEventListener("renttrack-open-messages", handleOpenMessages);
+  }, [user?.role]);
 
   useEffect(() => {
     if (user) {
@@ -134,9 +157,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return item.label;
   };
 
-   const isOwnerOverview = pathname === "/dashboard/owner" || pathname.startsWith("/dashboard/owner/");
-   const isAgentOverview = pathname === "/dashboard/agent" || pathname.startsWith("/dashboard/agent/");
-   const isTenantOverview = pathname === "/dashboard/tenant" || pathname.startsWith("/dashboard/tenant/");
    const isActiveItem = (item: NavItem) => {
      if (item.href === "/dashboard/owner") {
        return pathname === "/dashboard/owner" || pathname === "/dashboard/owner/";
@@ -148,7 +168,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
    };
 
    return (
-     <div className={cn("min-h-screen", (!isOwner && !isAgent && !isTenant) ? "flex bg-surface-secondary" : "")}>
+     <div className={cn("min-h-screen", (!isOwner && !isAgent && !isTenant && !isAdmin) ? "flex bg-surface-secondary" : "")}>
       <AnimatePresence initial={false}>
         {mobileSidebarOpen && !isTenant && !isAdmin && !isAgent && (
           <motion.div
@@ -175,11 +195,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className={cn("flex items-center h-16 px-4 border-b border-border", sidebarOpen ? "justify-between" : "justify-center")}>
               {sidebarOpen ? (
                 <Link href="/" className="flex items-center gap-2">
-                  <img src="/images/landing/logo.png" alt="RentTrack" className="h-8 w-8 rounded-full object-contain" />
+                  <Image src="/images/landing/logo.png" alt="RentTrack" width={32} height={32} className="h-8 w-8 rounded-full object-contain" />
                   <span className="font-bold text-foreground">Rent<span className="text-primary-500">Track</span></span>
                 </Link>
               ) : (
-                <img src="/images/landing/logo.png" alt="RT" className="h-8 w-8 rounded-full object-contain" />
+                <Image src="/images/landing/logo.png" alt="RT" width={32} height={32} className="h-8 w-8 rounded-full object-contain" />
               )}
               <button onClick={() => setMobileSidebarOpen(false)} className="lg:hidden p-1 rounded-lg hover:bg-surface-secondary">
                 <X className="h-4 w-4" />
@@ -262,28 +282,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
 
             <div className="flex items-center gap-2">
-                {/* Messages Icon */}
-                <div className="relative">
-                  <button
-                    onClick={() => setShowMessages(!showMessages)}
-                    className="relative p-2 rounded-lg hover:bg-surface-secondary transition-colors text-text-secondary hover:text-foreground"
-                  >
-                    <MessageSquare className="h-5 w-5" />
-                    {unreadMessageCount > 0 && (
-                      <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-                        {unreadMessageCount}
-                      </span>
-                    )}
-                  </button>
-                  <AnimatePresence initial={false}>
-                    {showMessages && (
-                      <MessagingPanel
-                        isOpen={showMessages}
-                        onClose={() => setShowMessages(false)}
-                      />
-                    )}
-                  </AnimatePresence>
-                </div>
 
                 <div className="relative">
                 <button
@@ -453,6 +451,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {isOwner && (
           <>{children}</>
+        )}
+
+        {/* Messaging Panel Modal - Only for fallback generic dashboard layout */}
+        {!isTenant && !isAdmin && !isAgent && !isOwner && (
+          <>
+            <AnimatePresence>
+              {showMessages && (
+                <MessagingPanel
+                  isOpen={showMessages}
+                  onClose={() => setShowMessages(false)}
+                  onSelectConversation={(conv) => {
+                    setSelectedConversation(conv);
+                    setShowMessages(false);
+                  }}
+                  asModal
+                />
+              )}
+            </AnimatePresence>
+
+            {/* Direct Conversation Messaging Modal */}
+            {selectedConversation?.otherUser && (
+              <MessagingModal
+                isOpen={Boolean(selectedConversation?.otherUser)}
+                onClose={() => setSelectedConversation(null)}
+                otherUser={selectedConversation.otherUser}
+              />
+            )}
+          </>
         )}
 
        <IncomingCallOverlay />

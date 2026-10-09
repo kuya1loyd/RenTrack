@@ -42,16 +42,22 @@ export default function DashboardOverview() {
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && user?.role) {
+    if (!isLoading) {
+      if (!user) {
+        router.replace("/");
+        return;
+      }
       setIsRedirecting(true);
       if (user.role === "tenant") {
-        router.push("/dashboard/tenant");
+        router.replace("/dashboard/tenant");
       } else if (user.role === "admin") {
-        router.push("/dashboard/admin");
+        router.replace("/dashboard/admin");
       } else if (user.role === "owner") {
-        router.push("/dashboard/owner");
+        router.replace("/dashboard/owner");
       } else if (user.role === "agent") {
-        router.push("/dashboard/agent");
+        router.replace("/dashboard/agent");
+      } else {
+        setIsRedirecting(false);
       }
     }
   }, [isLoading, user, router]);

@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { safeParseJson } from "@/lib/data";
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
@@ -22,7 +23,7 @@ function VerifyEmailContent() {
     }
 
     fetch(`/api/auth/verify-email?token=${token}`)
-      .then((res) => res.json())
+      .then((res) => safeParseJson(res))
       .then((data) => {
         if (data.success) {
           setStatus("success");

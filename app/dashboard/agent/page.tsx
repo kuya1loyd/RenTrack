@@ -1,43 +1,87 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { motion } from "framer-motion";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import {
-  LayoutDashboard, Home, UserPlus, ClipboardCheck, Clock,
-  CreditCard, FileText, Send,
-  CheckCircle2, MessageSquare, Send as SendIcon, Loader2, Mail, User,
-  Search, Plus, X, Download, Users, MoreHorizontal, ChevronDown, XCircle,
+  LayoutDashboard, Home, UserPlus, ClipboardCheck, Clock, ArrowUpRight, CalendarDays,
+  CreditCard, FileText, Send, Download,
+  CheckCircle2, Mail, User, Award,
+  Search, Plus, X, Users, ChevronDown, XCircle, Building2, RotateCcw, Phone,
 } from "lucide-react";
+import PropertyLocationMap from "@/components/property-location-map-loader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import CreateTenantModal from "@/components/create-tenant-modal";
+import AssignTenantModal from "@/components/assign-tenant-modal";
 import AccountRequestModal from "@/components/account-request-modal";
 import ReceiptModal from "@/components/receipt-modal";
 import { useAuth } from "@/lib/auth";
 import {
   getProperties, getUnits, getTenants, getPayments,
-  addTenant, updateTenantAssignment, verifyPayment,
-  getConversations, sendMessage, notifyAdmins, updateTenantVerification, updateTenantStatus,
-  getInquiries, updateInquiryStatus,
-  Property, Unit, TenantRecord, Payment, Conversation, ChatInquiry,
+  getConversations, notifyAdmins, updateTenantStatus,
+  getInquiries, updateInquiryStatus, safeParseJson,
+  updateInquiryProperty, Property, Unit, TenantRecord, Payment, Conversation, ChatInquiry,
 } from "@/lib/data";
 import { cn, formatCurrency, formatDate, formatDateTime, getTimeAgo, getInitials } from "@/lib/utils";
+import { downloadExcelReport, downloadPdfReport } from "@/lib/report-downloads";
 import { toast } from "sonner";
 import MessagingModal from "@/components/messaging-modal";
 import ProfilePanel from "@/components/profile-panel";
+import AgentCertificateManager from "@/components/agent-certificate-manager";
+import ContractsPanel from "@/components/contracts-panel";
+import UnitImageCarousel from "@/components/unit-image-carousel";
+import { ManagementBanner, UnitMetrics, UnitStatus, ManagementPagination } from "@/components/management-panel";
+import management from "@/components/management-panel.module.css";
 
-type Step = "overview" | "units" | "properties" | "assign" | "tenants" | "payments" | "history" | "messages" | "verifications" | "inquiries" | "profile";
+type Step = "overview" | "units" | "properties" | "assign" | "tenants" | "payments" | "history" | "messages" | "inquiries" | "contracts" | "profile" | "map" | "certificates";
+
+const LIST_PAGE_SIZE = 10;
+
+function PaginationControls({ page, total, onPageChange }: { page: number; total: number; onPageChange: (page: number) => void }) {
+  const pages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
+  const currentPage = Math.min(page, pages);
+  const start = total === 0 ? 0 : (currentPage - 1) * LIST_PAGE_SIZE + 1;
+  const end = Math.min(currentPage * LIST_PAGE_SIZE, total);
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+      <span>Showing {start}–{end} of {total}</span>
+      <div className="flex items-center gap-2">
+        <button type="button" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)} className="rounded-md border border-slate-200 px-2.5 py-1.5 font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
+        <span className="tabular-nums">Page {currentPage} of {pages}</span>
+        <button type="button" disabled={currentPage >= pages} onClick={() => onPageChange(currentPage + 1)} className="rounded-md border border-slate-200 px-2.5 py-1.5 font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">Next</button>
+      </div>
+    </div>
+  );
+}
+
+function searchablePaymentText(payment: Payment) {
+  return `${payment.id} ${payment.tenantName} ${payment.propertyName} ${payment.unitId} ${payment.status} ${payment.paymentMethod} ${payment.paymentDate} ${formatDate(payment.paymentDate)} ${payment.amountPaid} ${payment.amountDue} ${payment.balance} ${formatCurrency(payment.amountPaid)} ${formatCurrency(payment.amountDue)} ${formatCurrency(payment.balance)}`;
+}
+
+function searchablePropertyText(property: Property) {
+  return `${property.name} ${property.location} ${property.type} ${(property.features || []).join(" ")}`;
+}
+
+function searchableUnitText(unit: Unit) {
+  return `unit ${unit.id} ${unit.unitNumber} ${unit.floor || ""} ${unit.status} ${unit.rentAmount} ${formatCurrency(unit.rentAmount)}`;
+}
+
+function searchableInquiryText(inquiry: ChatInquiry) {
+  return `${inquiry.senderName} ${inquiry.senderEmail} ${inquiry.senderPhone || ""} ${inquiry.text} ${inquiry.replyText || ""} ${inquiry.visitorReply || ""} ${inquiry.status} ${inquiry.propertyId ? "property" : "general"}`;
+}
 
 const flowSteps: { key: Step; label: string; icon: React.ElementType }[] = [
-  { key: "overview", label: "Overview", icon: LayoutDashboard },
+  { key: "overview", label: "Dashboard", icon: LayoutDashboard },
+  { key: "map", label: "Property Map", icon: Home },
   { key: "units", label: "Units", icon: Home },
   { key: "tenants", label: "Tenants", icon: Users },
-  { key: "verifications", label: "Verifications", icon: CheckCircle2 },
   { key: "payments", label: "Payments", icon: CreditCard },
+  { key: "contracts", label: "Contracts", icon: FileText },
+  { key: "certificates", label: "Certificates", icon: Award },
   { key: "messages", label: "Messages", icon: Send },
   { key: "inquiries", label: "Inquiries", icon: Mail },
   { key: "profile", label: "Profile", icon: User },
@@ -45,6 +89,7 @@ const flowSteps: { key: Step; label: string; icon: React.ElementType }[] = [
 
 export default function AgentDashboard() {
   const { user, isAuthenticated, isLoading, refreshUser } = useAuth();
+  const reduceMotion = useReducedMotion();
   const [activeTab, setActiveTab] = useState<Step>("overview");
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -54,6 +99,7 @@ export default function AgentDashboard() {
   const [selectedConversation, setSelectedConversation] = useState<any>(null);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [inquiries, setInquiries] = useState<ChatInquiry[]>([]);
+  const [updatingInquiryType, setUpdatingInquiryType] = useState<string | null>(null);
   const [replyingInquiry, setReplyingInquiry] = useState<string | null>(null);
   const [inquiryReply, setInquiryReply] = useState("");
   const [replying, setReplying] = useState(false);
@@ -69,30 +115,40 @@ export default function AgentDashboard() {
   const [tenantSearch, setTenantSearch] = useState("");
   const [tenantListSearch, setTenantListSearch] = useState("");
   const [tenantListFilter, setTenantListFilter] = useState("all");
-  const [verificationSearch, setVerificationSearch] = useState("");
-  const [verificationFilter, setVerificationFilter] = useState("all");
   const [unitSearch, setUnitSearch] = useState("");
   const [unitStatusFilter, setUnitStatusFilter] = useState("all");
+  const [unitPropertyFilter, setUnitPropertyFilter] = useState("all");
+  const [unitTypeFilter, setUnitTypeFilter] = useState("all");
   const [assignmentPropertyFilter, setAssignmentPropertyFilter] = useState("all");
   const [paymentSearch, setPaymentSearch] = useState("");
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState("all");
+  const [paymentPage, setPaymentPage] = useState(1);
+  const [paymentSort, setPaymentSort] = useState<{ key: "paymentDate" | "tenantName" | "unitId" | "paymentMethod" | "amountPaid" | "status" | "id"; direction: "asc" | "desc" }>({ key: "paymentDate", direction: "desc" });
+  const [unitPage, setUnitPage] = useState(1);
+  const [unitSort, setUnitSort] = useState("unit-asc");
+  const [inquiryPage, setInquiryPage] = useState(1);
+  const [paymentDateFrom, setPaymentDateFrom] = useState("");
+  const [paymentDateTo, setPaymentDateTo] = useState("");
   const [messageSearch, setMessageSearch] = useState("");
   const [messageFilter, setMessageFilter] = useState("all");
   const [inquirySearch, setInquirySearch] = useState("");
   const [inquiryFilter, setInquiryFilter] = useState("all");
+  const [inquiryTypeFilter, setInquiryTypeFilter] = useState("all");
+  const [inquiryDateFrom, setInquiryDateFrom] = useState("");
+  const [inquiryDateTo, setInquiryDateTo] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showCreateTenantModal, setShowCreateTenantModal] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
   const [showAccountRequestModal, setShowAccountRequestModal] = useState(false);
-
-  const [assignForm, setAssignForm] = useState({ unitId: "", propertyName: "", unitNumber: "", rentAmount: 0, contractStart: "" });
   const [paymentFilter, setPaymentFilter] = useState<string>("all");
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [resubmittingId, setResubmittingId] = useState<string | null>(null);
+  const [, setIsRefreshing] = useState(false);
   const [viewingReceipt, setViewingReceipt] = useState<Payment | null>(null);
   const [initialLoad, setInitialLoad] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!user) return [];
     setIsRefreshing(true);
+    setLoadError(false);
     try {
       const [props, unitsData, tenantsData, paymentsData, convs, inquiriesData] = await Promise.all([
         getProperties(user),
@@ -102,10 +158,16 @@ export default function AgentDashboard() {
         getConversations(),
         getInquiries(),
       ]);
-      setProperties(props);
-      setUnits(unitsData);
+      const assignedProperties = props.filter((property) => property.agentId === user.id);
+      const assignedPropertyIds = new Set(assignedProperties.map((property) => property.id));
+      const assignedUnits = unitsData.filter((unit) => assignedPropertyIds.has(unit.propertyId));
+      setProperties(assignedProperties);
+      setUnits(assignedUnits);
       setTenants(tenantsData);
-      const filteredPayments = paymentsData.filter((p: any) => p.createdBy === user.id || p.verifiedBy === user.id);
+      const managedTenantIds = new Set(tenantsData.map((tenant) => tenant.id));
+      const filteredPayments = paymentsData.filter((payment: Payment) =>
+        payment.createdBy === user.id || payment.verifiedBy === user.id || managedTenantIds.has(payment.tenantId)
+      );
       setPayments(filteredPayments);
       setConversations(convs);
       const filteredInquiries = inquiriesData.filter((inq: any) => inq.agentId === user.id);
@@ -114,20 +176,13 @@ export default function AgentDashboard() {
       return filteredInquiries;
     } catch (err) {
       console.error("Agent dashboard load error:", err);
+      setLoadError(true);
       return [];
     } finally {
+      setInitialLoad(false);
       setIsRefreshing(false);
     }
   }, [user]);
-
-  const openThread = (inquiry: ChatInquiry) => {
-    const thread = (inquiries || [])
-      .filter((item) => item.senderEmail && inquiry.senderEmail && item.senderEmail.toLowerCase().trim() === inquiry.senderEmail.toLowerCase().trim())
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    setThreadMessages(thread);
-    setViewingThread(inquiry);
-    setThreadReply("");
-  };
 
   const closeThread = () => {
     setViewingThread(null);
@@ -145,6 +200,20 @@ export default function AgentDashboard() {
       }
     } catch {
       toast.error("Failed to mark as read");
+    }
+  };
+
+  const changeInquiryProperty = async (inquiry: ChatInquiry, propertyId: string | null) => {
+    if (updatingInquiryType === inquiry.id || propertyId === (inquiry.propertyId || null)) return;
+    setUpdatingInquiryType(inquiry.id);
+    try {
+      await updateInquiryProperty(inquiry.id, propertyId);
+      setInquiries((current) => current.map((item) => item.id === inquiry.id ? { ...item, propertyId: propertyId || undefined } : item));
+      toast.success(propertyId ? "Inquiry linked to property" : "Inquiry changed to general");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update inquiry category");
+    } finally {
+      setUpdatingInquiryType(null);
     }
   };
 
@@ -291,42 +360,112 @@ export default function AgentDashboard() {
   const activeTenants = tenants.filter((t) => t.status === "active");
   const pendingPayments = payments.filter((p) => p.status === "pending");
   const overduePayments = payments.filter((p) => p.status === "overdue");
+  const pendingInquiryCount = inquiries.filter((inquiry) => !["replied", "closed"].includes(inquiry.status.toLowerCase())).length;
+  const unreadConversationCount = conversations.reduce((total, conversation) => total + conversation.unreadCount, 0);
+  const paymentYear = new Date().getFullYear();
+  const monthlyPayments = Array.from({ length: 12 }, (_, month) => {
+    const monthPayments = payments.filter((payment) => {
+      const paymentDate = new Date(payment.paymentDate);
+      return !Number.isNaN(paymentDate.getTime()) &&
+        paymentDate.getFullYear() === paymentYear &&
+        paymentDate.getMonth() === month;
+    });
+    return {
+      month: new Intl.DateTimeFormat("en", { month: "short" }).format(new Date(paymentYear, month, 1)),
+      count: monthPayments.length,
+      amount: monthPayments.reduce((total, payment) => total + payment.amountPaid, 0),
+    };
+  });
+  const hasPaymentActivity = monthlyPayments.some((month) => month.count > 0);
+  const maxMonthlyPayments = Math.max(1, ...monthlyPayments.map((month) => month.count));
   const normalizedUnitSearch = unitSearch.trim().toLowerCase();
   const filteredUnitProperties = properties.map((property) => {
-    const propertyMatchesSearch = `${property.name} ${property.location}`.toLowerCase().includes(normalizedUnitSearch);
+    const propertySearchText = searchablePropertyText(property).toLowerCase();
+    const propertyMatchesSearch = propertySearchText.includes(normalizedUnitSearch);
     const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
     const visibleUnits = propertyUnits.filter((unit) =>
       (unitStatusFilter === "all" || unit.status === unitStatusFilter) &&
-      (!normalizedUnitSearch || propertyMatchesSearch || `unit ${unit.unitNumber} ${unit.status}`.toLowerCase().includes(normalizedUnitSearch))
+      (unitTypeFilter === "all" || property.type === unitTypeFilter) &&
+      (!normalizedUnitSearch || propertyMatchesSearch || searchableUnitText(unit).toLowerCase().includes(normalizedUnitSearch))
     );
     return { property, propertyUnits, visibleUnits, propertyMatchesSearch };
-  }).filter(({ propertyUnits, visibleUnits, propertyMatchesSearch }) =>
+  }).filter(({ property, propertyUnits, visibleUnits, propertyMatchesSearch }) =>
+    (unitPropertyFilter === "all" || property.id === unitPropertyFilter) &&
     (propertyMatchesSearch || visibleUnits.length > 0) &&
-    (visibleUnits.length > 0 || (propertyUnits.length === 0 && unitStatusFilter === "all" && propertyMatchesSearch))
+    (visibleUnits.length > 0 || (propertyUnits.length === 0 && unitStatusFilter === "all" && unitTypeFilter === "all" && propertyMatchesSearch))
   );
+  const filteredUnitRows = filteredUnitProperties.flatMap(({ property, visibleUnits }) =>
+    visibleUnits.map((unit) => ({ property, unit }))
+  );
+  const bannerProperty = properties.find((property) => property.imageUrls?.length || property.imageUrl);
+  const bannerUnit = units.find((unit) => unit.imageUrls?.length || unit.imageUrl);
+  const bannerPhotoImages = bannerProperty?.imageUrls?.length
+    ? bannerProperty.imageUrls
+    : bannerProperty?.imageUrl
+      ? [bannerProperty.imageUrl]
+      : bannerUnit?.imageUrls?.length
+        ? bannerUnit.imageUrls
+        : bannerUnit?.imageUrl
+          ? [bannerUnit.imageUrl]
+          : [];
+  const bannerPhotoAlt = bannerProperty
+    ? `${bannerProperty.name} property photo`
+    : bannerUnit
+      ? `Unit ${bannerUnit.unitNumber} photo`
+      : "";
   const filteredVacantUnits = vacantUnits.filter((unit) =>
     assignmentPropertyFilter === "all" || unit.propertyId === assignmentPropertyFilter
   );
   const filteredTenants = tenants.filter((tenant) => {
-    const matchesSearch = `${tenant.name} ${tenant.email} ${tenant.phone || ""} ${tenant.propertyName || ""} ${tenant.unitNumber || ""}`
+    const matchesSearch = `${tenant.name} ${tenant.email} ${tenant.phone || ""} ${tenant.propertyName || ""} ${tenant.unitNumber || ""} ${tenant.assistReason || ""}`
       .toLowerCase().includes(tenantListSearch.trim().toLowerCase());
     const matchesFilter = tenantListFilter === "all" ||
+      (tenantListFilter === "assisted" && tenant.isAssisted) ||
       (tenantListFilter === "active" && tenant.status === "active") ||
       (tenantListFilter === "pending" && tenant.assignmentStatus === "pending") ||
       (tenantListFilter === "inactive" && tenant.status === "inactive") ||
       (tenantListFilter === "unassigned" && !tenant.unitId);
     return matchesSearch && matchesFilter;
   });
-  const filteredVerificationTenants = tenants.filter((tenant) =>
-    `${tenant.name} ${tenant.email} ${tenant.phone || ""}`.toLowerCase().includes(verificationSearch.trim().toLowerCase())
-  );
-  const pendingVerifications = filteredVerificationTenants.filter((tenant) => tenant.idVerificationStatus === "pending");
-  const rejectedVerifications = filteredVerificationTenants.filter((tenant) => tenant.idVerificationStatus === "rejected");
   const filteredPayments = payments.filter((payment) => {
     const matchesStatus = paymentFilter === "all" || payment.status === paymentFilter;
-    const matchesSearch = `${payment.tenantName} ${payment.propertyName}`.toLowerCase().includes(paymentSearch.trim().toLowerCase());
-    return matchesStatus && matchesSearch;
+    const matchesType = paymentTypeFilter === "all" || payment.paymentMethod === paymentTypeFilter;
+    const paymentDate = payment.paymentDate.slice(0, 10);
+    const matchesDate = (!paymentDateFrom || paymentDate >= paymentDateFrom) &&
+      (!paymentDateTo || paymentDate <= paymentDateTo);
+    const matchesSearch = searchablePaymentText(payment)
+      .toLowerCase()
+      .includes(paymentSearch.trim().toLowerCase());
+    return matchesStatus && matchesType && matchesDate && matchesSearch;
   });
+  const sortedPayments = useMemo(() => [...filteredPayments].sort((a, b) => {
+    const left = a[paymentSort.key];
+    const right = b[paymentSort.key];
+    const comparison = typeof left === "number" && typeof right === "number"
+      ? left - right
+      : String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" });
+    return paymentSort.direction === "asc" ? comparison : -comparison;
+  }), [filteredPayments, paymentSort]);
+  const visiblePayments = sortedPayments.slice((paymentPage - 1) * LIST_PAGE_SIZE, paymentPage * LIST_PAGE_SIZE);
+  const sortedUnitRows = [...filteredUnitRows].sort((a, b) => {
+    if (unitSort === "rent-desc") return b.unit.rentAmount - a.unit.rentAmount;
+    if (unitSort === "rent-asc") return a.unit.rentAmount - b.unit.rentAmount;
+    if (unitSort === "property") return a.property.name.localeCompare(b.property.name);
+    const comparison = a.unit.unitNumber.localeCompare(b.unit.unitNumber, undefined, { numeric: true });
+    return unitSort === "unit-desc" ? -comparison : comparison;
+  });
+  const currentUnitPage = Math.min(unitPage, Math.max(1, Math.ceil(sortedUnitRows.length / LIST_PAGE_SIZE)));
+  const visibleUnitRows = sortedUnitRows.slice((currentUnitPage - 1) * LIST_PAGE_SIZE, currentUnitPage * LIST_PAGE_SIZE);
+  const filteredCollected = filteredPayments
+    .filter((payment) => payment.status === "paid")
+    .reduce((total, payment) => total + payment.amountPaid, 0);
+  const filteredOutstanding = filteredPayments
+    .filter((payment) => payment.status !== "paid")
+    .reduce((total, payment) => total + payment.balance, 0);
+  const filteredOverdueAmount = filteredPayments
+    .filter((payment) => payment.status === "overdue")
+    .reduce((total, payment) => total + payment.balance, 0);
+  const filteredReceiptCount = filteredPayments.filter((payment) => payment.receiptUrl).length;
   const filteredConversations = conversations.filter((conversation) => {
     const matchesSearch = `${conversation.otherUser?.name || ""} ${conversation.otherUser?.email || ""} ${conversation.lastMessage?.subject || ""} ${conversation.lastMessage?.body || ""}`
       .toLowerCase().includes(messageSearch.trim().toLowerCase());
@@ -336,89 +475,112 @@ export default function AgentDashboard() {
     return matchesSearch && matchesFilter;
   });
   const filteredInquiries = inquiries.filter((inquiry) => {
-    const matchesSearch = `${inquiry.senderName} ${inquiry.senderEmail} ${inquiry.text} ${inquiry.replyText || ""}`
+    const matchesSearch = searchableInquiryText(inquiry)
       .toLowerCase().includes(inquirySearch.trim().toLowerCase());
     const matchesFilter = inquiryFilter === "all" || inquiry.status === inquiryFilter;
-    return matchesSearch && matchesFilter;
+    const inquiryDate = inquiry.createdAt.slice(0, 10);
+    const matchesDate = (!inquiryDateFrom || inquiryDate >= inquiryDateFrom) &&
+      (!inquiryDateTo || inquiryDate <= inquiryDateTo);
+    const matchesType = inquiryTypeFilter === "all" ||
+      (inquiryTypeFilter === "property" && Boolean(inquiry.propertyId)) ||
+      (inquiryTypeFilter === "general" && !inquiry.propertyId);
+    return matchesSearch && matchesFilter && matchesDate && matchesType;
   });
+  const visibleInquiries = filteredInquiries.slice((inquiryPage - 1) * LIST_PAGE_SIZE, inquiryPage * LIST_PAGE_SIZE);
+  useEffect(() => { setPaymentPage(1); }, [paymentFilter, paymentTypeFilter, paymentDateFrom, paymentDateTo, paymentSearch]);
+  useEffect(() => { setUnitPage(1); }, [unitSearch, unitStatusFilter, unitPropertyFilter, unitTypeFilter, unitSort]);
+  useEffect(() => { setInquiryPage(1); }, [inquirySearch, inquiryFilter, inquiryTypeFilter, inquiryDateFrom, inquiryDateTo]);
+  useEffect(() => {
+    const handleGlobalSearch = async (event: Event) => {
+      const query = (event as CustomEvent<{ query: string }>).detail?.query?.trim();
+      if (!query) return;
+      const normalized = query.toLowerCase();
+      const includesQuery = (text: string) => text.toLowerCase().includes(normalized);
+      const matchesPayment = payments.some((payment) => includesQuery(searchablePaymentText(payment)));
+      const matchesUnit = properties.some((property) => {
+        const propertyMatches = includesQuery(searchablePropertyText(property));
+        const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
+        return propertyUnits.some((unit) => propertyMatches || includesQuery(searchableUnitText(unit))) ||
+          (propertyUnits.length === 0 && propertyMatches);
+      });
+      const matchesInquiry = inquiries.some((inquiry) => includesQuery(searchableInquiryText(inquiry)));
+
+      let matchesContract = false;
+      if (!matchesPayment && !matchesInquiry && !matchesUnit) {
+        try {
+          const response = await fetch("/api/data/contracts", { credentials: "include", cache: "no-store" });
+          const data = await safeParseJson(response);
+          if (!response.ok || !data.success || !Array.isArray(data.contracts)) {
+            throw new Error(data.error || "Could not search contracts");
+          }
+          matchesContract = data.contracts.some((contract: {
+            id?: string; title?: string; propertyName?: string; tenantName?: string;
+            tenantId?: string; fileName?: string; message?: string; status?: string;
+          }) => {
+            const tenant = tenants.find((item) => item.id === contract.tenantId);
+            const unit = units.find((item) => item.id === tenant?.unitId);
+            const searchableText = `${contract.id || ""} ${contract.title || ""} ${contract.propertyName || ""} ${contract.tenantName || ""} ${contract.fileName || ""} ${contract.message || ""} ${contract.status || ""} ${unit?.unitNumber || ""}`;
+            return includesQuery(searchableText);
+          });
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : "Could not search contracts");
+        }
+      }
+
+      const target: Step | null = matchesPayment ? "payments"
+        : matchesInquiry ? "inquiries"
+          : matchesUnit ? "units"
+            : matchesContract ? "contracts"
+              : null;
+      window.dispatchEvent(new CustomEvent("agent-global-search-result", {
+        detail: { query, found: Boolean(target) },
+      }));
+      if (!target) {
+        window.sessionStorage.removeItem("agent-global-search");
+        return;
+      }
+      if (target === "payments") {
+        setPaymentSearch(query);
+        setPaymentFilter("all");
+        setPaymentTypeFilter("all");
+        setPaymentDateFrom("");
+        setPaymentDateTo("");
+      } else if (target === "inquiries") {
+        setInquirySearch(query);
+        setInquiryFilter("all");
+        setInquiryTypeFilter("all");
+        setInquiryDateFrom("");
+        setInquiryDateTo("");
+      } else if (target === "units") {
+        setUnitSearch(query);
+        setUnitStatusFilter("all");
+        setUnitPropertyFilter("all");
+        setUnitTypeFilter("all");
+      }
+      if (target === "contracts") window.sessionStorage.setItem("agent-global-search", query);
+      else window.sessionStorage.removeItem("agent-global-search");
+      setActiveTab(target);
+      window.location.hash = target;
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("agent-contract-search", { detail: { query } }));
+      }, 150);
+    };
+    window.addEventListener("agent-global-search", handleGlobalSearch);
+    return () => window.removeEventListener("agent-global-search", handleGlobalSearch);
+  }, [payments, properties, units, inquiries, tenants]);
+  const unitCounts = {
+    total: units.length,
+    available: vacantUnits.length,
+    occupied: units.filter((unit) => unit.status === "occupied").length,
+    maintenance: units.filter((unit) => unit.status === "maintenance").length,
+  };
+  const inquiryCounts = {
+    total: inquiries.length,
+    new: inquiries.filter((inquiry) => inquiry.status === "new").length,
+    inProgress: inquiries.filter((inquiry) => inquiry.status === "read" || inquiry.status === "replied").length,
+    closed: inquiries.filter((inquiry) => inquiry.status === "closed").length,
+  };
   const myTenants = tenants;
-
-  const handleAssignTenant = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTenant || !selectedUnit) {
-      toast.error("Please select a unit");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const property = properties.find((p) => p.id === selectedUnit.propertyId);
-      const updated = await updateTenantAssignment(selectedTenant.id, {
-        unitId: selectedUnit.id,
-        propertyName: assignForm.propertyName || property?.name || "",
-        unitNumber: assignForm.unitNumber || selectedUnit.unitNumber,
-        rentAmount: assignForm.rentAmount || selectedUnit.rentAmount,
-        contractStart: assignForm.contractStart || undefined,
-        assignmentStatus: "pending",
-      });
-      if (updated) {
-        await loadData();
-        setSelectedTenant(null);
-        setSelectedUnit(null);
-        setAssignForm({ unitId: "", propertyName: "", unitNumber: "", rentAmount: 0, contractStart: "" });
-        toast.success("Assignment submitted for owner confirmation!");
-        setActiveTab("units");
-        window.location.hash = "units";
-        notifyAdmins({
-          title: "New Assignment Pending",
-          message: `${selectedTenant.name} has been assigned to ${assignForm.propertyName || property?.name || "a unit"}. Please review and confirm.`,
-          type: "tenant",
-          read: false,
-        }).catch(() => {});
-      }
-    } catch {
-      toast.error("Failed to assign tenant");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleRegisterTenant = async (formData: {
-    name: string;
-    email: string;
-    phone: string;
-    address: string;
-    propertyName: string;
-    unitNumber: string;
-    rentAmount: string;
-    contractStart: string;
-    contractEnd: string;
-    password: string;
-  }) => {
-    if (!formData.name || !formData.email) {
-      toast.error("Name and email are required");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const res = await fetch("/api/data/tenants", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast.success("Tenant registered successfully!");
-        setShowCreateTenantModal(false);
-        loadData();
-      } else {
-        toast.error(data.error || "Failed to register tenant");
-      }
-    } catch {
-      toast.error("Failed to register tenant");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const handleForwardToOwner = async (payment: Payment) => {
     try {
@@ -435,565 +597,716 @@ export default function AgentDashboard() {
     }
   };
 
-  const handleResubmitAssignment = async (tenantId: string) => {
-    setResubmittingId(tenantId);
-    try {
-      await notifyAdmins({
-        title: "Assignment Resubmitted",
-        message: `An assignment for a tenant has been resubmitted for owner confirmation. Please review.`,
-        type: "tenant",
-        read: false,
-      });
-      toast.success("Assignment resubmitted to owner successfully!");
-    } catch {
-      toast.error("Failed to resubmit assignment");
-    } finally {
-      setResubmittingId(null);
-    }
+  const downloadFinancialExport = () => {
+    const rows: Array<Array<string | number>> = [
+      ["Transaction ID", "Tenant", "Property", "Unit", "Amount due", "Amount paid", "Balance", "Status", "Date", "Method"],
+      ...filteredPayments.map((payment) => [payment.id, payment.tenantName, payment.propertyName, payment.unitId, payment.amountDue, payment.amountPaid, payment.balance, payment.status, payment.paymentDate, payment.paymentMethod]),
+    ];
+    downloadExcelReport(`financial-transactions-${new Date().toISOString().slice(0, 10)}.xls`, [{ name: "Payments", rows }]);
   };
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, "default" | "success" | "warning" | "destructive" | "outline"> = {
-      paid: "success", pending: "warning", overdue: "destructive", partial: "outline",
-      confirmed: "success", rejected: "destructive", active: "success", inactive: "outline",
-    };
-    return <Badge variant={variants[status] || "outline"} className="text-sm font-semibold capitalize">{status}</Badge>;
+  const downloadFinancialPdf = () => {
+    const lines = [
+      `Transactions: ${filteredPayments.length}`,
+      `Collected: PHP ${filteredCollected.toFixed(2)}`,
+      `Outstanding: PHP ${filteredOutstanding.toFixed(2)}`,
+      "",
+      ...filteredPayments.map((payment) => `${payment.paymentDate} | ${payment.tenantName} | ${payment.propertyName} / ${payment.unitId} | ${payment.status} | Paid PHP ${payment.amountPaid.toFixed(2)} | Balance PHP ${payment.balance.toFixed(2)}`),
+    ];
+    downloadPdfReport(`financial-transactions-${new Date().toISOString().slice(0, 10)}.pdf`, "RentTrack Financial Transactions", lines);
+  };
+
+  const downloadUnitsExport = () => {
+    const rows: Array<Array<string | number>> = [
+      ["Unit", "Property", "Property type", "Status", "Monthly rent", "Features"],
+      ...filteredUnitRows.map(({ property, unit }) => [
+        unit.unitNumber,
+        property.name,
+        property.type,
+        unit.status,
+        unit.rentAmount,
+        (property.features || []).join(", "),
+      ]),
+    ];
+    downloadExcelReport(`agent-units-${new Date().toISOString().slice(0, 10)}.xls`, [{ name: "Units", rows }]);
+  };
+
+  const togglePaymentSort = (key: typeof paymentSort.key) => {
+    setPaymentSort((current) => ({
+      key,
+      direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+    setPaymentPage(1);
   };
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
+    <div className="w-full">
+            {activeTab === "contracts" && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                <ContractsPanel mode="agent" />
+              </motion.div>
+            )}
+            {activeTab === "certificates" && user?.role === "agent" && user.id && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                <ManagementBanner
+                  category="CREDENTIALS & COMPLIANCE"
+                  title="Agent Certificates"
+                  description="Upload, manage, and verify your real estate broker and agent accreditations."
+                  icon={Award}
+                />
+                <AgentCertificateManager agentId={user.id} />
+              </motion.div>
+            )}
+            {activeTab === "map" && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                <ManagementBanner
+                  category="GEOGRAPHIC OVERVIEW"
+                  title="Property Map"
+                  description="Explore all managed properties and rental units across the region."
+                  icon={Home}
+                />
+                <PropertyLocationMap hideHeader />
+              </motion.div>
+            )}
+
             {/* OVERVIEW */}
             {activeTab === "overview" && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
-                <div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h1 className="text-4xl font-bold text-foreground">Agent Dashboard</h1>
-                    <p className="text-lg text-text-secondary mt-1">Welcome back, {user?.name?.split(" ")[0] || "Agent"}</p>
-                  </div>
-                </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              <motion.div
+                initial={reduceMotion ? false : { opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: reduceMotion ? 0 : 0.3 }}
+                className="space-y-4 sm:space-y-5"
+              >
+                <ManagementBanner
+                  category="AGENT WORKSPACE"
+                  title={user?.name ? `Welcome back, ${user.name.split(" ")[0]}` : "Agent Dashboard"}
+                  description="Here's what's happening across your assigned properties."
+                  icon={LayoutDashboard}
+                />
+
+                <section aria-label="Portfolio metrics" className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-3">
                   {[
-                    { label: "Units", value: units.length, icon: Home, color: "from-primary-500 to-primary-600", tab: "units" as const },
-                    { label: "Active Tenants", value: activeTenants.length, icon: UserPlus, color: "from-secondary-500 to-secondary-600", tab: "units" as const },
-                    { label: "Pending", value: pendingTenants.length, icon: Clock, color: "from-amber-500 to-amber-600", tab: "units" as const },
-                    { label: "Payments Due", value: pendingPayments.length, icon: CreditCard, color: "from-accent-500 to-accent-600", tab: "payments" as const },
-                  ].map((stat, i) => (
-                    <Card key={i} onClick={async () => { await loadData(); setActiveTab(stat.tab); window.location.hash = stat.tab; }} className="hover:shadow-lg transition-all duration-300 cursor-pointer hover:scale-105 active:scale-95">
-                      <CardContent className="min-h-[180px] p-8">
-                        <div className="flex items-center justify-between mb-4">
-                          <span className="text-lg font-medium text-text-secondary">{stat.label}</span>
-                          <div className={cn("h-10 w-10 rounded-lg bg-gradient-to-br text-white flex items-center justify-center", stat.color)}>
-                            <stat.icon className="h-5 w-5" />
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <p className="text-5xl font-bold text-foreground">{stat.value}</p>
-                          {(stat.tab === "units" && pendingTenants.length > 0) || (stat.tab === "payments" && pendingPayments.length > 0) ? (
-                            <motion.span
-                              initial={{ scale: 0, x: -8 }}
-                              animate={{ scale: 1, x: 0 }}
-                              transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                              className="flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-lg"
-                            >
-                              {stat.tab === "units" ? pendingTenants.length : pendingPayments.length}
-                            </motion.span>
-                          ) : null}
-                        </div>
-                      </CardContent>
-                    </Card>
+                    { label: "Assigned Units", value: units.length, description: "In your portfolio", icon: Home, tone: "bg-blue-50 text-blue-600", tab: "units" as const },
+                    { label: "Active Tenants", value: activeTenants.length, description: "Active leases", icon: Users, tone: "bg-emerald-50 text-emerald-600", tab: "tenants" as const },
+                    { label: "Available Units", value: vacantUnits.length, description: "Ready to lease", icon: Home, tone: "bg-violet-50 text-violet-600", tab: "units" as const },
+                    { label: "Pending Placements", value: pendingTenants.length, description: "To confirm", icon: Clock, tone: "bg-amber-50 text-amber-600", tab: "units" as const },
+                    { label: "Payment Reviews", value: pendingPayments.length, description: "Submitted items", icon: CreditCard, tone: "bg-rose-50 text-rose-600", tab: "payments" as const },
+                    { label: "Open Inquiries", value: pendingInquiryCount, description: "Awaiting reply", icon: Mail, tone: "bg-cyan-50 text-cyan-700", tab: "inquiries" as const },
+                  ].map((stat) => (
+                    <motion.button
+                      key={stat.label}
+                      type="button"
+                      onClick={() => { setActiveTab(stat.tab); window.location.hash = stat.tab; }}
+                      whileHover={reduceMotion ? undefined : { y: -2 }}
+                      whileTap={reduceMotion ? undefined : { scale: 0.99 }}
+                      className="group rounded-lg border border-[#dce8f5] bg-white p-2.5 text-left shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition-[box-shadow,border-color] duration-200 hover:border-blue-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transform-none motion-reduce:transition-none sm:rounded-xl sm:p-4"
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="truncate text-[10px] font-semibold text-slate-700 sm:text-xs">{stat.label}</span>
+                        <span className={cn("hidden h-7 w-7 shrink-0 items-center justify-center rounded-full sm:flex sm:h-8 sm:w-8", stat.tone)}>
+                          <stat.icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                        </span>
+                      </span>
+                      <span className="mt-1.5 flex items-baseline justify-between gap-1 sm:mt-2">
+                        <span className="text-xl font-bold leading-none tracking-tight text-slate-950 sm:text-2xl">{initialLoad || loadError ? "—" : stat.value}</span>
+                        <ArrowUpRight className="hidden h-3.5 w-3.5 text-slate-400 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 sm:block" />
+                      </span>
+                      <span className="mt-1 block truncate text-[9px] text-slate-500 sm:mt-1.5 sm:text-[11px]">{stat.description}</span>
+                    </motion.button>
                   ))}
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <Card className="min-h-[340px]">
-                    <CardHeader>
-                      <CardTitle className="text-3xl font-bold">Recent Units</CardTitle>
-                      <CardDescription>Latest properties and their available units</CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-8">
-                      <div className="space-y-3">
-                        {properties.slice(0, 5).map((property) => (
-                          <button
-                            key={property.id}
-                            onClick={() => { setActiveTab("units"); window.location.hash = "units"; }}
-                            className="w-full flex items-center justify-between p-4 rounded-xl border border-border hover:bg-surface-secondary transition-colors text-left"
-                          >
-                            <div className="flex items-center gap-4">
-                              {property.imageUrl ? (
-                                <img src={property.imageUrl} alt={property.name} className="h-14 w-20 object-cover rounded-lg border border-border" />
-                              ) : (
-                                <div className="h-14 w-20 rounded-lg bg-surface-secondary flex items-center justify-center text-text-tertiary text-xs">No image</div>
-                              )}
-                              <div>
-                                <p className="text-xl font-semibold text-foreground">{property.name}</p>
-                                <p className="text-base text-text-secondary">{property.location}</p>
-                              </div>
-                            </div>
-                            <Badge variant={property.status === "active" ? "success" : "outline"} className="text-sm font-semibold capitalize">{property.status}</Badge>
-                          </button>
-                        ))}
-                        {properties.length === 0 && <p className="text-center py-8 text-text-secondary">No properties yet</p>}
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="min-h-[340px]">
-                    <CardHeader>
-                      <CardTitle className="text-3xl font-bold">Recent Payments</CardTitle>
-                      <CardDescription>Latest payment transactions</CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-8">
-                      <div className="space-y-3">
-                        {payments.slice(0, 5).map((payment) => (
-                          <button
-                            key={payment.id}
-                            onClick={() => { setActiveTab("payments"); window.location.hash = "payments"; }}
-                            className="w-full flex items-center justify-between p-6 rounded-xl border border-border hover:bg-surface-secondary transition-colors text-left"
-                          >
-                            <div>
-                              <p className="text-xl font-semibold text-foreground">{payment.tenantName}</p>
-                              <p className="text-base text-text-secondary">{formatDate(payment.paymentDate)}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-xl font-semibold text-foreground">{formatCurrency(payment.amountPaid)}</p>
-                              {getStatusBadge(payment.status)}
-                               {payment.receiptUrl && (
-                                 <Button size="sm" variant="outline" className="h-8 text-xs" onClick={(e) => { e.stopPropagation(); setViewingReceipt(payment); }}>
-                                   <FileText className="h-3.5 w-3.5 mr-1" />View Receipt
-                                 </Button>
-                               )}
-                            </div>
-                          </button>
-                        ))}
-                        {payments.length === 0 && <p className="text-center py-8 text-text-secondary">No payments yet</p>}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              </motion.div>
-            )}
+                </section>
 
-            {/* PROPERTIES & UNITS */}
-            {activeTab === "units" && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
-                <div>
-                  <div className="flex flex-wrap items-end justify-between gap-4">
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  {/* Rental Overview Chart */}
+                  <section className="rounded-xl border border-[#dce8f5] bg-white p-3.5 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:p-5 flex flex-col justify-between">
                     <div>
-                      <h1 className="text-3xl font-bold text-foreground">Units</h1>
-                      <p className="text-base text-text-secondary mt-1">Browse available units by property</p>
-                    </div>
-                    <Button type="button" variant="outline" onClick={() => document.getElementById("agent-unit-assignment")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
-                      <ClipboardCheck className="mr-2 h-4 w-4" /> Assign a tenant
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:flex-row">
-                  <label className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
-                    <Input value={unitSearch} onChange={(event) => setUnitSearch(event.target.value)} placeholder="Search properties or units" aria-label="Search properties or units" className="pl-9" />
-                  </label>
-                  <select value={unitStatusFilter} onChange={(event) => setUnitStatusFilter(event.target.value)} aria-label="Filter units by status" className="h-10 rounded-xl border border-border bg-surface-secondary px-3 text-sm text-foreground sm:w-52">
-                    <option value="all">All unit statuses</option>
-                    <option value="vacant">Vacant</option>
-                    <option value="occupied">Occupied</option>
-                    <option value="maintenance">Maintenance</option>
-                  </select>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {filteredUnitProperties.map(({ property, propertyUnits, visibleUnits }) => {
-                    const vacant = propertyUnits.filter((u) => u.status === "vacant");
-                    return (
-                      <Card key={property.id} className="hover:shadow-lg transition-shadow">
-                        <CardContent className="p-0">
-                          {property.imageUrl && (
-                            <img src={property.imageUrl} alt={property.name} className="w-full h-40 object-cover rounded-t-xl border-b border-border" />
-                          )}
-                          <div className="p-6">
-                            <div className="flex items-start justify-between mb-4">
-                              <div>
-                                <h3 className="text-lg font-semibold text-foreground">{property.name}</h3>
-                                <p className="text-sm text-text-secondary mt-1">{property.location}</p>
-                              </div>
-                              <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize">{property.status}</Badge>
-                            </div>
-                            <div className="flex items-center gap-4 text-sm text-text-secondary mb-4">
-                              <span className="flex items-center gap-1.5"><Home className="h-4 w-4" />{property.units} units</span>
-                              <span className="flex items-center gap-1.5"><ClipboardCheck className="h-4 w-4" />{vacant.length} vacant</span>
-                            </div>
-                            <div className="space-y-2.5">
-                              <p className="text-sm font-medium text-text-secondary">Units:</p>
-                              {propertyUnits.length === 0 ? (
-                                <p className="text-sm text-text-tertiary">No units registered</p>
-                              ) : visibleUnits.length === 0 ? (
-                                <p className="text-sm text-text-tertiary">No units match this filter</p>
-                              ) : (
-                                visibleUnits.map((unit) => (
-                                  <div key={unit.id} className="flex items-center justify-between p-3 rounded-lg bg-surface-secondary">
-                                    <span className="text-sm font-medium">Unit {unit.unitNumber}</span>
-                                    <div className="flex items-center gap-2">
-                                      {unit.imageUrl && (
-                                        <img src={unit.imageUrl} alt={`Unit ${unit.unitNumber}`} className="h-8 w-12 object-cover rounded border border-border" />
-                                      )}
-                                      <Badge variant={unit.status === "vacant" ? "success" : unit.status === "occupied" ? "outline" : "warning"} className="text-xs capitalize">{unit.status}</Badge>
-                                    </div>
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                  {properties.length === 0 && (
-                    <Card className="col-span-full">
-                      <CardContent className="p-12 text-center">
-                        <Home className="h-12 w-12 text-text-tertiary mx-auto mb-3" />
-                        <p className="text-text-secondary font-medium">No properties yet</p>
-                        <p className="text-xs text-text-tertiary mt-1">Properties will appear here once registered by the owner</p>
-                      </CardContent>
-                    </Card>
-                  )}
-                  {properties.length > 0 && filteredUnitProperties.length === 0 && (
-                    <Card className="col-span-full">
-                      <CardContent className="p-10 text-center">
-                        <Search className="mx-auto mb-3 h-10 w-10 text-text-tertiary" />
-                        <p className="font-medium text-text-secondary">No units match your search or filter</p>
-                        <Button type="button" variant="outline" className="mt-4" onClick={() => { setUnitSearch(""); setUnitStatusFilter("all"); }}>Clear filters</Button>
-                      </CardContent>
-                    </Card>
-                  )}
-                </div>
-              </motion.div>
-            )}
-
-            {/* ASSIGN TENANT — part of the Units section */}
-            {activeTab === "units" && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 border-t border-border pt-8">
-                <div>
-                  <div id="agent-unit-assignment" className="scroll-mt-6">
-                    <h2 className="text-2xl font-bold text-foreground">Assign a tenant</h2>
-                    <p className="text-base text-text-secondary mt-1">Select a tenant and assign them to an available unit</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                   {/* SELECT TENANT */}
-                   <Card className="flex flex-col">
-                     <CardHeader>
-                       <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-xl bg-blue-50 flex items-center justify-center">
-                              <UserPlus className="h-5 w-5 text-blue-600" />
-                            </div>
-                            <div>
-                              <CardTitle className="text-lg">Step 1: Select Tenant</CardTitle>
-                              <CardDescription>Choose a tenant without a unit assignment</CardDescription>
-                            </div>
-                          </div>
-                          {["owner", "admin"].includes(user?.role || "") && (
-                              <Button size="sm" onClick={() => { setActiveTab("tenants"); window.location.hash = "tenants"; }} className="bg-blue-600 hover:bg-blue-700 text-white">
-                              <Plus className="h-4 w-4 mr-1" /> Register
-                            </Button>
-                          )}
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h2 className="text-base font-bold text-slate-900">Rental Overview</h2>
+                          <p className="mt-1 text-xs text-slate-500">Recorded payments by month · {paymentYear}</p>
                         </div>
-                     </CardHeader>
-                     <CardContent className="flex-1 flex flex-col">
-                       <div className="relative mb-4">
-                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
-                         <Input
-                           placeholder="Search tenants..."
-                           value={tenantSearch}
-                           onChange={(e) => setTenantSearch(e.target.value)}
-                           className="pl-9"
-                         />
-                       </div>
-                        <div className="flex-1 overflow-y-auto space-y-2 max-h-[360px] pr-1">
-                          {(() => {
-                            const unassigned = tenants.filter((t) => !t.unitId);
-                            const filtered = unassigned.filter((t) => t.name.toLowerCase().includes(tenantSearch.toLowerCase()) || t.email.toLowerCase().includes(tenantSearch.toLowerCase()));
-                            if (unassigned.length === 0) {
-                             return (
-                               <div className="text-center py-12">
-                                 <UserPlus className="h-12 w-12 text-text-tertiary mx-auto mb-3" />
-                                 <p className="text-text-secondary font-medium">No unassigned tenants</p>
-                                 <p className="text-xs text-text-tertiary mt-1">All tenants have been assigned to units</p>
-                               </div>
-                             );
-                           }
-                           if (filtered.length === 0 && tenantSearch) {
-                             return (
-                               <div className="text-center py-8">
-                                 <p className="text-text-secondary font-medium">No matching tenants</p>
-                                 <p className="text-xs text-text-tertiary mt-1">Try a different search term</p>
-                               </div>
-                             );
-                           }
-                           return filtered.map((tenant) => (
-                             <motion.div
-                               key={tenant.id}
-                               whileHover={{ scale: 1.01 }}
-                               whileTap={{ scale: 0.99 }}
-                               onClick={() => setSelectedTenant(selectedTenant?.id === tenant.id ? null : tenant)}
-                               className={cn("flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all", selectedTenant?.id === tenant.id ? "border-primary-500 bg-primary-50 shadow-sm" : "border-border hover:bg-surface-secondary hover:shadow-sm")}
-                             >
-                               <Avatar src={tenant.avatarUrl} fallback={getInitials(tenant.name)} size="sm" className={selectedTenant?.id === tenant.id ? "ring-2 ring-primary-200" : ""} />
-                               <div className="flex-1 min-w-0">
-                                 <p className="text-base font-medium text-foreground truncate">{tenant.name}</p>
-                                 <p className="text-sm text-text-secondary truncate">{tenant.email}</p>
-                               </div>
-                               {selectedTenant?.id === tenant.id && (
-                                 <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 15 }}>
-                                   <CheckCircle2 className="h-5 w-5 text-primary-600" />
-                                 </motion.div>
-                               )}
-                             </motion.div>
-                           ));
-                        })()}
+                        <span className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-500">
+                          <CalendarDays className="h-3.5 w-3.5" /> {paymentYear}
+                        </span>
                       </div>
-                      {selectedTenant && (
-                        <div className="mt-3 pt-3 border-t border-border">
-                          <Button type="button" variant="outline" size="sm" onClick={() => setSelectedTenant(null)} className="w-full">
-                            <X className="h-4 w-4 mr-1.5" /> Clear Selection
-                          </Button>
+                      {initialLoad ? (
+                        <div role="status" className="mt-5 flex min-h-40 items-center justify-center rounded-lg border border-slate-100 bg-slate-50/70 text-xs font-medium text-slate-500">
+                          Loading payment activity…
+                        </div>
+                      ) : loadError ? (
+                        <div role="status" className="mt-5 flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed border-amber-200 bg-amber-50/50 px-4 text-center">
+                          <p className="text-sm font-semibold text-slate-700">Payment activity unavailable</p>
+                          <button type="button" onClick={() => void loadData()} className="mt-2 text-xs font-semibold text-blue-700 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">Try again</button>
+                        </div>
+                      ) : hasPaymentActivity ? (
+                        <div className="mt-5">
+                          <div className="flex h-36 items-end gap-1.5 border-b border-l border-slate-200 bg-[linear-gradient(to_bottom,transparent_24%,#e8eff7_25%,transparent_26%,transparent_49%,#e8eff7_50%,transparent_51%,transparent_74%,#e8eff7_75%,transparent_76%)] px-2 sm:gap-2">
+                            {monthlyPayments.map((month) => (
+                              <div key={month.month} className="flex h-full min-w-0 flex-1 flex-col justify-end">
+                                <span className="mb-1 text-center text-[10px] font-medium text-slate-500">
+                                  {month.count || ""}
+                                </span>
+                                <div
+                                  title={`${month.month}: ${month.count} ${month.count === 1 ? "payment" : "payments"} · ${formatCurrency(month.amount)}`}
+                                  className={cn(
+                                    "mx-auto w-full max-w-7 rounded-t-sm bg-blue-500/85 transition-[height] duration-300",
+                                    month.count === 0 && "h-px bg-slate-200"
+                                  )}
+                                  style={month.count > 0 ? { height: `${Math.max(8, (month.count / maxMonthlyPayments) * 100)}%` } : undefined}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-2 flex justify-between gap-1 pl-2 text-[10px] text-slate-500">
+                            {monthlyPayments.map((month) => <span key={month.month}>{month.month}</span>)}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-5 flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/70 px-4 text-center">
+                          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                            <CalendarDays className="h-5 w-5" />
+                          </div>
+                          <p className="mt-3 text-sm font-semibold text-slate-700">No transaction data yet</p>
+                          <p className="mt-1 max-w-xs text-xs leading-5 text-slate-500">Payment activity for {paymentYear} will appear here when it is recorded.</p>
                         </div>
                       )}
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </section>
 
-                   {/* SELECT UNIT */}
-                   <Card className="flex flex-col">
-                     <CardHeader>
-                       <div className="flex items-center justify-between">
-                         <div className="flex items-center gap-3">
-                           <div className="h-10 w-10 rounded-xl bg-emerald-50 flex items-center justify-center">
-                             <Home className="h-5 w-5 text-emerald-600" />
-                           </div>
-                           <div>
-                             <CardTitle className="text-lg">Step 2: Select Vacant Unit</CardTitle>
-                             <CardDescription>Available units for assignment</CardDescription>
-                           </div>
-                         </div>
-                         {selectedUnit && (
-                           <Button size="sm" variant="outline" onClick={() => setSelectedUnit(null)} className="text-red-600 hover:text-red-700">
-                             <X className="h-4 w-4 mr-1" /> Cancel
-                           </Button>
-                         )}
-                       </div>
-                     </CardHeader>
-                     <CardContent className="flex-1 flex flex-col">
-                       <select value={assignmentPropertyFilter} onChange={(event) => setAssignmentPropertyFilter(event.target.value)} aria-label="Filter vacant units by property" className="mb-4 h-10 rounded-xl border border-border bg-surface-secondary px-3 text-sm text-foreground">
-                         <option value="all">All properties</option>
-                         {properties.filter((property) => vacantUnits.some((unit) => unit.propertyId === property.id)).map((property) => (
-                           <option key={property.id} value={property.id}>{property.name}</option>
-                         ))}
-                       </select>
-                       <div className="flex-1 overflow-y-auto space-y-3 max-h-[400px] pr-1">
-                         {vacantUnits.length === 0 ? (
-                           <div className="text-center py-12">
-                             <Home className="h-12 w-12 text-text-tertiary mx-auto mb-3" />
-                             <p className="text-text-secondary font-medium">No vacant units available</p>
-                             <p className="text-xs text-text-tertiary mt-1">All units are currently occupied</p>
-                           </div>
-                         ) : filteredVacantUnits.length === 0 ? (
-                           <div className="text-center py-10">
-                             <p className="text-text-secondary font-medium">No vacant units for this property</p>
-                             <p className="text-xs text-text-tertiary mt-1">Choose another property or select all properties</p>
-                           </div>
-                         ) : (
-                           filteredVacantUnits.map((unit) => {
-                             const property = properties.find((p) => p.id === unit.propertyId);
-                             const isSelected = selectedUnit?.id === unit.id;
-                             return (
-                               <motion.div
-                                 key={unit.id}
-                                 whileHover={{ scale: 1.01 }}
-                                 whileTap={{ scale: 0.99 }}
-                                 onClick={() => setSelectedUnit(isSelected ? null : unit)}
-                                 className={cn("p-4 rounded-xl border cursor-pointer transition-all", isSelected ? "border-primary-500 bg-primary-50 shadow-sm" : "border-border hover:bg-surface-secondary hover:shadow-sm")}
-                               >
-                                 <div className="flex items-start justify-between">
-                                   <div className="flex items-center gap-3">
-                                     <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center font-bold text-sm">
-                                       {unit.unitNumber}
-                                     </div>
-                                     <div>
-                                       <p className="text-base font-medium text-foreground">{property?.name || "Unknown Property"}</p>
-                                       <p className="text-sm text-text-secondary">Unit {unit.unitNumber}</p>
-                                     </div>
-                                   </div>
-                                   {isSelected && (
-                                     <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 15 }}>
-                                       <CheckCircle2 className="h-5 w-5 text-primary-600" />
-                                     </motion.div>
-                                   )}
-                                 </div>
-                                 <div className="mt-3 flex items-center gap-4 text-sm">
-                                   <span className="text-text-secondary">Floor {unit.floor || "N/A"}</span>
-                                   <span className="text-text-tertiary">|</span>
-                                   <span className="font-semibold text-foreground">{formatCurrency(unit.rentAmount)}/mo</span>
-                                 </div>
-                               </motion.div>
-                             );
-                           })
-                         )}
-                       </div>
-                     </CardContent>
-                   </Card>
+                  {/* Agent Overview */}
+                  <section className="rounded-xl border border-[#dce8f5] bg-white p-3.5 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:p-5 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h2 className="text-base font-bold text-slate-900">Agent Overview</h2>
+                          <p className="mt-1 text-xs text-slate-500">Operational status and task shortcuts</p>
+                        </div>
+                        <span className="flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50/50 px-2 py-1 text-[11px] font-semibold text-blue-700">
+                          Active Workspace
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {[
+                          { label: "Pending assignments", value: pendingTenants.length, onClick: () => { setSelectedTenant(null); setSelectedUnit(null); setShowAssignModal(true); }, icon: Users, tone: "bg-blue-50 text-blue-600" },
+                          { label: "Payment reviews", value: pendingPayments.length, onClick: () => { setActiveTab("payments"); window.location.hash = "payments"; }, icon: CreditCard, tone: "bg-emerald-50 text-emerald-600" },
+                          { label: "Available units", value: vacantUnits.length, onClick: () => { setActiveTab("units"); window.location.hash = "units"; }, icon: Home, tone: "bg-violet-50 text-violet-600" },
+                          { label: "Payments overdue", value: overduePayments.length, onClick: () => { setActiveTab("payments"); window.location.hash = "payments"; }, icon: Clock, tone: "bg-amber-50 text-amber-600" },
+                          { label: "Tenant inquiries", value: pendingInquiryCount, onClick: () => { setActiveTab("inquiries"); window.location.hash = "inquiries"; }, icon: Mail, tone: "bg-orange-50 text-orange-600" },
+                          { label: "Unread messages", value: unreadConversationCount, onClick: () => { setActiveTab("messages"); window.location.hash = "messages"; }, icon: Send, tone: "bg-cyan-50 text-cyan-700" },
+                        ].map((item) => (
+                          <button
+                            key={item.label}
+                            type="button"
+                            onClick={item.onClick}
+                            className="group flex w-full items-center gap-2.5 rounded-lg border border-slate-100 p-2.5 text-left transition-all hover:border-blue-200 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          >
+                            <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full", item.tone)}>
+                              <item.icon className="h-4 w-4" />
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-700">{item.label}</span>
+                            <span className="text-xs font-bold tabular-nums text-slate-900">{initialLoad || loadError ? "—" : item.value}</span>
+                            <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                      <Button
+                        size="sm"
+                        className="h-8 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
+                        onClick={() => { setSelectedTenant(null); setSelectedUnit(null); setShowAssignModal(true); }}
+                      >
+                        <UserPlus className="h-3.5 w-3.5" /> Assign Tenant
+                      </Button>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-xs text-slate-700 hover:bg-slate-50 border-slate-200 gap-1"
+                          onClick={() => { setActiveTab("tenants"); window.location.hash = "tenants"; }}
+                        >
+                          <Users className="h-3.5 w-3.5 text-slate-500" /> Directory
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-xs text-slate-700 hover:bg-slate-50 border-slate-200 gap-1"
+                          onClick={() => { setActiveTab("inquiries"); window.location.hash = "inquiries"; }}
+                        >
+                          <Mail className="h-3.5 w-3.5 text-slate-500" /> Inquiries
+                        </Button>
+                      </div>
+                    </div>
+                  </section>
                 </div>
 
-                {/* REVIEW & CONFIRM */}
-                {selectedTenant && selectedUnit && (
-                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-                    <Card className="border-primary-200 shadow-lg">
-                      <CardHeader>
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                            <ClipboardCheck className="h-5 w-5 text-amber-600" />
-                          </div>
-                          <div>
-                            <CardTitle className="text-lg">Step 3: Review & Confirm</CardTitle>
-                            <CardDescription>Verify the assignment details before submitting</CardDescription>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="space-y-4">
-                            <h4 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Tenant Information</h4>
-                            <div className="flex items-center gap-3 p-4 rounded-xl bg-surface-secondary">
-                              <Avatar src={selectedTenant.avatarUrl} fallback={getInitials(selectedTenant.name)} size="md" />
-                              <div>
-                                <p className="font-medium text-foreground">{selectedTenant.name}</p>
-                                <p className="text-sm text-text-secondary">{selectedTenant.email}</p>
-                                {selectedTenant.phone && <p className="text-sm text-text-tertiary">{selectedTenant.phone}</p>}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="space-y-4">
-                            <h4 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Unit Information</h4>
-                            <div className="p-4 rounded-xl bg-surface-secondary space-y-2">
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-text-secondary">Property</span>
-                                <span className="text-sm font-medium text-foreground">{properties.find((p) => p.id === selectedUnit.propertyId)?.name || "N/A"}</span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-text-secondary">Unit</span>
-                                <span className="text-sm font-medium text-foreground">{selectedUnit.unitNumber}</span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-text-secondary">Floor</span>
-                                <span className="text-sm font-medium text-foreground">{selectedUnit.floor || "N/A"}</span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm text-text-secondary">Monthly Rent</span>
-                                <span className="text-sm font-bold text-foreground">{formatCurrency(selectedUnit.rentAmount)}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="mt-6 pt-6 border-t border-border">
-                          <form onSubmit={handleAssignTenant} className="space-y-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-sm font-medium text-foreground mb-1.5">Property Name</label>
-                                <Input value={assignForm.propertyName || properties.find((p) => p.id === selectedUnit.propertyId)?.name || ""} onChange={(e) => setAssignForm({ ...assignForm, propertyName: e.target.value })} />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-foreground mb-1.5">Unit Number</label>
-                                <Input value={assignForm.unitNumber || selectedUnit.unitNumber} onChange={(e) => setAssignForm({ ...assignForm, unitNumber: e.target.value })} />
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-sm font-medium text-foreground mb-1.5">Monthly Rent (₱)</label>
-                                <Input type="number" value={assignForm.rentAmount || selectedUnit.rentAmount} onChange={(e) => setAssignForm({ ...assignForm, rentAmount: parseFloat(e.target.value) || 0 })} />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-foreground mb-1.5">Contract Start</label>
-                                <Input type="date" value={assignForm.contractStart || ""} onChange={(e) => setAssignForm({ ...assignForm, contractStart: e.target.value })} />
-                              </div>
-                            </div>
-                            <Button type="submit" disabled={isSubmitting} className="w-full sm:w-auto">
-                               {isSubmitting ? (
-                                 <span className="flex items-center gap-2">
-                                   <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                   Assigning...
-                                 </span>
-                               ) : (
-                                 <span className="flex items-center gap-2">
-                                   <CheckCircle2 className="h-4 w-4" />
-                                   Assign Tenant & Submit for Confirmation
-                                 </span>
-                               )}
-                             </Button>
-                           </form>
-                         </div>
-                       </CardContent>
-                     </Card>
-                   </motion.div>
-                 )}
-               </motion.div>
-             )}
-
-              {/* TENANTS */}
-              {activeTab === "tenants" && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                  <div>
-                    <h1 className="text-3xl font-bold text-foreground">Tenants</h1>
-                    <p className="text-base text-text-secondary mt-1">Manage tenants you have registered</p>
+                {/* ASSISTED TENANTS PREVIEW IN OVERVIEW */}
+                <section className="w-full overflow-hidden rounded-xl border border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-4 sm:px-5">
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900">Tenants You Assist</h2>
+                      <p className="mt-1 text-xs text-slate-500">Tenants in your assigned properties, contracts, and inquiries</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setActiveTab("tenants"); window.location.hash = "tenants"; }}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 transition-colors hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    >
+                      View all tenants <ArrowUpRight className="h-3.5 w-3.5" />
+                    </button>
                   </div>
-                  {["owner", "admin"].includes(user?.role || "") && (
-                    <Button onClick={() => setShowCreateTenantModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white">
-                      <UserPlus className="h-4 w-4 mr-2" /> Create Tenant
-                    </Button>
+                  {initialLoad ? (
+                    <div role="status" className="px-5 py-9 text-center text-xs font-medium text-slate-500">Loading assisted tenants…</div>
+                  ) : loadError ? (
+                    <div role="status" className="px-5 py-9 text-center text-xs text-red-600">Assisted tenant data unavailable</div>
+                  ) : tenants.length > 0 ? (
+                    <div className="divide-y divide-slate-100">
+                      {tenants.slice(0, 5).map((tenant) => (
+                        <div key={tenant.id} className="flex flex-wrap items-center justify-between gap-3 p-3.5 sm:px-5 hover:bg-slate-50/70 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <Avatar src={tenant.avatarUrl} fallback={getInitials(tenant.name)} size="sm" />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-semibold text-xs text-slate-900">{tenant.name}</p>
+                                {tenant.isAssisted && (
+                                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 border border-blue-200">
+                                    {tenant.assistReason || "Assisted"}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                {tenant.propertyName ? `${tenant.propertyName}${tenant.unitNumber ? ` · Unit #${tenant.unitNumber}` : ""}` : "Awaiting unit placement"}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={tenant.status === "active" ? "success" : tenant.status === "inactive" ? "outline" : "warning"} className="text-[10px] capitalize">
+                              {tenant.status || "pending"}
+                            </Badge>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2.5 text-xs text-blue-600 hover:bg-blue-50 border-blue-200 gap-1"
+                              onClick={() => {
+                                setSelectedConversation({
+                                  otherUser: {
+                                    id: tenant.id,
+                                    name: tenant.name,
+                                    email: tenant.email,
+                                    role: "tenant",
+                                    avatarUrl: tenant.avatarUrl,
+                                  },
+                                  lastMessage: null,
+                                  unreadCount: 0,
+                                });
+                                setIsMessagingOpen(true);
+                              }}
+                            >
+                              <Send className="h-3 w-3" /> Message
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-5 py-9 text-center">
+                      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                        <Users className="h-5 w-5" />
+                      </div>
+                      <p className="mt-3 text-sm font-semibold text-slate-700">No tenants assigned yet</p>
+                      <p className="mt-1 text-xs text-slate-500">Tenants who apply or reside in your properties will appear here.</p>
+                    </div>
                   )}
-                  <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:flex-row">
-                    <label className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
-                      <Input value={tenantListSearch} onChange={(event) => setTenantListSearch(event.target.value)} placeholder="Search tenants by name, email, or unit" aria-label="Search tenants" className="pl-9" />
-                    </label>
-                    <select value={tenantListFilter} onChange={(event) => setTenantListFilter(event.target.value)} aria-label="Filter tenants" className="h-10 rounded-xl border border-border bg-surface-secondary px-3 text-sm text-foreground sm:w-52">
-                      <option value="all">All tenants</option>
-                      <option value="active">Active</option>
-                      <option value="pending">Pending assignment</option>
-                      <option value="inactive">Inactive</option>
-                      <option value="unassigned">Unassigned</option>
-                    </select>
+                </section>
+
+                {/* RECENT UNITS */}
+                <section className="w-full overflow-hidden rounded-xl border border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-4 sm:px-5">
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900">Recent Units</h2>
+                      <p className="mt-1 text-xs text-slate-500">Units currently assigned to your portfolio</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setActiveTab("units"); window.location.hash = "units"; }}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 transition-colors hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    >
+                      View all units <ArrowUpRight className="h-3.5 w-3.5" />
+                    </button>
                   </div>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-lg">My Tenants</CardTitle>
-                      <CardDescription>Tenants you have created</CardDescription>
+                  {initialLoad ? (
+                    <div role="status" className="px-5 py-9 text-center text-xs font-medium text-slate-500">Loading assigned units…</div>
+                  ) : loadError ? (
+                    <div role="status" className="px-5 py-9 text-center">
+                      <p className="text-sm font-semibold text-slate-700">Assigned units unavailable</p>
+                      <button type="button" onClick={() => void loadData()} className="mt-2 text-xs font-semibold text-blue-700 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">Try again</button>
+                    </div>
+                  ) : units.length > 0 ? (
+                    <>
+                    <div className="hidden overflow-x-auto md:block">
+                      <table className="w-full min-w-[600px] text-left text-xs">
+                        <thead className="bg-slate-50 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="px-4 py-3 sm:px-5">Property</th>
+                            <th className="px-4 py-3">Unit no.</th>
+                            <th className="px-4 py-3">Status</th>
+                            <th className="px-4 py-3">Monthly rent</th>
+                            <th className="px-4 py-3 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {units.slice(0, 6).map((unit) => {
+                            const property = properties.find((item) => item.id === unit.propertyId);
+                            const statusClass = unit.status === "occupied"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : unit.status === "maintenance"
+                                ? "bg-amber-50 text-amber-700"
+                                : "bg-blue-50 text-blue-700";
+                            return (
+                              <tr key={unit.id} className="transition-colors hover:bg-slate-50/80">
+                                <td className="px-4 py-3.5 sm:px-5">
+                                  <span className="block font-semibold text-slate-800">{property?.name || "—"}</span>
+                                  <span className="mt-0.5 block text-[10px] text-slate-500">{property?.location || "Property details unavailable"}</span>
+                                </td>
+                                <td className="px-4 py-3.5 font-medium text-slate-700">{unit.unitNumber}</td>
+                                <td className="px-4 py-3.5">
+                                  <span className={cn("inline-flex rounded-full px-2 py-1 text-[10px] font-semibold capitalize", statusClass)}>{unit.status}</span>
+                                </td>
+                                <td className="px-4 py-3.5 font-medium text-slate-700">{formatCurrency(unit.rentAmount)}</td>
+                                <td className="px-4 py-3.5 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => { setActiveTab("units"); window.location.hash = "units"; }}
+                                    className="rounded-md px-2 py-1 font-semibold text-blue-600 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                  >
+                                    Open
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="divide-y divide-slate-100 md:hidden">
+                      {units.slice(0, 6).map((unit) => {
+                        const property = properties.find((item) => item.id === unit.propertyId);
+                        const statusClass = unit.status === "occupied"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : unit.status === "maintenance"
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-blue-50 text-blue-700";
+                        return (
+                          <article key={unit.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-semibold text-slate-800">{property?.name || "â€”"} Â· Unit {unit.unitNumber}</p>
+                              <p className="mt-0.5 truncate text-[10px] text-slate-500">{formatCurrency(unit.rentAmount)} / month</p>
+                            </div>
+                            <span className={cn("shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold capitalize", statusClass)}>{unit.status}</span>
+                          </article>
+                        );
+                      })}
+                    </div>
+                    </>
+                  ) : (
+                    <div className="px-5 py-9 text-center">
+                      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                        <Home className="h-5 w-5" />
+                      </div>
+                      <p className="mt-3 text-sm font-semibold text-slate-700">No units assigned yet</p>
+                      <p className="mt-1 text-xs text-slate-500">Assigned units will appear here.</p>
+                    </div>
+                  )}
+                </section>
+              </motion.div>
+            )}
+
+            {/* UNITS */}
+            {activeTab === "units" && (
+              <motion.div initial={reduceMotion ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={management.page}>
+                <ManagementBanner />
+                <div className={management.toolbar}>
+                  <label className={management.search}>
+                    <Search aria-hidden="true" />
+                    <input type="search" value={unitSearch} onChange={(event) => setUnitSearch(event.target.value)} placeholder="Search by unit number, property, or location..." aria-label="Search properties or units" />
+                  </label>
+                  <label className={management.filterCompact}><span>Property</span>
+                    <select value={unitPropertyFilter} onChange={(event) => setUnitPropertyFilter(event.target.value)} aria-label="Filter units by property">
+                      <option value="all">All properties</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+                    </select>
+                  </label>
+                  <label className={management.filterCompact}><span>Property type</span>
+                    <select value={unitTypeFilter} onChange={(event) => setUnitTypeFilter(event.target.value)} aria-label="Filter units by property type">
+                      <option value="all">All types</option><option value="house">House</option><option value="condominium">Condominium</option>
+                    </select>
+                  </label>
+                  <label className={management.filterCompact}><span>Status</span>
+                    <select value={unitStatusFilter} onChange={(event) => setUnitStatusFilter(event.target.value)} aria-label="Filter units by status">
+                      <option value="all">All statuses</option><option value="vacant">Available</option><option value="occupied">Occupied</option><option value="maintenance">Under Maintenance</option>
+                    </select>
+                  </label>
+                  <div className={management.toolbarActions}>
+                    <button type="button" className={management.reset} onClick={() => { setUnitSearch(""); setUnitStatusFilter("all"); setUnitPropertyFilter("all"); setUnitTypeFilter("all"); }}><RotateCcw aria-hidden="true" />Reset</button>
+                    <Button onClick={downloadUnitsExport} className={management.export}><Download className="h-4 w-4" />Export</Button>
+                    <Button onClick={() => { setSelectedUnit(null); setSelectedTenant(null); setShowAssignModal(true); }} className="h-9 gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3"><UserPlus className="h-3.5 w-3.5" /> Assign Tenant</Button>
+                  </div>
+                </div>
+                <UnitMetrics total={unitCounts.total} available={unitCounts.available} occupied={unitCounts.occupied} maintenance={unitCounts.maintenance} />
+                <section className={management.tablePanel} aria-label="Units">
+                  <div className={management.tableHeader}>
+                    <h2 className={management.tableTitle}>Units <span className={management.count}>{filteredUnitRows.length} units</span></h2>
+                    <div className={management.tableControls}>
+                      <select value={unitSort} onChange={(event) => setUnitSort(event.target.value)} aria-label="Sort units">
+                        <option value="unit-asc">Sort by: Unit No. (A–Z)</option><option value="unit-desc">Unit No. (Z–A)</option><option value="property">Property (A–Z)</option><option value="rent-asc">Rent (Lowest first)</option><option value="rent-desc">Rent (Highest first)</option>
+                      </select>
+                    </div>
+                  </div>
+                  {initialLoad ? <div role="status" className={management.empty}>Loading units…</div>
+                    : loadError ? <div role="alert" className={management.empty}><strong>Unable to load unit data</strong><Button variant="outline" onClick={() => void loadData()}>Try again</Button></div>
+                    : properties.length === 0 ? <div className={management.empty}><Home aria-hidden="true" /><strong>No properties assigned yet</strong><p>Properties will appear here once the owner assigns them to you.</p></div>
+                    : filteredUnitRows.length === 0 ? <div className={management.empty}><Search aria-hidden="true" /><strong>No units match these filters</strong><p>Adjust your search or reset the filters to see available units.</p></div>
+                    : <>
+                      <div className={management.tableScroll}>
+                        <table className={management.table}>
+                          <thead><tr><th>Unit No.</th><th>Property</th><th>Property Type</th><th>Monthly Rent</th><th>Status</th><th>Tenant</th><th>Actions</th></tr></thead>
+                          <tbody>{visibleUnitRows.map(({ property, unit }) => {
+                            const assignedTenant = tenants.find((tenant) => tenant.unitId === unit.id);
+                            const tenantName = unit.tenantName || assignedTenant?.name;
+                            return <tr key={unit.id}>
+                              <td className="font-semibold">{unit.unitNumber}</td>
+                              <td><span className={management.propertyCell}><Building2 aria-hidden="true" />{property.name}</span></td>
+                              <td className="capitalize">{property.type}</td>
+                              <td className="whitespace-nowrap tabular-nums">{formatCurrency(unit.rentAmount)}</td>
+                              <td><UnitStatus status={unit.status} /></td>
+                              <td>{tenantName ? <span className={management.tenantCell}><User aria-hidden="true" />{tenantName}</span> : "—"}</td>
+                              <td>{unit.status === "vacant" ? <Button variant="outline" className="border-blue-200 text-blue-600" onClick={() => { setSelectedUnit(unit); setSelectedTenant(null); setShowAssignModal(true); }}>Assign tenant</Button> : "—"}</td>
+                            </tr>;
+                          })}</tbody>
+                        </table>
+                      </div>
+                      <ManagementPagination page={currentUnitPage} total={filteredUnitRows.length} noun="units" onPageChange={setUnitPage} />
+                    </>}
+                </section>
+              </motion.div>
+            )}
+
+            {activeTab === "tenants" && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                  <ManagementBanner
+                    category="TENANT MANAGEMENT"
+                    title="Tenant Directory & Assistance"
+                    description="View, manage, and directly assist tenants residing in your assigned properties or contracts."
+                    icon={Users}
+                  />
+
+                  {/* Portfolio Metrics */}
+                  <section aria-label="Tenant portfolio metrics" className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+                    {[
+                      { label: "Assisted Tenants", value: tenants.filter((t) => t.isAssisted).length, tone: "bg-blue-50 text-blue-700" },
+                      { label: "Active In Units", value: activeTenants.length, tone: "bg-emerald-50 text-emerald-700" },
+                      { label: "Pending Assignment", value: pendingTenants.length, tone: "bg-amber-50 text-amber-700" },
+                      { label: "Total In System", value: tenants.length, tone: "bg-slate-50 text-slate-700" },
+                    ].map((metric) => (
+                      <div key={metric.label} className="rounded-lg border border-[#dce8f5] bg-white px-3 py-2.5 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:px-4">
+                        <p className="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{metric.label}</p>
+                        <p className={cn("mt-1 inline-flex min-w-8 items-center justify-center rounded-md px-2 py-0.5 text-lg font-bold tabular-nums", metric.tone)}>
+                          {initialLoad || loadError ? "—" : metric.value}
+                        </p>
+                      </div>
+                    ))}
+                  </section>
+
+                  {/* Search and Filters */}
+                  <div className="flex flex-col gap-3 rounded-xl border border-[#dce8f5] bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:flex-row sm:items-center sm:p-4">
+                    <label className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        value={tenantListSearch}
+                        onChange={(event) => setTenantListSearch(event.target.value)}
+                        placeholder="Search by tenant name, email, property, unit, or status..."
+                        aria-label="Search tenants"
+                        className="h-9.5 rounded-lg border-slate-200 pl-9 text-xs"
+                      />
+                    </label>
+                    <select
+                      value={tenantListFilter}
+                      onChange={(event) => setTenantListFilter(event.target.value)}
+                      aria-label="Filter tenants"
+                      className="h-9.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 sm:w-56"
+                    >
+                      <option value="all">All Tenants ({tenants.length})</option>
+                      <option value="assisted">Assisted by You ({tenants.filter((t) => t.isAssisted).length})</option>
+                      <option value="active">Active Leases ({activeTenants.length})</option>
+                      <option value="pending">Pending Assignment ({pendingTenants.length})</option>
+                      <option value="unassigned">Unassigned ({tenants.filter((t) => !t.unitId).length})</option>
+                      <option value="inactive">Past / Inactive ({tenants.filter((t) => t.status === "inactive").length})</option>
+                    </select>
+
+                    <Button
+                      onClick={() => setShowAccountRequestModal(true)}
+                      className="h-9.5 gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4"
+                    >
+                      <UserPlus className="h-4 w-4" /> Request Tenant Account
+                    </Button>
+                  </div>
+
+                  {/* Tenant List */}
+                  <Card className="overflow-hidden border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+                    <CardHeader className="border-b border-slate-100 bg-[#f6f9fd] px-4 py-3 sm:px-5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <CardTitle className="text-sm font-semibold text-slate-900">Tenants Portfolio & Assistance</CardTitle>
+                          <CardDescription className="text-xs">
+                            Tenants currently residing in your properties, inquiring for leases, or registered with your agency
+                          </CardDescription>
+                        </div>
+                        <span className="text-xs font-medium text-slate-500">
+                          Showing {filteredTenants.length} of {tenants.length} tenants
+                        </span>
+                      </div>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="p-3 sm:p-5">
                       <div className="space-y-3">
-                        {myTenants.length === 0 ? (
-                          <div className="text-center py-12">
-                            <Users className="h-12 w-12 text-text-tertiary mx-auto mb-3" />
-                            <p className="text-text-secondary font-medium">No tenants yet</p>
-                            <p className="text-xs text-text-tertiary mt-1">Register a tenant above to get started</p>
+                        {initialLoad ? (
+                          <div role="status" className="py-12 text-center text-sm text-slate-500">Loading tenant records…</div>
+                        ) : loadError ? (
+                          <div role="status" className="py-12 text-center">
+                            <p className="text-sm font-semibold text-red-600">Tenant records could not be loaded.</p>
+                            <button type="button" onClick={() => void loadData()} className="mt-2 text-xs font-semibold text-blue-700 hover:text-blue-900">Try again</button>
                           </div>
                         ) : filteredTenants.length === 0 ? (
-                          <p className="py-8 text-center text-sm text-text-secondary">No tenants match your search or filter.</p>
+                          <div className="text-center py-12">
+                            <Users className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+                            <p className="text-slate-700 font-semibold text-sm">No tenants match your search or filter</p>
+                            <p className="text-xs text-slate-500 mt-1">Try switching filters or clearing your search query.</p>
+                          </div>
                         ) : (
                           filteredTenants.map((tenant) => (
-                            <div key={tenant.id} className="flex items-center justify-between p-4 rounded-xl border border-border hover:bg-surface-secondary transition-colors">
-                              <div className="flex items-center gap-3">
-                                <Avatar src={tenant.avatarUrl} fallback={getInitials(tenant.name)} size="sm" />
-                                <div>
-                                  <p className="font-medium text-foreground">{tenant.name}</p>
-                                  <p className="text-xs text-text-secondary">{tenant.email}</p>
-                                  {tenant.phone && <p className="text-xs text-text-tertiary">{tenant.phone}</p>}
+                            <div
+                              key={tenant.id}
+                              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-blue-300 transition-all space-y-3.5"
+                            >
+                              {/* Top Row: Identity, Contact, Assistance Badge, Status */}
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="flex items-start gap-3 min-w-0">
+                                  <Avatar src={tenant.avatarUrl} fallback={getInitials(tenant.name)} size="md" className="ring-2 ring-blue-100 shrink-0" />
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="font-bold text-slate-900 text-sm truncate">{tenant.name}</p>
+                                      {tenant.isAssisted ? (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 border border-blue-200">
+                                          <CheckCircle2 className="h-3 w-3 text-blue-600" />
+                                          Assisted: {tenant.assistReason || "Assigned Property"}
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                                          {tenant.propertyName ? tenant.propertyName : "Available Renter"}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-slate-500">
+                                      <span className="flex items-center gap-1">
+                                        <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                        <a href={`mailto:${tenant.email}`} className="hover:text-blue-600 hover:underline truncate max-w-[200px]">{tenant.email}</a>
+                                      </span>
+                                      {tenant.phone && (
+                                        <span className="flex items-center gap-1">
+                                          <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                          <a href={`tel:${tenant.phone}`} className="hover:text-blue-600 hover:underline">{tenant.phone}</a>
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Badge
+                                    variant={tenant.status === "active" ? "success" : tenant.status === "inactive" ? "outline" : "warning"}
+                                    className="text-xs capitalize font-medium"
+                                  >
+                                    {tenant.status || "pending"}
+                                  </Badge>
+                                  {tenant.idVerificationStatus && (
+                                    <Badge
+                                      variant={tenant.idVerificationStatus === "approved" ? "success" : tenant.idVerificationStatus === "rejected" ? "danger" : "outline"}
+                                      className="text-[11px]"
+                                    >
+                                      {tenant.idVerificationStatus === "approved" ? "ID Verified" : tenant.idVerificationStatus === "rejected" ? "ID Rejected" : "ID Pending"}
+                                    </Badge>
+                                  )}
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                  <Badge variant={tenant.status === "active" ? "success" : tenant.status === "inactive" ? "outline" : "warning"} className="text-xs capitalize">{tenant.status || "pending"}</Badge>
+
+                              {/* Middle Row: Property & Unit Assignment Details */}
+                              <div className="rounded-lg bg-slate-50/90 border border-slate-100 p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+                                {tenant.propertyName || tenant.unitNumber ? (
+                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-slate-700">
+                                    <span className="flex items-center gap-1.5 font-semibold text-slate-900">
+                                      <Building2 className="h-4 w-4 text-blue-600" />
+                                      {tenant.propertyName || "Assigned Property"}
+                                    </span>
+                                    {tenant.unitNumber && (
+                                      <span className="flex items-center gap-1 text-slate-600 font-medium">
+                                        <Home className="h-3.5 w-3.5 text-slate-400" />
+                                        Unit #{tenant.unitNumber}
+                                      </span>
+                                    )}
+                                    {Number(tenant.rentAmount) > 0 && (
+                                      <span className="font-semibold text-emerald-700">
+                                        {formatCurrency(tenant.rentAmount)} / mo
+                                      </span>
+                                    )}
+                                    {(tenant.contractStart || tenant.contractEnd) && (
+                                      <span className="flex items-center gap-1 text-slate-500">
+                                        <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
+                                        {tenant.contractStart ? formatDate(tenant.contractStart) : "—"} to {tenant.contractEnd ? formatDate(tenant.contractEnd) : "—"}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2 text-amber-700 font-medium">
+                                    <Clock className="h-4 w-4 text-amber-600 shrink-0" />
+                                    <span>Awaiting unit assignment — Ready to place in one of your managed units</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Bottom Row: Direct Actions */}
+                              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {/* Message Tenant Button */}
+                                  <Button
+                                    size="sm"
+                                    className="h-8 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 shadow-sm"
+                                    onClick={() => {
+                                      setSelectedConversation({
+                                        otherUser: {
+                                          id: tenant.id,
+                                          name: tenant.name,
+                                          email: tenant.email,
+                                          role: "tenant",
+                                          avatarUrl: tenant.avatarUrl,
+                                        },
+                                        lastMessage: null,
+                                        unreadCount: 0,
+                                      });
+                                      setIsMessagingOpen(true);
+                                    }}
+                                  >
+                                    <Send className="h-3.5 w-3.5" /> Message Tenant
+                                  </Button>
+
+                                  {!tenant.unitId && (
+                                    <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 border-blue-200" onClick={() => { setSelectedTenant(tenant); setSelectedUnit(null); setShowAssignModal(true); }}><UserPlus className="h-3.5 w-3.5" /> Assign to Unit</Button>
+                                  )}
+
                                   {tenant.status === "active" && (
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      className="text-emerald-700 hover:bg-emerald-50"
+                                      className="h-8 text-xs text-emerald-700 hover:bg-emerald-50 border-emerald-200 font-medium"
                                       onClick={async () => {
                                         if (!window.confirm(`Mark ${tenant.name}'s stay as done?`)) return;
                                         const updated = await updateTenantStatus(tenant.id, "inactive");
@@ -1005,19 +1318,24 @@ export default function AgentDashboard() {
                                         }
                                       }}
                                     >
-                                      Done
+                                      Stay Done
                                     </Button>
                                   )}
-                                  <DropdownMenu modal={false}>
-                                   <DropdownMenuTrigger asChild>
-                                     <button className="h-8 px-2 rounded-lg flex items-center gap-1 text-xs font-medium text-text-secondary hover:text-foreground hover:bg-surface-secondary transition-colors border border-border">
-                                       Actions <ChevronDown className="h-3.5 w-3.5" />
-                                     </button>
-                                   </DropdownMenuTrigger>
-                                   <DropdownMenuContent align="end" sideOffset={4} side="bottom">
-                                    <DropdownMenuItem onSelect={() => { setSelectedTenant(tenant); setActiveTab("units"); window.location.hash = "units"; }}>Assign Unit</DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={() => { setSelectedTenant(tenant); setActiveTab("verifications"); }}>View Verification</DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={() => window.location.href = `mailto:${tenant.email}`}>Send Email</DropdownMenuItem>
+                                </div>
+
+                                <DropdownMenu modal={false}>
+                                  <DropdownMenuTrigger asChild>
+                                    <button className="h-8 px-2.5 rounded-lg flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors border border-slate-200">
+                                      More Actions <ChevronDown className="h-3.5 w-3.5" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" sideOffset={4} side="bottom">
+                                    <DropdownMenuItem onSelect={() => { setSelectedTenant(tenant); setSelectedUnit(null); setShowAssignModal(true); }}>
+                                      Assign / Change Unit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => window.location.href = `mailto:${tenant.email}`}>
+                                      Send Direct Email
+                                    </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </div>
@@ -1030,276 +1348,186 @@ export default function AgentDashboard() {
                 </motion.div>
               )}
 
-              {/* VERIFICATIONS */}
-            {activeTab === "verifications" && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                <div>
-                  <h1 className="text-3xl font-bold text-foreground">Tenant Verifications</h1>
-                  <p className="text-base text-text-secondary mt-1">Review and verify tenant ID documents</p>
-                </div>
-                <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:flex-row">
-                  <label className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
-                    <Input value={verificationSearch} onChange={(event) => setVerificationSearch(event.target.value)} placeholder="Search tenants by name or email" aria-label="Search verification records" className="pl-9" />
-                  </label>
-                  <select value={verificationFilter} onChange={(event) => setVerificationFilter(event.target.value)} aria-label="Filter verifications by status" className="h-10 rounded-xl border border-border bg-surface-secondary px-3 text-sm text-foreground sm:w-52">
-                    <option value="all">All statuses</option>
-                    <option value="pending">Pending</option>
-                    <option value="rejected">Rejected</option>
-                  </select>
-                </div>
-
-                {/* Pending Verifications */}
-                {verificationFilter !== "rejected" && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <CheckCircle2 className="h-5 w-5 text-amber-500" /> Pending Verifications
-                    </CardTitle>
-                    <CardDescription>Tenants awaiting ID verification</CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-6">
-                    <div className="space-y-3">
-                      {pendingVerifications.length === 0 ? (
-                        <div className="text-center py-12">
-                          <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-3" />
-                          <p className="text-text-secondary font-medium">All caught up!</p>
-                          <p className="text-xs text-text-tertiary mt-1">No pending verifications</p>
-                        </div>
-                      ) : (
-                        pendingVerifications.map((tenant) => (
-                          <div key={tenant.id} className="flex items-center justify-between p-4 rounded-xl border border-border hover:bg-surface-secondary transition-colors">
-                            <div className="flex items-center gap-3">
-                              <Avatar src={tenant.avatarUrl} fallback={getInitials(tenant.name)} />
-                              <div>
-                                <p className="font-medium text-foreground">{tenant.name}</p>
-                                <p className="text-xs text-text-secondary">{tenant.email}</p>
-                                {tenant.phone && <p className="text-xs text-text-tertiary">{tenant.phone}</p>}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {tenant.idVerificationUrl && (
-                                <a href={tenant.idVerificationUrl} target="_blank" rel="noopener noreferrer">
-                                  <Button size="sm" variant="outline">View ID</Button>
-                                </a>
-                              )}
-                              <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={async () => { await updateTenantVerification(tenant.id, "approved"); toast.success("Tenant verified"); loadData(); }}>Approve</Button>
-                              <Button size="sm" variant="destructive" onClick={async () => { await updateTenantVerification(tenant.id, "rejected"); toast.success("Verification rejected"); loadData(); }}>Reject</Button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-                )}
-
-                {/* Rejected Applicants */}
-                {verificationFilter !== "pending" && (
-                <Card className="border-red-100">
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <XCircle className="h-5 w-5 text-red-500" /> Rejected Applicants
-                      {rejectedVerifications.length > 0 && (
-                        <motion.span
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          className="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white"
-                        >
-                          {rejectedVerifications.length}
-                        </motion.span>
-                      )}
-                    </CardTitle>
-                    <CardDescription>Tenants whose ID verification was rejected</CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-6">
-                    <div className="space-y-3">
-                      {rejectedVerifications.length === 0 ? (
-                        <div className="text-center py-8">
-                          <p className="text-text-secondary text-sm">No rejected applicants</p>
-                        </div>
-                      ) : (
-                        rejectedVerifications.map((tenant) => (
-                          <div key={tenant.id} className="flex items-center justify-between p-4 rounded-xl border border-red-100 bg-red-50/30 hover:bg-red-50 transition-colors">
-                            <div className="flex items-center gap-3">
-                              <Avatar src={tenant.avatarUrl} fallback={getInitials(tenant.name)} />
-                              <div>
-                                <p className="font-medium text-foreground">{tenant.name}</p>
-                                <p className="text-xs text-text-secondary">{tenant.email}</p>
-                                {tenant.phone && <p className="text-xs text-text-tertiary">{tenant.phone}</p>}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="destructive" className="text-xs">Rejected</Badge>
-                              {tenant.idVerificationUrl && (
-                                <a href={tenant.idVerificationUrl} target="_blank" rel="noopener noreferrer">
-                                  <Button size="sm" variant="outline">View ID</Button>
-                                </a>
-                              )}
-                              <Button
-                                size="sm"
-                                className="bg-green-600 hover:bg-green-700 text-white"
-                                onClick={async () => {
-                                  await updateTenantVerification(tenant.id, "approved");
-                                  toast.success("Tenant approved");
-                                  loadData();
-                                }}
-                              >
-                                Re-approve
-                              </Button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-                )}
-              </motion.div>
-            )}
-
-            {/* PAYMENTS */}
+              {/* PAYMENTS */}
             {activeTab === "payments" && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                <div>
-                  <h1 className="text-3xl font-bold text-foreground">Payment Monitoring</h1>
-                  <p className="text-base text-text-secondary mt-1">Track payment status across all tenants</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <Card>
-                    <CardContent className="p-6">
-                      <p className="text-sm font-medium text-text-secondary mb-2">Total Collected</p>
-                       <p className="text-3xl font-bold text-green-600">{formatCurrency(payments.filter((p) => p.status === "paid").reduce((sum, p) => sum + p.amountPaid, 0))}</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="p-6">
-                      <p className="text-sm font-medium text-text-secondary mb-2">Pending</p>
-                      <p className="text-3xl font-bold text-amber-600">{pendingPayments.length}</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="p-6">
-                      <p className="text-sm font-medium text-text-secondary mb-2">Overdue</p>
-                      <p className="text-3xl font-bold text-red-600">{overduePayments.length}</p>
-                    </CardContent>
-                  </Card>
-                </div>
-                <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:flex-row">
-                  <label className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
-                    <Input value={paymentSearch} onChange={(event) => setPaymentSearch(event.target.value)} placeholder="Search tenant or property" aria-label="Search payments" className="pl-9" />
-                  </label>
-                  <select value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)} aria-label="Filter payments by status" className="h-10 rounded-xl border border-border bg-surface-secondary px-3 text-sm text-foreground sm:w-52">
-                    <option value="all">All statuses</option>
-                    <option value="paid">Paid</option>
-                    <option value="pending">Pending</option>
-                    <option value="overdue">Overdue</option>
-                    <option value="partial">Partial</option>
-                  </select>
-                </div>
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="text-lg">Payment Records</CardTitle>
-                        <CardDescription>All payment transactions</CardDescription>
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                <ManagementBanner
+                  financial
+                  category="FINANCIAL MANAGEMENT"
+                  title="Financial Transactions"
+                  description="Track payments, balances, receipts, and submitted remittances across assigned units."
+                  icon={CreditCard}
+                />
+                <div className="rounded-xl border border-[#dce8f5] bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:p-4">
+                  <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+                    <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[minmax(220px,1fr)_minmax(0,1fr)]">
+                      <label className="relative min-w-0">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          type="search"
+                          value={paymentSearch}
+                          onChange={(event) => setPaymentSearch(event.target.value)}
+                          placeholder="Search tenant, property, unit, or reference..."
+                          aria-label="Search payments"
+                          className="h-9 rounded-lg border-slate-200 pl-9 text-sm"
+                        />
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 text-[10px] font-medium text-slate-500">
+                          From<input type="date" value={paymentDateFrom} onChange={(event) => setPaymentDateFrom(event.target.value)} aria-label="Payments from date" className="min-w-0 flex-1 bg-transparent py-2 text-xs text-slate-700 outline-none" />
+                        </label>
+                        <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 text-[10px] font-medium text-slate-500">
+                          To<input type="date" value={paymentDateTo} onChange={(event) => setPaymentDateTo(event.target.value)} aria-label="Payments to date" className="min-w-0 flex-1 bg-transparent py-2 text-xs text-slate-700 outline-none" />
+                        </label>
                       </div>
                     </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {payments.length === 0 ? (
-                        <p className="text-center py-8 text-text-secondary">No payment records yet</p>
-                      ) : filteredPayments.length === 0 ? (
-                        <p className="text-center py-8 text-text-secondary">No payments match your search or filter</p>
-                      ) : (
-                        filteredPayments.slice().reverse().map((payment) => (
-                          <div key={payment.id} className="flex items-center justify-between p-4 rounded-xl border border-border hover:bg-surface-secondary transition-colors">
-                            <div className="flex items-center gap-3">
-                               <Avatar src={payment.tenantName ? (tenants.find(t => t.name === payment.tenantName)?.avatarUrl || "") : ""} fallback={getInitials(payment.tenantName)} size="sm" />
-                              <div>
-                                <p className="text-base font-medium text-foreground">{payment.tenantName}</p>
-                                <p className="text-sm text-text-secondary">{payment.propertyName} • {formatDate(payment.paymentDate)}</p>
-                                {payment.stayStart && payment.stayEnd && (
-                                  <p className="text-xs text-blue-600">Stay: {formatDate(payment.stayStart)} - {formatDate(payment.stayEnd)}</p>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <div className="text-right">
-                                <p className="text-base font-semibold text-foreground">{formatCurrency(payment.amountPaid)}</p>
-                                <p className="text-sm text-text-secondary">of {formatCurrency(payment.amountDue)}</p>
-                              </div>
-                              {getStatusBadge(payment.status)}
-                               {payment.receiptUrl && (
-                                 <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setViewingReceipt(payment)}>
-                                   <FileText className="h-3.5 w-3.5 mr-1" />View Receipt
-                                 </Button>
-                               )}
-                            </div>
-                            {payment.status === "pending" && (
-                              <Button size="sm" variant="outline" className="h-8 text-xs border-blue-200 text-blue-600 hover:bg-blue-50"
-                                onClick={() => handleForwardToOwner(payment)}>
-                                <Send className="h-3.5 w-3.5 mr-1" />Forward to Owner
-                              </Button>
-                            )}
-                          </div>
-                        ))
-                      )}
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                      <select
+                        value={paymentTypeFilter}
+                        onChange={(event) => setPaymentTypeFilter(event.target.value)}
+                        aria-label="Filter payments by transaction type"
+                        className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700"
+                      >
+                        <option value="all">All types</option>
+                        {Array.from(new Set(payments.map((payment) => payment.paymentMethod))).map((method) => (
+                          <option key={method} value={method}>{method.replace(/_/g, " ")}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={paymentFilter}
+                        onChange={(event) => setPaymentFilter(event.target.value)}
+                        aria-label="Filter payments by status"
+                        className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700"
+                      >
+                        <option value="all">All statuses</option>
+                        <option value="paid">Paid</option>
+                        <option value="pending">Pending</option>
+                        <option value="overdue">Overdue</option>
+                        <option value="partial">Partial</option>
+                      </select>
+                      <Button variant="outline" onClick={downloadFinancialExport} className="h-9 rounded-lg border-slate-200 px-3 text-xs">
+                        <Download className="mr-1.5 h-3.5 w-3.5" />Excel
+                      </Button>
+                      <Button variant="outline" onClick={downloadFinancialPdf} className="h-9 rounded-lg border-slate-200 px-3 text-xs">
+                        <Download className="mr-1.5 h-3.5 w-3.5" />PDF
+                      </Button>
                     </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
-
-            {/* PAYMENT HISTORY */}
-            {activeTab === "payments" && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 border-t border-border pt-8">
-                <div>
-                  <h2 className="text-2xl font-bold text-foreground">Payment History</h2>
-                  <p className="text-base text-text-secondary mt-1">Complete transaction history across all properties</p>
+                  </div>
                 </div>
-                <Card>
-                  <CardContent className="p-6">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                           <tr className="border-b border-border">
-                             <th className="text-left py-3 px-4 text-sm font-medium text-text-secondary uppercase tracking-wider">Tenant</th>
-                             <th className="text-left py-3 px-4 text-sm font-medium text-text-secondary uppercase tracking-wider">Property</th>
-                             <th className="text-left py-3 px-4 text-sm font-medium text-text-secondary uppercase tracking-wider">Amount</th>
-                             <th className="text-left py-3 px-4 text-sm font-medium text-text-secondary uppercase tracking-wider">Status</th>
-                             <th className="text-left py-3 px-4 text-sm font-medium text-text-secondary uppercase tracking-wider">Stay Dates</th>
-                             <th className="text-left py-3 px-4 text-sm font-medium text-text-secondary uppercase tracking-wider">Date</th>
-                           </tr>
-                        </thead>
-                        <tbody>
-                          {filteredPayments.slice().reverse().map((payment) => (
-                            <tr key={payment.id} className="border-b border-border/50 hover:bg-surface-secondary transition-colors">
-                              <td className="py-3 px-4">
-                                <div className="flex items-center gap-2">
-                                  <Avatar src={payment.tenantName ? (tenants.find(t => t.name === payment.tenantName)?.avatarUrl || "") : ""} fallback={getInitials(payment.tenantName)} size="sm" />
-                                  <span className="font-medium text-foreground">{payment.tenantName}</span>
-                                </div>
-                              </td>
-                              <td className="py-3 px-4 text-text-secondary">{payment.propertyName}</td>
-                              <td className="py-3 px-4 font-medium text-foreground">{formatCurrency(payment.amountPaid)}</td>
-                              <td className="py-3 px-4">{getStatusBadge(payment.status)}</td>
-                              <td className="py-3 px-4 text-text-secondary">
-                                {payment.stayStart && payment.stayEnd
-                                  ? `${formatDate(payment.stayStart)} - ${formatDate(payment.stayEnd)}`
-                                  : "-"}
-                              </td>
-                              <td className="py-3 px-4 text-text-secondary">{formatDate(payment.paymentDate)}</td>
-                            </tr>
-                          ))}
-                            {filteredPayments.length === 0 && (
-                              <tr><td colSpan={6} className="py-8 text-center text-text-secondary">No payments found</td></tr>
-                            )}
-                        </tbody>
-                      </table>
+
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+                  {[
+                    { label: "Collected", value: formatCurrency(filteredCollected), note: "Paid transactions", tone: "emerald" },
+                    { label: "Outstanding", value: formatCurrency(filteredOutstanding), note: `${filteredPayments.filter((payment) => payment.status !== "paid").length} open items`, tone: "amber" },
+                    { label: "Overdue", value: formatCurrency(filteredOverdueAmount), note: `${filteredPayments.filter((payment) => payment.status === "overdue").length} overdue`, tone: "rose" },
+                    { label: "Receipts", value: String(filteredReceiptCount), note: `${filteredReceiptCount} attached`, tone: "blue" },
+                  ].map((metric) => (
+                    <div key={metric.label} className="rounded-lg border border-[#dce8f5] bg-white px-3 py-2.5 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:px-4 sm:py-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{metric.label}</p>
+                      <div className="mt-1.5 flex items-center justify-between gap-2">
+                        <p className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">{metric.value}</p>
+                        <span className={cn(
+                          "inline-flex h-2.5 w-2.5 rounded-full",
+                          metric.tone === "emerald" && "bg-green-500",
+                          metric.tone === "amber" && "bg-amber-500",
+                          metric.tone === "rose" && "bg-red-500",
+                          metric.tone === "blue" && "bg-blue-500"
+                        )} />
+                      </div>
+                      <p className="mt-1 text-[10px] text-slate-500 sm:text-xs">{metric.note}</p>
                     </div>
+                  ))}
+                </div>
+
+                <Card className="overflow-hidden border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+                  <CardHeader className="border-b border-slate-100 bg-[#f6f9fd] px-4 py-3 sm:px-5">
+                    <CardTitle className="text-sm font-semibold text-slate-900">Payment records</CardTitle>
+                    <CardDescription className="mt-1 text-xs text-slate-500">
+                      {filteredPayments.length} transaction{filteredPayments.length === 1 ? "" : "s"} match your search and filters
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {initialLoad ? (
+                      <div role="status" className="px-6 py-12 text-center text-sm text-slate-500">Loading payment activity…</div>
+                    ) : loadError ? (
+                      <div role="status" className="px-6 py-12 text-center text-sm text-red-600">Unable to load payment data. Please refresh to try again.</div>
+                    ) : filteredPayments.length > 0 ? (
+                      <>
+                        <div className="hidden overflow-x-auto md:block">
+                          <table className="w-full min-w-[920px] border-collapse text-left">
+                            <thead className="bg-[#f6f9fd]">
+                              <tr className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                <th className="px-4 py-3"><button type="button" onClick={() => togglePaymentSort("paymentDate")} className="hover:text-blue-700">Date{paymentSort.key === "paymentDate" ? paymentSort.direction === "asc" ? " ↑" : " ↓" : ""}</button></th>
+                                <th className="px-4 py-3"><button type="button" onClick={() => togglePaymentSort("tenantName")} className="hover:text-blue-700">Tenant{paymentSort.key === "tenantName" ? paymentSort.direction === "asc" ? " ↑" : " ↓" : ""}</button></th>
+                                <th className="px-4 py-3"><button type="button" onClick={() => togglePaymentSort("unitId")} className="hover:text-blue-700">Unit{paymentSort.key === "unitId" ? paymentSort.direction === "asc" ? " ↑" : " ↓" : ""}</button></th>
+                                <th className="px-4 py-3"><button type="button" onClick={() => togglePaymentSort("paymentMethod")} className="hover:text-blue-700">Type{paymentSort.key === "paymentMethod" ? paymentSort.direction === "asc" ? " ↑" : " ↓" : ""}</button></th>
+                                <th className="px-4 py-3"><button type="button" onClick={() => togglePaymentSort("amountPaid")} className="hover:text-blue-700">Amount{paymentSort.key === "amountPaid" ? paymentSort.direction === "asc" ? " ↑" : " ↓" : ""}</button></th>
+                                <th className="px-4 py-3"><button type="button" onClick={() => togglePaymentSort("status")} className="hover:text-blue-700">Status{paymentSort.key === "status" ? paymentSort.direction === "asc" ? " ↑" : " ↓" : ""}</button></th>
+                                <th className="px-4 py-3"><button type="button" onClick={() => togglePaymentSort("id")} className="hover:text-blue-700">Reference{paymentSort.key === "id" ? paymentSort.direction === "asc" ? " ↑" : " ↓" : ""}</button></th><th className="px-4 py-3 text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {visiblePayments.map((payment) => (
+                                <tr key={payment.id} className="text-xs text-slate-700 transition-colors hover:bg-blue-50/40">
+                                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDate(payment.paymentDate)}</td>
+                                  <td className="px-4 py-3"><span className="font-semibold text-slate-900">{payment.tenantName}</span><span className="mt-0.5 block text-[10px] text-slate-500">{payment.propertyName}</span></td>
+                                  <td className="whitespace-nowrap px-4 py-3">Unit {units.find((unit) => unit.id === payment.unitId)?.unitNumber || payment.unitId}</td>
+                                  <td className="whitespace-nowrap px-4 py-3 capitalize">{payment.paymentMethod.replace("_", " ")}</td>
+                                  <td className="whitespace-nowrap px-4 py-3"><span className="font-semibold tabular-nums text-slate-900">{formatCurrency(payment.amountPaid)}</span><span className="ml-1 text-[10px] text-slate-500">of {formatCurrency(payment.amountDue)}</span></td>
+                                  <td className="px-4 py-3"><Badge variant={payment.status === "paid" ? "success" : payment.status === "pending" ? "warning" : payment.status === "partial" ? "info" : "destructive"} className="text-[10px] capitalize">{payment.status}</Badge></td>
+                                  <td className="max-w-32 truncate px-4 py-3 font-mono text-[10px] text-slate-500" title={payment.id}>{payment.id}</td>
+                                  <td className="px-4 py-3 text-right">
+                                    <div className="flex justify-end gap-1.5">
+                                      {payment.receiptUrl && <Button size="sm" variant="outline" className="h-7 rounded-md px-2 text-[10px]" onClick={() => setViewingReceipt(payment)}><FileText className="mr-1 h-3 w-3" />Receipt</Button>}
+                                      {payment.status === "pending" && <Button size="sm" variant="outline" className="h-7 rounded-md px-2 text-[10px]" onClick={() => handleForwardToOwner(payment)}><Send className="mr-1 h-3 w-3" />Forward</Button>}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="divide-y divide-slate-100 md:hidden">
+                          {visiblePayments.map((payment) => (
+                            <div key={payment.id} className="space-y-2.5 p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-slate-900">{payment.tenantName}</p>
+                                  <p className="mt-0.5 truncate text-[11px] text-slate-500">{payment.propertyName} · Unit {units.find((unit) => unit.id === payment.unitId)?.unitNumber || payment.unitId}</p>
+                                </div>
+                                <Badge variant={payment.status === "paid" ? "success" : payment.status === "pending" ? "warning" : payment.status === "partial" ? "info" : "destructive"} className="shrink-0 text-[10px] capitalize">{payment.status}</Badge>
+                              </div>
+                              <div className="flex items-center justify-between gap-2 text-[11px]">
+                                <span className="text-slate-500">{formatDate(payment.paymentDate)} · {payment.paymentMethod.replace("_", " ")}</span>
+                                <span className="font-semibold tabular-nums text-slate-900">{formatCurrency(payment.amountPaid)} <span className="font-normal text-slate-500">/ {formatCurrency(payment.amountDue)}</span></span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="max-w-40 truncate font-mono text-[10px] text-slate-400" title={payment.id}>Ref {payment.id}</span>
+                                <div className="flex gap-1.5">
+                                  {payment.receiptUrl && <Button size="sm" variant="outline" className="h-7 rounded-md px-2 text-[10px]" onClick={() => setViewingReceipt(payment)}><FileText className="mr-1 h-3 w-3" />Receipt</Button>}
+                                  {payment.status === "pending" && <Button size="sm" variant="outline" className="h-7 rounded-md px-2 text-[10px]" onClick={() => handleForwardToOwner(payment)}><Send className="mr-1 h-3 w-3" />Forward</Button>}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex min-h-[220px] items-center justify-center px-6 py-10">
+                        <div className="max-w-sm text-center">
+                          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-border bg-surface-secondary text-text-secondary">
+                            <Search className="h-5 w-5" />
+                          </div>
+                          <h3 className="mt-4 text-base font-semibold text-foreground">
+                            {payments.length === 0 ? "No payment records yet" : "No transactions found"}
+                          </h3>
+                          <p className="mt-2 text-sm text-text-secondary">
+                            {payments.length === 0 ? "Payment activity will appear here." : "Try a different search or status filter to see payment activity."}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {!initialLoad && !loadError && filteredPayments.length > 0 && <PaginationControls page={paymentPage} total={filteredPayments.length} onPageChange={setPaymentPage} />}
                   </CardContent>
                 </Card>
               </motion.div>
@@ -1308,10 +1536,12 @@ export default function AgentDashboard() {
             {/* MESSAGES */}
             {activeTab === "messages" && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                <div>
-                  <h1 className="text-3xl font-bold text-foreground">Messages</h1>
-                  <p className="text-base text-text-secondary mt-1">Communicate with owners, tenants, and landing-page visitors</p>
-                </div>
+                <ManagementBanner
+                  category="COMMUNICATION HUB"
+                  title="Agent Messages"
+                  description="Communicate with property owners, tenants, and landing page prospective renters."
+                  icon={Send}
+                />
                 <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:flex-row">
                   <label className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
@@ -1349,7 +1579,7 @@ export default function AgentDashboard() {
                                <Avatar src={conv.otherUser?.avatarUrl} fallback={conv.otherUser?.name ? getInitials(conv.otherUser.name) : "?"} />
                               <div>
                                 <p className="font-medium text-foreground">{conv.otherUser?.name || "Unknown"}</p>
-                                <p className="text-xs text-text-secondary truncate max-w-[200px]">{conv.lastMessage.subject && `${conv.lastMessage.subject} - `}{conv.lastMessage.body}</p>
+                                <p className="text-xs text-text-secondary truncate max-w-50">{conv.lastMessage.subject && `${conv.lastMessage.subject} - `}{conv.lastMessage.body}</p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -1367,87 +1597,164 @@ export default function AgentDashboard() {
 
             {/* INQUIRIES */}
             {activeTab === "inquiries" && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                <div>
-                  <h1 className="text-3xl font-bold text-foreground">Landing Inquiries</h1>
-                  <p className="text-base text-text-secondary mt-1">Messages from visitors through the landing page</p>
-                </div>
-                <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 sm:flex-row">
-                  <label className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
-                    <Input value={inquirySearch} onChange={(event) => setInquirySearch(event.target.value)} placeholder="Search inquiries by name, email, or message" aria-label="Search inquiries" className="pl-9" />
-                  </label>
-                  <select value={inquiryFilter} onChange={(event) => setInquiryFilter(event.target.value)} aria-label="Filter inquiries by status" className="h-10 rounded-xl border border-border bg-surface-secondary px-3 text-sm text-foreground sm:w-52">
-                    <option value="all">All inquiries</option>
-                    <option value="new">New</option>
-                    <option value="read">Read</option>
-                    <option value="replied">Replied</option>
-                  </select>
-                </div>
-                <Card>
-                  <CardContent className="p-6">
-                    <div className="space-y-3">
-                      {inquiries.length === 0 ? (
-                        <div className="text-center py-12">
-                          <Mail className="h-12 w-12 text-text-tertiary mx-auto mb-3" />
-                          <p className="text-text-secondary font-medium">No inquiries yet</p>
-                          <p className="text-xs text-text-tertiary mt-1">When visitors contact you from the landing page, they will appear here.</p>
-                        </div>
-                      ) : filteredInquiries.length === 0 ? (
-                        <p className="py-8 text-center text-sm text-text-secondary">No inquiries match your search or filter.</p>
-                      ) : (
-                        filteredInquiries.map((inq, index) => (
-                          <motion.div
-                            key={inq.id}
-                            custom={index}
-                            initial="hidden"
-                            animate="visible"
-                            variants={listAnimation}
-                            whileHover={{ y: -2, scale: 1.01 }}
-                            className="p-4 rounded-xl border border-border hover:bg-surface-secondary transition-colors"
-                          >
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <p className="font-medium text-foreground">{inq.senderName}</p>
-                                  <Badge variant={inq.status === "new" ? "default" : "outline"} className="text-[10px]">{inq.status}</Badge>
-                                </div>
-                                <p className="text-xs text-text-secondary mb-1">{inq.senderEmail}{inq.senderPhone ? ` • ${inq.senderPhone}` : ""}</p>
-                                <p className="text-sm text-foreground whitespace-pre-wrap">{inq.text}</p>
-                                {inq.replyText && <div className="mt-3 rounded-lg bg-blue-50 p-3"><p className="text-xs font-semibold text-blue-700">Your reply{inq.agentName ? ` • ${inq.agentName}` : ""}</p><p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{inq.replyText}</p></div>}
-                                 {inq.visitorReply && <div className="mt-3 rounded-lg bg-gray-50 p-3"><p className="text-xs font-semibold text-gray-700">Visitor reply{inq.visitorRepliedAt ? ` • ${getTimeAgo(inq.visitorRepliedAt)}` : ""}</p><p className="mt-1 whitespace-pre-wrap text-sm text-gray-800">{inq.visitorReply}</p></div>}
-                                 <p className="text-[10px] text-text-tertiary mt-2">{getTimeAgo(inq.repliedAt || inq.createdAt)}</p>
-                              </div>
-                                <div className="flex flex-col gap-2">
-                                 <DropdownMenu modal={false}>
-                                   <DropdownMenuTrigger asChild>
-                                     <button type="button" className="inline-flex items-center justify-center rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-surface-secondary">
-                                       Actions
-                                       <ChevronDown className="ml-1 h-3.5 w-3.5" />
-                                     </button>
-                                   </DropdownMenuTrigger>
-                                   <DropdownMenuContent align="end" sideOffset={4} side="bottom">
-                                     <DropdownMenuItem onSelect={() => { setReplyingInquiry(inq.id); setInquiryReply(inq.replyText || ""); }}>
-                                       Reply
-                                     </DropdownMenuItem>
-                                     <DropdownMenuItem onSelect={() => setShowAccountRequestModal(true)} className="text-amber-700 hover:bg-amber-50">
-                                       Request Account
-                                     </DropdownMenuItem>
-                                     {inq.status === "new" && (
-                                       <DropdownMenuItem onSelect={() => markInquiryRead(inq.id)}>
-                                         Mark Read
-                                       </DropdownMenuItem>
-                                     )}
-                                   </DropdownMenuContent>
-                                 </DropdownMenu>
-                               </div>
-                            </div>
-                          </motion.div>
-                        ))
-                      )}
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                <ManagementBanner
+                  category="LEAD MANAGEMENT"
+                  title="Landing Inquiries"
+                  description="Follow up with prospective tenants who contacted you through RentTrack."
+                  icon={Mail}
+                />
+                <div className="rounded-xl border border-[#dce8f5] bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:p-4">
+                  <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+                    <label className="relative min-w-0 flex-1">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input value={inquirySearch} onChange={(event) => setInquirySearch(event.target.value)} placeholder="Search name, email, or message…" aria-label="Search inquiries" className="h-9 rounded-lg border-slate-200 pl-9 text-sm" />
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <select value={inquiryTypeFilter} onChange={(event) => setInquiryTypeFilter(event.target.value)} aria-label="Filter inquiries by category" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700">
+                        <option value="all">All categories</option><option value="property">Property</option><option value="general">General</option>
+                      </select>
+                      <select value={inquiryFilter} onChange={(event) => setInquiryFilter(event.target.value)} aria-label="Filter inquiries by status" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700">
+                        <option value="all">All statuses</option><option value="new">New</option><option value="read">In progress</option><option value="replied">Replied</option><option value="closed">Closed</option>
+                      </select>
+                      <label className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2 text-[10px] text-slate-500">From<input type="date" value={inquiryDateFrom} onChange={(event) => setInquiryDateFrom(event.target.value)} aria-label="Inquiries from date" className="min-w-0 flex-1 bg-transparent text-[10px] text-slate-700 outline-none" /></label>
+                      <label className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2 text-[10px] text-slate-500">To<input type="date" value={inquiryDateTo} onChange={(event) => setInquiryDateTo(event.target.value)} aria-label="Inquiries to date" className="min-w-0 flex-1 bg-transparent text-[10px] text-slate-700 outline-none" /></label>
                     </div>
-                  </CardContent>
+                    <Button variant="outline" onClick={() => { setInquirySearch(""); setInquiryFilter("all"); setInquiryTypeFilter("all"); setInquiryDateFrom(""); setInquiryDateTo(""); }} className="h-9 rounded-lg border-slate-200 px-3 text-xs">Clear</Button>
+                  </div>
+                </div>
+                <section aria-label="Inquiry metrics" className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+                  {[
+                    { label: "Total inquiries", value: inquiryCounts.total, tone: "text-blue-700 bg-blue-50" },
+                    { label: "New", value: inquiryCounts.new, tone: "text-amber-700 bg-amber-50" },
+                    { label: "In progress", value: inquiryCounts.inProgress, tone: "text-indigo-700 bg-indigo-50" },
+                    { label: "Closed", value: inquiryCounts.closed, tone: "text-emerald-700 bg-emerald-50" },
+                  ].map((metric) => (
+                    <div key={metric.label} className="rounded-lg border border-[#dce8f5] bg-white px-3 py-2.5 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:px-4">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{metric.label}</p>
+                      <p className={cn("mt-1 inline-flex min-w-8 items-center justify-center rounded-md px-2 py-0.5 text-lg font-bold tabular-nums", metric.tone)}>{metric.value}</p>
+                    </div>
+                  ))}
+                </section>
+                <Card className="overflow-hidden border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+                  <CardHeader className="border-b border-slate-100 bg-[#f6f9fd] px-4 py-3 sm:px-5">
+                    <CardTitle className="text-sm font-semibold text-slate-900">Inquiry records</CardTitle>
+                    <CardDescription className="mt-1 text-xs text-slate-500">
+                      {filteredInquiries.length} inquir{filteredInquiries.length === 1 ? "y" : "ies"} match your search and filters
+                      <span id="inquiry-category-help" className="mt-1 block text-slate-600">General means no specific property; choosing a property links the inquiry to that listing.</span>
+                    </CardDescription>
+                  </CardHeader>
+                  {initialLoad ? (
+                    <div role="status" className="px-4 py-12 text-center text-sm text-slate-500">Loading inquiries…</div>
+                  ) : loadError ? (
+                    <div role="status" className="px-4 py-12 text-center text-sm text-red-600">Unable to load inquiries. Please refresh to try again.</div>
+                  ) : inquiries.length === 0 ? (
+                    <div className="px-4 py-12 text-center"><Mail className="mx-auto mb-3 h-9 w-9 text-slate-300" /><p className="text-sm font-semibold text-slate-700">No inquiries yet</p><p className="mt-1 text-xs text-slate-500">New landing page messages will appear here.</p></div>
+                  ) : filteredInquiries.length === 0 ? (
+                    <div className="px-4 py-12 text-center text-sm text-slate-500">No inquiries match these filters.</div>
+                  ) : (
+                    <>
+                    <div className="hidden overflow-x-auto md:block">
+                      <table className="w-full min-w-[900px] border-collapse text-left">
+                        <thead className="bg-[#f6f9fd]"><tr className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          <th className="px-4 py-3">Name / email</th><th className="px-4 py-3">Inquiry about</th><th className="px-4 py-3">Message</th><th className="px-4 py-3">Received</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Actions</th>
+                        </tr></thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {visibleInquiries.map((inq) => (
+                            <tr key={inq.id} className="align-middle text-xs text-slate-700 transition-colors hover:bg-blue-50/40">
+                              <td className="max-w-52 px-4 py-3">
+                                <p className="truncate font-semibold text-slate-900">{inq.senderName}</p>
+                                <p className="mt-0.5 truncate text-[10px] text-slate-500">{inq.senderEmail}</p>
+                                {inq.senderPhone && <p className="mt-0.5 text-[10px] text-slate-500">{inq.senderPhone}</p>}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3">
+                                <select
+                                  aria-label={`Inquiry about for ${inq.senderName}`}
+                                  aria-describedby="inquiry-category-help"
+                                  value={inq.propertyId || ""}
+                                  disabled={updatingInquiryType === inq.id}
+                                  onChange={(event) => void changeInquiryProperty(inq, event.target.value || null)}
+                                  className="max-w-44 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 disabled:opacity-60"
+                                >
+                                  <option value="">General</option>
+                                  {inq.propertyId && !properties.some((property) => property.id === inq.propertyId) && (
+                                    <option value={inq.propertyId}>Current property</option>
+                                  )}
+                                  {properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+                                </select>
+                              </td>
+                              <td className="max-w-sm px-4 py-3">
+                                <p className="line-clamp-2 whitespace-pre-wrap text-slate-700">{inq.text}</p>
+                                {inq.replyText && <p className="mt-1 line-clamp-1 text-[10px] text-blue-700">Reply: {inq.replyText}</p>}
+                                {inq.visitorReply && <p className="mt-1 line-clamp-1 text-[10px] text-slate-500">Visitor: {inq.visitorReply}</p>}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-slate-600" title={formatDateTime(inq.createdAt)}>{getTimeAgo(inq.repliedAt || inq.createdAt)}</td>
+                              <td className="px-4 py-3"><Badge variant={inq.status === "new" ? "default" : inq.status === "closed" ? "outline" : "info"} className="text-[10px] capitalize">{inq.status === "read" ? "In progress" : inq.status}</Badge></td>
+                              <td className="px-4 py-3 text-right">
+                                <DropdownMenu modal={false}>
+                                  <DropdownMenuTrigger asChild><button type="button" className="inline-flex h-7 items-center rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50">Actions<ChevronDown className="ml-1 h-3.5 w-3.5" /></button></DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" sideOffset={4} side="bottom">
+                                    <DropdownMenuItem onSelect={() => { setReplyingInquiry(inq.id); setInquiryReply(inq.replyText || ""); }}>Reply</DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => setShowAccountRequestModal(true)} className="text-amber-700 hover:bg-amber-50">Request Account</DropdownMenuItem>
+                                    {inq.status === "new" && <DropdownMenuItem onSelect={() => markInquiryRead(inq.id)}>Mark Read</DropdownMenuItem>}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="divide-y divide-slate-100 md:hidden">
+                      {visibleInquiries.map((inq) => (
+                        <article key={inq.id} className="space-y-2.5 p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-slate-900">{inq.senderName}</p>
+                              <p className="mt-0.5 truncate text-[11px] text-slate-500">{inq.senderEmail}</p>
+                            </div>
+                            <Badge variant={inq.status === "new" ? "default" : inq.status === "closed" ? "outline" : "info"} className="shrink-0 text-[10px] capitalize">{inq.status === "read" ? "In progress" : inq.status}</Badge>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 text-[10px] text-slate-500">
+                            <label className="flex min-w-0 items-center gap-1.5">
+                              <span className="shrink-0">Inquiry about</span>
+                              <select
+                                aria-label={`Inquiry about for ${inq.senderName}`}
+                                aria-describedby="inquiry-category-help"
+                                value={inq.propertyId || ""}
+                                disabled={updatingInquiryType === inq.id}
+                                onChange={(event) => void changeInquiryProperty(inq, event.target.value || null)}
+                                className="min-w-0 max-w-[150px] rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[10px] text-slate-700 disabled:opacity-60"
+                              >
+                                <option value="">General</option>
+                                {inq.propertyId && !properties.some((property) => property.id === inq.propertyId) && (
+                                  <option value={inq.propertyId}>Current property</option>
+                                )}
+                                {properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+                              </select>
+                            </label>
+                            <span title={formatDateTime(inq.createdAt)}>{getTimeAgo(inq.createdAt)}</span>
+                          </div>
+                          <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-slate-700">{inq.text}</p>
+                          {inq.replyText && <p className="line-clamp-2 text-[11px] text-blue-700">Reply: {inq.replyText}</p>}
+                          {inq.visitorReply && <p className="line-clamp-2 text-[11px] text-slate-500">Visitor: {inq.visitorReply}</p>}
+                          <div className="flex justify-end">
+                            <DropdownMenu modal={false}>
+                              <DropdownMenuTrigger asChild><button type="button" className="inline-flex h-7 items-center rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50">Actions<ChevronDown className="ml-1 h-3.5 w-3.5" /></button></DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" sideOffset={4} side="bottom">
+                                <DropdownMenuItem onSelect={() => { setReplyingInquiry(inq.id); setInquiryReply(inq.replyText || ""); }}>Reply</DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => setShowAccountRequestModal(true)} className="text-amber-700 hover:bg-amber-50">Request Account</DropdownMenuItem>
+                                {inq.status === "new" && <DropdownMenuItem onSelect={() => markInquiryRead(inq.id)}>Mark Read</DropdownMenuItem>}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                    </>
+                  )}
                 </Card>
+                {!initialLoad && !loadError && filteredInquiries.length > 0 && <PaginationControls page={inquiryPage} total={filteredInquiries.length} onPageChange={setInquiryPage} />}
                 <AccountRequestModal
                   isOpen={showAccountRequestModal}
                   onClose={() => setShowAccountRequestModal(false)}
@@ -1461,7 +1768,7 @@ export default function AgentDashboard() {
           const inquiry = inquiries.find((item) => item.id === replyingInquiry);
           if (!inquiry) return null;
           return (
-            <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="inquiry-reply-title" onMouseDown={(event) => { if (event.target === event.currentTarget && !replying) setReplyingInquiry(null); }}>
+            <div className="fixed inset-0 z-10000 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="inquiry-reply-title" onMouseDown={(event) => { if (event.target === event.currentTarget && !replying) setReplyingInquiry(null); }}>
               <div className="w-full max-w-lg rounded-2xl bg-surface shadow-2xl border border-border" onMouseDown={(event) => event.stopPropagation()}>
                 <div className="flex items-center justify-between border-b border-border px-6 py-4">
                   <div>
@@ -1511,7 +1818,7 @@ export default function AgentDashboard() {
         })()}
 
         {viewingThread && (
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" onMouseDown={(event) => { if (event.target === event.currentTarget) closeThread(); }}>
+          <div className="fixed inset-0 z-10000 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" onMouseDown={(event) => { if (event.target === event.currentTarget) closeThread(); }}>
             <div className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl bg-surface shadow-2xl border border-border" onMouseDown={(event) => event.stopPropagation()}>
               <div className="flex items-center justify-between border-b border-border px-6 py-4">
                 <div>
@@ -1605,16 +1912,32 @@ export default function AgentDashboard() {
           receiptUrl={viewingReceipt?.receiptUrl || null}
           payment={viewingReceipt || undefined}
         />
-        {showCreateTenantModal && (
-          <CreateTenantModal
-            isOpen={showCreateTenantModal}
-            onClose={() => setShowCreateTenantModal(false)}
-            onSubmit={async (formData) => {
-              await handleRegisterTenant(formData);
-            }}
-            submitting={isSubmitting}
-           />
-         )}
+        {/* Assign Tenant Modal */}
+        <AssignTenantModal
+          isOpen={showAssignModal}
+          onClose={() => {
+            setShowAssignModal(false);
+            setSelectedTenant(null);
+            setSelectedUnit(null);
+          }}
+          tenants={tenants}
+          units={units}
+          properties={properties}
+          initialTenant={selectedTenant}
+          initialUnit={selectedUnit}
+          onSuccess={async () => {
+            await loadData();
+          }}
+          onRequestTenantAccount={() => setShowAccountRequestModal(true)}
+        />
+
+        {showAccountRequestModal && (
+          <AccountRequestModal
+            isOpen={showAccountRequestModal}
+            onClose={() => setShowAccountRequestModal(false)}
+            agentName={user?.name || "Agent"}
+          />
+        )}
        </div>
   );
 }

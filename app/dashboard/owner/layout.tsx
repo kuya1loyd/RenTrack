@@ -1,17 +1,19 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { Fragment, useState, useEffect, useCallback } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { createPortal } from "react-dom";
 import {
-  LayoutDashboard, Home, ClipboardCheck, FileText,
+  LayoutDashboard, Home, MapPinned, FileText,
   CreditCard, BarChart3, LogOut, ChevronRight, Menu, X,
-  Loader2, ChevronDown, ChevronLeft, Users, User, Bell, UserPlus, MessageSquare,
+  Loader2, ChevronDown, ChevronLeft, Users, User, Bell, MessageSquare,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { cn, getInitials } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { getNotifications, markNotificationRead, getUnreadCount, getPendingPaymentsCount, getConversations, Notification, Conversation } from "@/lib/data";
+import { getNotifications, getAgentApplications, markNotificationRead, getUnreadCount, getPendingPaymentsCount, getConversations, getProperties, getUnits, Notification, Conversation, Property, Unit } from "@/lib/data";
 import { getTenants } from "@/lib/data";
 import Link from "next/link";
 import MessagingPanel from "@/components/messaging-panel";
@@ -20,28 +22,54 @@ import AccountRequestReviewModal from "@/components/account-request-review-modal
 import { Avatar } from "@/components/ui/avatar";
 import { getNotificationDashboardHref } from "@/lib/notification-routing";
 
-const navItems = [
-  { label: "Overview", tab: "overview", href: "/dashboard/owner#overview", icon: LayoutDashboard },
-  { label: "Units", tab: "units", href: "/dashboard/owner#units", icon: ClipboardCheck },
-  { label: "Agents", tab: "agents", href: "/dashboard/owner#agents", icon: Users },
-  { label: "Create Tenant", tab: "create-tenant", href: "/dashboard/owner#create-tenant", icon: UserPlus },
+type OwnerNavLink = {
+  label: string;
+  tab: string;
+  href: string;
+  icon: LucideIcon;
+  group?: string;
+};
+
+const navItems: OwnerNavLink[] = [
+  { label: "Dashboard", tab: "overview", href: "/dashboard/owner#overview", icon: LayoutDashboard },
+  { label: "Properties & Units", tab: "units", href: "/dashboard/owner#units", icon: Home, group: "Management" },
+  { label: "Tenants", tab: "create-tenant", href: "/dashboard/owner#create-tenant", icon: User, group: "Management" },
+  { label: "Agents", tab: "agents", href: "/dashboard/owner#agents", icon: Users, group: "Management" },
+  { label: "Property Map", tab: "map", href: "/dashboard/owner#map", icon: MapPinned, group: "Management" },
+  { label: "Contracts", tab: "contracts", href: "/dashboard/owner#contracts", icon: FileText, group: "Management" },
   { label: "Financial Transactions", tab: "financial", href: "/dashboard/owner#financial", icon: CreditCard },
+  { label: "Move-out Requests", tab: "move-out-requests", href: "/dashboard/owner#move-out-requests", icon: LogOut },
 ];
 
-function getTabFromHash() {
-  const hash = window.location.hash.replace("#", "");
-  if (hash && navItems.some((item) => item.tab === hash)) return hash;
-  return "overview";
+function getTabFromHash(hash: string) {
+  if (hash === "payments" || hash === "reports") return "financial";
+  if (hash === "move-out") return "move-out-requests";
+  return navItems.find((item) => item.href.endsWith(`#${hash}`))?.tab || "";
+}
+
+function getActiveTab(pathname: string, hash: string) {
+  if (pathname === "/dashboard/owner/agents" || pathname.startsWith("/dashboard/owner/agents/")) return "agents";
+  if (pathname === "/dashboard/owner") return getTabFromHash(hash) || "overview";
+  return getTabFromHash(hash);
+}
+
+function filterOwnerNotifications(items: Notification[]): Notification[] {
+  return (items || []).filter((n) => {
+    const text = `${n.title || ""} ${n.message || ""}`.toLowerCase();
+    return !text.includes("support request") && !text.includes("to support") && !text.includes("new support");
+  });
 }
 
 export default function OwnerLayout({ children }: { children: React.ReactNode }) {
   const { user, logout, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const reduceMotion = useReducedMotion();
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState(getTabFromHash);
+  const [activeTab, setActiveTab] = useState("overview");
   const [showMessages, setShowMessages] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -49,10 +77,15 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const [pendingAssignmentsCount, setPendingAssignmentsCount] = useState(0);
   const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
+  const [pendingAgentApplicationsCount, setPendingAgentApplicationsCount] = useState(0);
   const [accountRequests, setAccountRequests] = useState<Conversation[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedAccountRequest, setSelectedAccountRequest] = useState<Conversation | null>(null);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+
+  const unreadMessagesCount = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -60,10 +93,49 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
     }
   }, [isLoading, isAuthenticated, router]);
 
+  const refreshNotificationsCount = useCallback(async () => {
+    if (!user) return;
+    try {
+      const items = await getNotifications(user.id);
+      const filtered = filterOwnerNotifications(items);
+      setUnreadNotificationsCount(filtered.filter((n) => !n.read).length);
+    } catch {
+      // ignore
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const handleOpenMessages = (event: Event) => {
+      const customEvent = event as CustomEvent<{ otherUser?: Conversation["otherUser"] }>;
+      if (customEvent.detail?.otherUser) {
+        setSelectedConversation({
+          userId: customEvent.detail.otherUser.id,
+          otherUser: customEvent.detail.otherUser,
+          lastMessage: null as any,
+          unreadCount: 0,
+        });
+        setShowMessages(false);
+      } else {
+        setShowMessages(true);
+      }
+    };
+
+    window.addEventListener("renttrack-open-messages", handleOpenMessages);
+    return () => window.removeEventListener("renttrack-open-messages", handleOpenMessages);
+  }, []);
+
   useEffect(() => {
     if (user) {
-      getNotifications(user.id).then(setNotifications).catch(() => setNotifications([]));
-      getUnreadCount(user.id).then(setUnreadNotificationsCount).catch(() => setUnreadNotificationsCount(0));
+      getNotifications(user.id)
+        .then((items) => setNotifications(filterOwnerNotifications(items)))
+        .catch(() => setNotifications([]));
+      refreshNotificationsCount();
+      Promise.all([getProperties(user), getUnits(user)])
+        .then(([p, u]) => {
+          setProperties(p || []);
+          setUnits(u || []);
+        })
+        .catch(() => {});
       getTenants(user).then((tenants) => {
         const pending = tenants.filter((t: any) => t.assignmentStatus === "pending" && t.unitId).length;
         setPendingAssignmentsCount(pending);
@@ -78,40 +150,75 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
         setAccountRequests([]);
       });
     }
-  }, [user]);
+  }, [user, refreshNotificationsCount]);
 
-  const refreshNotificationsCount = useCallback(async () => {
+  useEffect(() => {
     if (!user) return;
-    try {
-      const count = await getUnreadCount(user.id);
-      setUnreadNotificationsCount(count);
-    } catch {
-      // ignore
+    const refreshNotifications = () => {
+      getNotifications(user.id)
+        .then((items) => setNotifications(filterOwnerNotifications(items)))
+        .catch(() => { });
+      refreshNotificationsCount();
+    };
+    const interval = window.setInterval(refreshNotifications, 30_000);
+    window.addEventListener("focus", refreshNotifications);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshNotifications);
+    };
+  }, [user, refreshNotificationsCount]);
+
+  useEffect(() => {
+    if (!user) {
+      setPendingAgentApplicationsCount(0);
+      return;
     }
+
+    let active = true;
+    const refreshPendingApplications = async () => {
+      try {
+        const applications = await getAgentApplications("pending");
+        if (active) setPendingAgentApplicationsCount(applications.length);
+      } catch {
+        if (active) setPendingAgentApplicationsCount(0);
+      }
+    };
+
+    void refreshPendingApplications();
+    const interval = window.setInterval(refreshPendingApplications, 30_000);
+    window.addEventListener("focus", refreshPendingApplications);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshPendingApplications);
+    };
   }, [user]);
 
   useEffect(() => {
     const handleRefresh = () => {
       if (!user) return;
-      getNotifications(user.id).then(setNotifications).catch(() => {});
+      getNotifications(user.id)
+        .then((items) => setNotifications(filterOwnerNotifications(items)))
+        .catch(() => { });
+      refreshNotificationsCount();
       getTenants(user).then((tenants) => {
         const pending = tenants.filter((t: any) => t.assignmentStatus === "pending" && t.unitId).length;
         setPendingAssignmentsCount(pending);
-      }).catch(() => {});
-      getPendingPaymentsCount().then(setPendingPaymentsCount).catch(() => {});
+      }).catch(() => { });
+      getPendingPaymentsCount().then(setPendingPaymentsCount).catch(() => { });
       getConversations().then((convs) => {
         const requests = convs.filter((c) => c.lastMessage?.subject === "Account Creation Request");
         setAccountRequests(requests);
-      }).catch(() => {});
+      }).catch(() => { });
     };
 
     window.addEventListener("renttrack-notifications-updated", handleRefresh);
     return () => window.removeEventListener("renttrack-notifications-updated", handleRefresh);
-  }, [user]);
+  }, [user, refreshNotificationsCount]);
 
   useEffect(() => {
     const refreshPending = () => {
-      if (user) getTenants(user).then((tenants) => setPendingAssignmentsCount(tenants.filter((tenant: any) => tenant.assignmentStatus === "pending" && tenant.unitId).length)).catch(() => {});
+      if (user) getTenants(user).then((tenants) => setPendingAssignmentsCount(tenants.filter((tenant: any) => tenant.assignmentStatus === "pending" && tenant.unitId).length)).catch(() => { });
     };
     window.addEventListener("owner-data-changed", refreshPending);
     return () => window.removeEventListener("owner-data-changed", refreshPending);
@@ -119,7 +226,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     const refreshProfile = () => {
-      if (user) getTenants(user).then((tenants) => setPendingAssignmentsCount(tenants.filter((tenant: any) => tenant.assignmentStatus === "pending" && tenant.unitId).length)).catch(() => {});
+      if (user) getTenants(user).then((tenants) => setPendingAssignmentsCount(tenants.filter((tenant: any) => tenant.assignmentStatus === "pending" && tenant.unitId).length)).catch(() => { });
     };
     window.addEventListener("renttrack-profile-updated", refreshProfile);
     return () => window.removeEventListener("renttrack-profile-updated", refreshProfile);
@@ -149,18 +256,26 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
         }).catch(() => undefined);
       }
     }
-    void markNotificationRead(notification.id).catch(() => undefined);
-    try {
-      getNotifications(user?.id).then(setNotifications).catch(() => {});
-      refreshNotificationsCount();
-    } catch {
-      // ignore
+    if (!notification.read) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n))
+      );
+      setUnreadNotificationsCount((prev) => Math.max(0, prev - 1));
+      await markNotificationRead(notification.id).catch(() => {});
     }
     if (!isAccountCreationRequest) {
       const href = getNotificationDashboardHref(notification, user?.role || "owner");
       if (href === "/dashboard/owner#messages") {
         setShowMessages(true);
       } else {
+        const destination = new URL(href, window.location.origin);
+        if (destination.pathname === "/dashboard/owner") {
+          const tab = getActiveTab(destination.pathname, destination.hash.slice(1));
+          if (tab) {
+            setActiveTab(tab);
+            window.dispatchEvent(new CustomEvent("owner-dashboard-tab-change", { detail: tab }));
+          }
+        }
         router.push(href);
       }
     }
@@ -172,9 +287,9 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
     if (!showNotifications && user) {
       try {
         const updated = await getNotifications(user.id);
-        setNotifications(updated);
-        const count = await getUnreadCount(user.id);
-        setUnreadNotificationsCount(count);
+        const filtered = filterOwnerNotifications(updated);
+        setNotifications(filtered);
+        setUnreadNotificationsCount(filtered.filter((n) => !n.read).length);
       } catch {
       }
     }
@@ -187,14 +302,13 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
         setShowMessages(true);
         return;
       }
-      if (hash && navItems.some((item) => item.tab === hash)) {
-        setActiveTab(hash);
-      }
+      const tab = getActiveTab(pathname, hash);
+      if (tab) setActiveTab(tab);
     };
     readHash();
     window.addEventListener("hashchange", readHash);
     return () => window.removeEventListener("hashchange", readHash);
-  }, []);
+  }, [pathname]);
 
   useEffect(() => {
     const activeButton = document.getElementById(`sidebar-${activeTab}`);
@@ -204,18 +318,81 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
   }, [activeTab]);
 
   useEffect(() => {
-    const hash = window.location.hash.replace("#", "");
-    if (hash && navItems.some((item) => item.tab === hash)) {
-      setActiveTab(hash);
-    } else if (pathname === "/dashboard/owner/agents") {
-      setActiveTab("agents");
-    }
+    const syncActiveTab = () => {
+      const hash = window.location.hash.replace("#", "");
+      const tab = getActiveTab(pathname, hash);
+      if (tab) setActiveTab(tab);
+    };
+
+    syncActiveTab();
+    window.addEventListener("hashchange", syncActiveTab);
+    return () => window.removeEventListener("hashchange", syncActiveTab);
   }, [pathname]);
+
+  const handleNavigationClick = (tab: string, mobile: boolean) => {
+    if (mobile) setMobileSidebarOpen(false);
+    if (pathname === "/dashboard/owner") {
+      setActiveTab(tab);
+      window.dispatchEvent(new CustomEvent("owner-dashboard-tab-change", { detail: tab }));
+    }
+  };
 
   const handleLogout = async () => {
     setLogoutLoading(true);
     logout();
     router.push("/");
+  };
+
+  const renderNavigation = (mobile = false) => {
+    const expanded = mobile || desktopSidebarOpen;
+
+    return navItems.map((item, index) => {
+      const Icon = item.icon;
+      const isActive = activeTab === item.tab;
+      const badgeCount = item.tab === "agents"
+        ? pendingAgentApplicationsCount
+        : item.tab === "financial"
+          ? pendingPaymentsCount
+          : item.tab === "create-tenant"
+            ? pendingAssignmentsCount
+            : 0;
+
+      return (
+        <Fragment key={item.tab}>
+          {expanded && item.group && navItems[index - 1]?.group !== item.group && (
+            <p className="mb-2 mt-5 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+              {item.group}
+            </p>
+          )}
+          <Link
+            id={`${mobile ? "mobile-" : ""}sidebar-${item.tab}`}
+            title={expanded ? undefined : item.label}
+            href={item.href}
+            onClick={() => handleNavigationClick(item.tab, mobile)}
+            aria-current={isActive ? "page" : undefined}
+            className={cn(
+              "mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 motion-reduce:transition-none motion-reduce:hover:translate-x-0",
+              isActive
+                ? "bg-blue-600 text-white shadow-[0_4px_12px_rgba(37,99,235,0.22)]"
+                : "text-slate-400 hover:translate-x-0.5 hover:bg-white/[0.06] hover:text-white",
+              !expanded && "justify-center px-0"
+            )}
+          >
+            <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-white" : "text-slate-500")} />
+            {expanded && <span className="truncate">{item.label}</span>}
+            {badgeCount > 0 && (
+              <span className={cn(
+                "flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white",
+                expanded ? "ml-auto" : "absolute right-1 top-1 h-2 min-w-0 p-0"
+              )}>
+                {expanded ? badgeCount : ""}
+              </span>
+            )}
+            {isActive && expanded && <span aria-hidden="true" className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.4)]" />}
+          </Link>
+        </Fragment>
+      );
+    });
   };
 
   if (isLoading) {
@@ -239,10 +416,10 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
   const selectedOtherUser = selectedConversation?.otherUser;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-slate-100 flex-1">
+    <div className="min-h-screen flex-1 bg-[#f3f7fc]">
       {/* Mobile header */}
-      <div className="lg:hidden flex items-center justify-between p-4 border-b border-slate-700 bg-white/90 backdrop-blur-md sticky top-0 z-10">
-        <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-lg hover:bg-surface-secondary">
+      <div className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 p-4 backdrop-blur lg:hidden">
+        <button onClick={() => setMobileSidebarOpen(true)} className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" aria-label="Open navigation menu">
           <Menu className="h-5 w-5" />
         </button>
         <span className="font-semibold text-sm">Owner Panel</span>
@@ -297,152 +474,62 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
 
       <div className="flex h-screen w-full">
         {/* Sidebar */}
-        <div className={cn("hidden lg:flex flex-col border-r border-border bg-white text-gray-900 transition-all h-full", sidebarOpen ? "w-56" : "w-16")}>
-          <div className="p-4 border-b border-border">
+        <div className={cn("hidden h-full shrink-0 flex-col border-r border-white/10 bg-[#07111f] text-slate-200 transition-[width] duration-200 motion-reduce:transition-none lg:flex", desktopSidebarOpen ? "w-56" : "w-16")}>
+          <div className={cn("border-b border-white/10 py-4", desktopSidebarOpen ? "px-4" : "px-3")}>
             <Link href="/dashboard/owner" className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full overflow-hidden">
-                <img src="/images/landing/logo.png" alt="RentTrack" className="h-full w-full object-contain" />
+              <div className="h-8 w-8 shrink-0 rounded-full overflow-hidden">
+                <Image src="/images/landing/logo.png" alt="RentTrack" width={64} height={64} className="h-full w-full object-contain" />
               </div>
-              {sidebarOpen && <span className="font-bold text-foreground text-sm">Owner Panel</span>}
+              {desktopSidebarOpen && <span className="text-sm font-bold text-white">Owner Panel</span>}
             </Link>
           </div>
-          <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.tab;
-              return (
-                <button
-                  key={item.tab || item.href}
-                  id={`sidebar-${item.tab}`}
-                  onClick={() => {
-                    if (item.tab === "notifications") {
-                      setShowNotifications(true);
-                      return;
-                    }
-                    if (window.location.pathname !== "/dashboard/owner") {
-                      router.push(`/dashboard/owner#${item.tab}`);
-                    } else {
-                      window.location.hash = item.tab;
-                    }
-                  }}
-                  className={cn(
-                      "w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-sm font-medium transition-all",
-                    isActive
-                      ? "bg-blue-50 text-blue-700"
-                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                  )}
-                >
-                  <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-blue-600" : "text-gray-400")} />
-                  {sidebarOpen && <span className="truncate">{item.label}</span>}
-                  {item.tab === "notifications" && unreadNotificationsCount > 0 && (
-                    <motion.span
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                      className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-md"
-                    >
-                      {unreadNotificationsCount}
-                    </motion.span>
-                  )}
-                  {item.tab === "assignments" && pendingAssignmentsCount > 0 && (
-                    <motion.span
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                      className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white shadow-md"
-                    >
-                      {pendingAssignmentsCount}
-                    </motion.span>
-                  )}
-                  {item.tab === "payments" && pendingPaymentsCount > 0 && (
-                    <motion.span
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                      className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-md"
-                    >
-                      {pendingPaymentsCount}
-                    </motion.span>
-                  )}
-                  {isActive && sidebarOpen && <ChevronRight className="h-3.5 w-3.5 ml-auto text-primary-600" />}
-                </button>
-              );
-            })}
+          <nav aria-label="Owner navigation" className="flex-1 overflow-y-auto px-3 py-3">
+            {renderNavigation()}
           </nav>
-          <div className="mt-auto p-3">
+          <div className={cn("mt-auto border-t border-white/10 py-3", desktopSidebarOpen ? "px-3" : "px-2")}>
             <button
               onClick={() => setShowLogoutModal(true)}
-              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+              title={desktopSidebarOpen ? undefined : "Logout"}
+              className={cn("flex w-full items-center gap-2 rounded-lg px-2.5 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400", !desktopSidebarOpen && "justify-center px-0")}
             >
               <LogOut className="h-4 w-4 shrink-0" />
-              {sidebarOpen && <span className="truncate">Logout</span>}
+              {desktopSidebarOpen && <span className="truncate">Logout</span>}
             </button>
           </div>
-          </div>
+        </div>
 
         {/* Mobile sidebar */}
         <AnimatePresence>
-          {sidebarOpen && (
+          {mobileSidebarOpen && (
             <motion.div
-              initial={{ x: -300 }}
+              initial={reduceMotion ? false : { x: -300 }}
               animate={{ x: 0 }}
-              exit={{ x: -300 }}
-              transition={{ duration: 0.2 }}
+              exit={reduceMotion ? undefined : { x: -300 }}
+              transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.21, 0.47, 0.32, 0.98] }}
               className="lg:hidden fixed inset-0 z-50 bg-black/50"
-              onClick={() => setSidebarOpen(false)}
+              onClick={() => setMobileSidebarOpen(false)}
             >
               <motion.div
-                initial={{ x: -300 }}
+                initial={reduceMotion ? false : { x: -300 }}
                 animate={{ x: 0 }}
-                exit={{ x: -300 }}
-                transition={{ duration: 0.2 }}
-                className="w-64 h-full bg-surface border-r border-slate-700 flex flex-col"
+                exit={reduceMotion ? undefined : { x: -300 }}
+                transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.21, 0.47, 0.32, 0.98] }}
+                className="flex h-full w-64 flex-col border-r border-white/10 bg-[#07111f] text-slate-200"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+                <div className="flex items-center justify-between border-b border-white/10 p-4">
                   <Link href="/dashboard/owner" className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary-600 to-secondary-600 flex items-center justify-center">
                       <LayoutDashboard className="h-4 w-4 text-white" />
                     </div>
-                    <span className="font-bold text-foreground text-sm">Owner Panel</span>
+                    <span className="text-sm font-bold text-white">Owner Panel</span>
                   </Link>
-                  <button onClick={() => setSidebarOpen(false)} className="p-2 rounded-lg hover:bg-surface-secondary">
+                  <button onClick={() => setMobileSidebarOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" aria-label="Close navigation menu">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
-          <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
-                  {navItems.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = activeTab === item.tab;
-                    return (
-                      <button
-                        key={item.tab || item.href}
-                        id={`sidebar-${item.tab}`}
-                    onClick={() => {
-                      if (window.location.pathname !== "/dashboard/owner") {
-                        router.push(`/dashboard/owner#${item.tab}`);
-                      } else {
-                        window.location.hash = item.tab;
-                      }
-                      setSidebarOpen(false);
-                    }}
-                        className={cn(
-                          "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-base font-medium transition-all",
-                          isActive
-                            ? "bg-primary-100 text-primary-800"
-                            : "text-text-secondary hover:bg-surface-secondary hover:text-foreground"
-                        )}
-                      >
-                         <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-primary-600" : "text-text-tertiary")} />
-                         <span className="truncate">{item.label}</span>
-                         {item.tab === "assignments" && pendingAssignmentsCount > 0 && (
-                           <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white">
-                             {pendingAssignmentsCount}
-                           </span>
-                         )}
-                       </button>
-                    );
-                  })}
+                <nav aria-label="Owner navigation" className="flex-1 overflow-y-auto p-3">
+                  {renderNavigation(true)}
                 </nav>
               </motion.div>
             </motion.div>
@@ -451,20 +538,17 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
 
         {/* Desktop header */}
         <div className="hidden lg:flex flex-1 flex-col min-w-0">
-          <header className="sticky top-0 z-30 h-16 bg-surface/80 backdrop-blur-xl border-b border-slate-700 flex items-center justify-between px-6">
+          <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-6 backdrop-blur">
             <div className="flex items-center gap-3">
-              <Link href="/" className="flex items-center gap-2">
-                <img src="/images/landing/logo.png" alt="RentTrack" className="h-8 w-8 rounded-full object-contain" />
-                <span className="font-bold text-foreground hidden sm:block">Rent<span className="text-primary-500">Track</span></span>
-              </Link>
               <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="p-2 rounded-lg hover:bg-surface-secondary transition-colors"
+                onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)}
+                className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               >
-                {sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                {desktopSidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               </button>
+              <h1 className="text-sm font-semibold text-slate-900">Owner Panel</h1>
             </div>
-             <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3">
               <div className="relative">
                 <button
                   onClick={handleOpenNotifications}
@@ -493,25 +577,13 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                         {notifications.length === 0 ? (
                           <p className="px-3 py-6 text-center text-xs text-text-secondary">No notifications yet</p>
                         ) : notifications.slice(0, 10).map((notification) => (
-                            <button key={notification.id} onClick={() => handleNotificationClick(notification)} className="w-full border-b border-slate-700 p-3 text-left last:border-0 hover:bg-surface-secondary">
+                          <button key={notification.id} onClick={() => handleNotificationClick(notification)} className="w-full border-b border-slate-700 p-3 text-left last:border-0 hover:bg-surface-secondary">
                             <p className="text-sm font-medium text-foreground">{notification.title}</p>
                             <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">{notification.message}</p>
                           </button>
                         ))}
                       </div>
                     </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-              <div className="relative">
-                <AnimatePresence initial={false}>
-                  {showMessages && (
-                    <MessagingPanel
-                      isOpen={showMessages}
-                      onClose={() => setShowMessages(false)}
-                      onSelectConversation={setSelectedConversation}
-                      floating
-                    />
                   )}
                 </AnimatePresence>
               </div>
@@ -533,59 +605,59 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                       transition={{ duration: 0.15 }}
                       className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-700 bg-surface shadow-dropdown overflow-hidden z-[70]"
                     >
-                       <div className="p-3 border-b border-slate-700">
-                         <p className="text-sm font-semibold text-foreground truncate">{user.name}</p>
-                         <p className="text-xs text-text-secondary truncate">{user.email}</p>
-                       </div>
-                       <div className="p-2 space-y-0.5">
-                           <button
-                             onClick={() => {
-                               setShowUserMenu(false);
-                               setActiveTab("profile");
-                               window.location.hash = "profile";
-                             }}
-                             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-secondary hover:text-foreground transition-colors"
-                           >
-                             <User className="h-4 w-4" />
-                             My Profile
-                           </button>
-                           <div className="border-t border-slate-700 pt-1 mt-1">
-                             <button
-                               onClick={() => {
-                                 setShowUserMenu(false);
-                                 setShowMessages(true);
-                               }}
-                               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium text-text-secondary hover:bg-surface-secondary hover:text-foreground"
-                             >
-                               <MessageSquare className="h-4 w-4" />
-                               <span>Messages</span>
-                               {conversations.some((conv) => conv.unreadCount > 0) && (
-                                 <span className="ml-auto rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                                   {conversations.reduce((count, conv) => count + conv.unreadCount, 0)}
-                                 </span>
-                               )}
-                             </button>
-                             {conversations.length === 0 ? (
-                               <p className="px-3 pb-2 text-[11px] text-text-secondary">No messages yet</p>
-                             ) : conversations.slice(0, 5).map((conv) => (
-                                 <button
-                                   key={conv.userId}
-                                   onClick={() => {
-                                     setShowUserMenu(false);
-                                     if (conv.lastMessage?.subject === "Account Creation Request") {
-                                       setSelectedAccountRequest(conv);
-                                     } else {
-                                       setSelectedConversation(conv);
-                                     }
-                                   }}
-                                   className="w-full text-left px-3 py-2 rounded-lg hover:bg-surface-secondary transition-colors"
-                                 >
-                                   <p className="text-xs font-medium text-foreground truncate">{conv.otherUser?.name || "Unknown"}</p>
-                                   <p className="text-[10px] text-text-secondary truncate">{conv.lastMessage?.body?.split('\n').slice(0, 2).join(' ')}</p>
-                                 </button>
-                               ))}
-                           </div>
-                       </div>
+                      <div className="p-3 border-b border-slate-700">
+                        <p className="text-sm font-semibold text-foreground truncate">{user.name}</p>
+                        <p className="text-xs text-text-secondary truncate">{user.email}</p>
+                      </div>
+                      <div className="p-2 space-y-0.5">
+                        <button
+                          onClick={() => {
+                            setShowUserMenu(false);
+                            setActiveTab("profile");
+                            window.location.hash = "profile";
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-secondary hover:text-foreground transition-colors"
+                        >
+                          <User className="h-4 w-4" />
+                          My Profile
+                        </button>
+                        <div className="border-t border-slate-700 pt-1 mt-1">
+                          <button
+                            onClick={() => {
+                              setShowUserMenu(false);
+                              setShowMessages(true);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium text-text-secondary hover:bg-surface-secondary hover:text-foreground"
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                            <span>Messages</span>
+                            {conversations.some((conv) => conv.unreadCount > 0) && (
+                              <span className="ml-auto rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                {conversations.reduce((count, conv) => count + conv.unreadCount, 0)}
+                              </span>
+                            )}
+                          </button>
+                          {conversations.length === 0 ? (
+                            <p className="px-3 pb-2 text-[11px] text-text-secondary">No messages yet</p>
+                          ) : conversations.slice(0, 5).map((conv) => (
+                            <button
+                              key={conv.userId}
+                              onClick={() => {
+                                setShowUserMenu(false);
+                                if (conv.lastMessage?.subject === "Account Creation Request") {
+                                  setSelectedAccountRequest(conv);
+                                } else {
+                                  setSelectedConversation(conv);
+                                }
+                              }}
+                              className="w-full text-left px-3 py-2 rounded-lg hover:bg-surface-secondary transition-colors"
+                            >
+                              <p className="text-xs font-medium text-foreground truncate">{conv.otherUser?.name || "Unknown"}</p>
+                              <p className="text-[10px] text-text-secondary truncate">{conv.lastMessage?.body?.split('\n').slice(0, 2).join(' ')}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -608,6 +680,20 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
           </div>
         </main>
 
+        <AnimatePresence>
+          {showMessages && (
+            <MessagingPanel
+              isOpen={showMessages}
+              onClose={() => setShowMessages(false)}
+              onSelectConversation={(conv) => {
+                setSelectedConversation(conv);
+                setShowMessages(false);
+              }}
+              asModal
+            />
+          )}
+        </AnimatePresence>
+
         <AccountRequestReviewModal
           request={selectedAccountRequest}
           onClose={() => setSelectedAccountRequest(null)}
@@ -615,7 +701,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
             getConversations().then((convs) => {
               setConversations(convs);
               setAccountRequests(convs.filter((conv) => conv.lastMessage?.subject === "Account Creation Request"));
-            }).catch(() => {});
+            }).catch(() => { });
           }}
         />
         {selectedOtherUser && (
@@ -623,6 +709,10 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
             isOpen={true}
             onClose={() => setSelectedConversation(null)}
             otherUser={selectedOtherUser as NonNullable<Conversation["otherUser"]>}
+            properties={(properties || []).map((p) => ({
+              ...p,
+              unitNames: (units || []).filter((u) => u?.propertyId === p.id).map((u) => u.unitNumber),
+            }))}
           />
         )}
 
@@ -648,8 +738,8 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
             </div>
           </div>,
           document.body
-         )}
-       </div>
-     </div>
-   );
- }
+        )}
+      </div>
+    </div>
+  );
+}

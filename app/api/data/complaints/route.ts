@@ -37,18 +37,50 @@ export async function POST(request: NextRequest) {
     await logAudit(auth.userId, "complaint_created", { targetType: sanitized.targetType, targetId: sanitized.targetId, subject: sanitized.subject }, auth.ip, auth.userAgent);
 
     try {
+      const users = await (await import("@/lib/db")).getAllUsers();
+      // Support requests must only go to admin, NEVER to owners
+      const isSupportRequest = sanitized.targetType === "support";
+      const adminRecipients = isSupportRequest
+        ? users.filter((u: any) => u.role === "admin")
+        : users.filter((u: any) => ["admin"].includes(u.role));
+      const senderName = auth.user?.name || "A tenant";
+      const notifTitle = isSupportRequest ? "New Support Request" : "New Tenant Complaint";
+      for (const admin of adminRecipients) {
+        await createNotification({
+          userId: admin.id,
+          title: notifTitle,
+          message: `${senderName}: "${sanitized.subject}"`,
+          type: "system",
+        });
+      }
+      // Also record confirmation notification for the tenant
+      await createNotification({
+        userId: auth.userId,
+        title: isSupportRequest ? "Support Request Submitted" : "Complaint Submitted",
+        message: `Your request "${sanitized.subject}" has been received.`,
+        type: "system",
+      });
+    } catch (notifErr) {
+      console.error("Failed to notify admins of complaint:", notifErr);
+    }
+
+    try {
       if (isSmtpConfigured()) {
         const users = await (await import("@/lib/db")).getAllUsers();
-        const recipients = users.filter((u: any) => (u.role === "owner" || u.role === "admin" || u.role === "agent") && u.email);
+        const isSupportRequest = sanitized.targetType === "support";
+        // Support requests strictly go to admins only (never owners)
+        const recipients = isSupportRequest
+          ? users.filter((u: any) => u.role === "admin" && u.email)
+          : users.filter((u: any) => (u.role === "admin" || u.role === "agent") && u.email);
         for (const recipient of recipients) {
           const html = createRentTrackEmailTemplate({
-            title: "New Complaint",
-            body: `A new complaint has been submitted.<br /><br /><strong>Subject:</strong> ${escapeHtml(sanitized.subject)}<br /><strong>Priority:</strong> ${escapeHtml(sanitized.priority || "medium")}<br /><br /><strong>Message:</strong><br />${escapeHtml(sanitized.message)}`,
+            title: isSupportRequest ? "New Support Request" : "New Complaint",
+            body: `A new ${isSupportRequest ? "support request" : "complaint"} has been submitted.<br /><br /><strong>Subject:</strong> ${escapeHtml(sanitized.subject)}<br /><strong>Priority:</strong> ${escapeHtml(sanitized.priority || "medium")}<br /><br /><strong>Message:</strong><br />${escapeHtml(sanitized.message)}`,
             footerNote: "Please review and take action in the admin dashboard.",
           });
           await sendSystemEmail({
             to: recipient.email,
-            subject: `New Complaint: ${sanitized.subject}`,
+            subject: `${isSupportRequest ? "New Support Request" : "New Complaint"}: ${sanitized.subject}`,
             html,
           });
         }

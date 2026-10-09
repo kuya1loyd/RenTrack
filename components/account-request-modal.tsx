@@ -21,7 +21,7 @@ export default function AccountRequestModal({ isOpen, onClose, agentName }: Acco
     phone: "",
     address: "",
     password: "",
-    recipientRole: "admin",
+    recipientRole: "owner",
     reason: "",
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -82,8 +82,8 @@ export default function AccountRequestModal({ isOpen, onClose, agentName }: Acco
       >
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">Request Account Creation</h2>
-            <p className="text-xs text-gray-500 mt-1">Send a request to admin/owner to create a new user account</p>
+            <h2 className="text-base font-semibold text-gray-900">Request Tenant Account</h2>
+            <p className="text-xs text-gray-500 mt-1">Send a request to the property owner to create a new tenant account</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
             <X className="h-4 w-4" />
@@ -139,8 +139,8 @@ export default function AccountRequestModal({ isOpen, onClose, agentName }: Acco
             <div className="relative">
               <Shield className="absolute left-2.5 top-2 h-3.5 w-3.5 text-gray-400" />
               <select value={formData.recipientRole} onChange={(e) => setFormData({ ...formData, recipientRole: e.target.value })} className="w-full rounded-lg border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20">
+                <option value="owner">Property Owner</option>
                 <option value="admin">Admin</option>
-                <option value="owner">Owner</option>
               </select>
             </div>
           </div>

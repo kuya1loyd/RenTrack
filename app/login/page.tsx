@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, FormEvent } from "react";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import {
   Mail,
@@ -15,12 +16,13 @@ import { useAuth } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
+import { safeParseJson } from "@/lib/data";
 
 const FormCard = ({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) => (
   <div className="w-full max-w-md px-2">
       <div className="mb-6 text-center">
       <Link href="/" className="inline-block hover:scale-105 transition-transform">
-        <img src="/images/landing/logo.png" alt="RentTrack" className="h-16 w-16 rounded-full object-contain" />
+        <Image src="/images/landing/logo.png" alt="RentTrack" width={64} height={64} className="h-16 w-16 rounded-full object-contain" />
       </Link>
     </div>
 
@@ -67,7 +69,7 @@ export default function LoginPage() {
         credentials: "include",
         body: JSON.stringify({ email, password }),
       });
-      const data = await res.json();
+      const data = await safeParseJson(res);
       console.log("Login response:", data);
       if (data.success) {
         toast.success("Login successful!");

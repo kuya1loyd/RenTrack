@@ -2,10 +2,9 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, UserPlus, Eye, EyeOff, Mail, Phone, MapPin, Home, Calendar, DollarSign, Lock, CheckCircle2, AlertCircle, User } from "lucide-react";
+import { X, UserPlus, Eye, EyeOff, Mail, Phone, MapPin, Lock, CheckCircle2, AlertCircle, User } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import type { Property, Unit } from "@/lib/data";
 
 interface CreateTenantModalProps {
   isOpen: boolean;
@@ -15,41 +14,25 @@ interface CreateTenantModalProps {
     email: string;
     phone: string;
     address: string;
-    propertyName: string;
-    unitNumber: string;
-    rentAmount: string;
-    contractStart: string;
-    contractEnd: string;
-    paymentMethod: string;
-    advancePayment: string;
     password: string;
   }) => Promise<void>;
   submitting: boolean;
-  properties?: Property[];
-  units?: Unit[];
 }
 
-export default function CreateTenantModal({ isOpen, onClose, onSubmit, submitting, properties = [], units = [] }: CreateTenantModalProps) {
+export default function CreateTenantModal({ isOpen, onClose, onSubmit, submitting }: CreateTenantModalProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
     name: "",
     email: "",
     phone: "",
     address: "",
-    propertyName: "",
-    unitNumber: "",
-    rentAmount: "",
-    contractStart: "",
-    contractEnd: "",
-    paymentMethod: "cash",
-    advancePayment: "",
     password: "",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await onSubmit(form);
-    setForm({ name: "", email: "", phone: "", address: "", propertyName: "", unitNumber: "", rentAmount: "", contractStart: "", contractEnd: "", paymentMethod: "cash", advancePayment: "", password: "" });
+    setForm({ name: "", email: "", phone: "", address: "", password: "" });
     setShowPassword(false);
   };
 
@@ -80,12 +63,16 @@ export default function CreateTenantModal({ isOpen, onClose, onSubmit, submittin
                   </div>
                   <div>
                     <h3 className="text-lg font-semibold text-white">Create New Tenant</h3>
-                    <p className="text-xs text-blue-100 mt-0.5">Set up tenant account and rental details</p>
+                    <p className="text-xs text-blue-100 mt-0.5">Set up a tenant account</p>
                   </div>
                 </div>
                 <button
-                  onClick={onClose}
-                  className="rounded-lg bg-white/10 p-2 text-white/80 hover:bg-white/20 hover:text-white transition-all"
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClose();
+                  }}
+                  className="rounded-lg bg-white/10 p-2 text-white/80 hover:bg-white/20 hover:text-white transition-all cursor-pointer z-50 pointer-events-auto"
                   aria-label="Close modal"
                 >
                   <X className="h-4 w-4" />
@@ -154,93 +141,6 @@ export default function CreateTenantModal({ isOpen, onClose, onSubmit, submittin
                         placeholder="Tenant address"
                         className="h-10 rounded-xl border-gray-200 bg-white focus:border-blue-500 focus:ring-blue-500/20"
                       />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Rental Details Section */}
-                <div className="rounded-2xl border border-gray-100 bg-gray-50/50 p-5">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="rounded-lg bg-emerald-100 p-1.5">
-                      <Home className="h-4 w-4 text-emerald-600" />
-                    </div>
-                    <h4 className="text-sm font-semibold text-gray-900">Rental Details</h4>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-700 mb-1.5">
-                        <Home className="h-3 w-3 text-gray-400" />
-                        Property Name
-                      </label>
-                      <Input
-                        value={form.propertyName}
-                        onChange={(e) => setForm({ ...form, propertyName: e.target.value, unitNumber: "" })}
-                        placeholder="Select a property from the owner portfolio"
-                        list="owner-properties"
-                        required
-                        className="h-10 rounded-xl border-gray-200 bg-white focus:border-blue-500 focus:ring-blue-500/20"
-                      />
-                      <datalist id="owner-properties">
-                        {properties.map((property) => <option key={property.id} value={property.name} />)}
-                      </datalist>
-                    </div>
-                    <div>
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-700 mb-1.5">
-                        <Home className="h-3 w-3 text-gray-400" />
-                        Unit Number
-                      </label>
-                      <Input
-                        value={form.unitNumber}
-                        onChange={(e) => setForm({ ...form, unitNumber: e.target.value })}
-                        placeholder={form.propertyName ? "Select an available unit" : "Select property first"}
-                        list="available-units"
-                        disabled={!form.propertyName}
-                        required
-                        className="h-10 rounded-xl border-gray-200 bg-white focus:border-blue-500 focus:ring-blue-500/20"
-                      />
-                      <datalist id="available-units">
-                        {units.filter((unit) => unit.status === "vacant" && properties.find((property) => property.name === form.propertyName)?.id === unit.propertyId).map((unit) => <option key={unit.id} value={unit.unitNumber}>{`₱${Number(unit.rentAmount).toLocaleString()}/mo`}</option>)}
-                      </datalist>
-                    </div>
-                    <div>
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-700 mb-1.5">
-                        <DollarSign className="h-3 w-3 text-gray-400" />
-                        Monthly Rent (₱)
-                      </label>
-                      <Input
-                        type="number"
-                        min="0.01"
-                        value={form.rentAmount}
-                        onChange={(e) => setForm({ ...form, rentAmount: e.target.value })}
-                        placeholder="15000"
-                        required
-                        className="h-10 rounded-xl border-gray-200 bg-white focus:border-blue-500 focus:ring-blue-500/20"
-                      />
-                    </div>
-                    <div>
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-700 mb-1.5">
-                        <Calendar className="h-3 w-3 text-gray-400" />
-                        Lease Start Date
-                      </label>
-                      <Input
-                        type="date"
-                        value={form.contractStart}
-                        onChange={(e) => setForm({ ...form, contractStart: e.target.value })}
-                        required
-                        className="h-10 rounded-xl border-gray-200 bg-white focus:border-blue-500 focus:ring-blue-500/20"
-                      />
-                    </div>
-                    <div>
-                      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-700 mb-1.5"><Calendar className="h-3 w-3 text-gray-400" />Lease End Date</label>
-                      <Input type="date" value={form.contractEnd} min={form.contractStart || undefined} onChange={(e) => setForm({ ...form, contractEnd: e.target.value })} required className="h-10 rounded-xl border-gray-200 bg-white focus:border-blue-500 focus:ring-blue-500/20" />
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-gray-700 mb-1.5 block">Payment Method</label>
-                      <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })} className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm"><option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option><option value="gcash">GCash</option><option value="other">Other</option></select>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-gray-700 mb-1.5 block">Advance Payment (₱)</label>
-                      <Input type="number" min="0" value={form.advancePayment} onChange={(e) => setForm({ ...form, advancePayment: e.target.value })} placeholder="Optional" className="h-10 rounded-xl border-gray-200 bg-white" />
                     </div>
                   </div>
                 </div>

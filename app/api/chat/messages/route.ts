@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSupabase, initDatabase } from "@/lib/db";
 import { sendSystemEmail, createRentTrackEmailTemplate, escapeHtml } from "@/lib/mail";
+import { requireAuth, withCorsHeaders, withSecurityHeaders } from "@/lib/api-security";
 
 export async function POST(request: NextRequest) {
   try {
-    await initDatabase();
     const body = await request.json();
+    const agentId = body.agentId || null;
+    const agentName = body.agentName || null;
+
+    if (agentId || agentName) {
+      const auth = await requireAuth(request);
+      if (auth instanceof NextResponse) return auth;
+    }
+
+    await initDatabase();
     const text = String(body.text || "").trim();
     const propertyId = body.propertyId || null;
     const senderName = String(body.senderName || "Landing Visitor").trim();
     const senderEmail = String(body.senderEmail || "").trim();
     const senderPhone = body.senderPhone || null;
-    const agentId = body.agentId || null;
-    const agentName = body.agentName || null;
 
     if (!text) {
       return NextResponse.json({ success: false, error: "Message is required" }, { status: 400 });

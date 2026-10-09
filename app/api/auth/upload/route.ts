@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/security";
-import { createUpload, getUpload, updateUserAvatar, updateUserIdVerification, createNotification, supabase, getAdminSupabase } from "@/lib/db";
+import { createUpload, getUpload, updateUserAvatar, updateUserIdVerification, createNotification, supabase, getAdminSupabase, findUserById } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    const id = await createUpload({ userId, type, buffer, mimeType: file.type, size: file.size });
+    const uploader = await findUserById(userId);
+    const id = await createUpload({ userId, userType: uploader?.role, type, buffer, mimeType: file.type, size: file.size });
 
     const url = `/api/auth/upload/${id}`;
 

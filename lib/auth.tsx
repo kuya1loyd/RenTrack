@@ -48,20 +48,33 @@ const SESSION_KEY = "renttrack_session";
 export { SESSION_KEY };
 
 async function apiCall(url: string, body: Record<string, unknown>) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify(body),
-  });
-  return res.json();
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(body),
+    });
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      return await res.json();
+    }
+    const text = await res.text();
+    return { success: false, error: text || `Server error (${res.status})` };
+  } catch {
+    return { success: false, error: "Network request failed" };
+  }
 }
 
 async function apiGet(url: string) {
   try {
     const res = await fetch(url, { credentials: "include" });
-    const data = await res.json();
-    return { ...data, status: res.status };
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const data = await res.json();
+      return { ...data, status: res.status };
+    }
+    return { success: false, transient: true, status: res.status };
   } catch {
     return { success: false, transient: true, status: 0 };
   }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/lib/auth";
+import ClickableCursorProvider from "@/components/clickable-cursor-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -64,6 +65,7 @@ export default function RootLayout({
       <link rel="apple-touch-icon" href="/images/landing/logo.png" />
       </head>
       <body className="min-h-full flex flex-col">
+        <ClickableCursorProvider />
         <AuthProvider>
           {children}
           <Toaster

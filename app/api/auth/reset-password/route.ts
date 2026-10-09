@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/security";
 import { findUserById, resetUserPassword, initDatabase } from "@/lib/db";
-import bcrypt from "bcryptjs";
-import { sendEmail, getSiteUrl } from "@/lib/mail";
+import { sendEmail } from "@/lib/mail";
 import {
   requireAuth, validateApiRequest, withRateLimit,
-  sanitizeResponse, withSecurityHeaders, withCorsHeaders,
   getClientIp
 } from "@/lib/api-security";
 import { logAudit } from "@/lib/db";
@@ -53,9 +50,6 @@ export async function POST(request: NextRequest) {
     }
 
     await resetUserPassword(userId, newPassword);
-
-    const origin = getSiteUrl(request.nextUrl.origin);
-    const loginUrl = `${origin}/login?mode=signin`;
 
     await sendEmail({
       to: targetUser.email,

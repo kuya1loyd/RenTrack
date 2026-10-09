@@ -16,14 +16,79 @@ export async function GET(request: NextRequest) {
     let tenants = await getTenants();
     if (auth.user.role === "agent") {
       try {
-        const { data: inquiries } = await getAdminSupabase()
+        const adminClient = getAdminSupabase();
+
+        // 1. Properties assigned to agent
+        const { data: assignedProperties } = await adminClient
+          .from("properties")
+          .select("id, name")
+          .eq("agent_id", auth.userId);
+        const propertyIds = (assignedProperties || []).map((p: any) => p.id);
+        const propertyNames = new Set(
+          (assignedProperties || []).map((p: any) => String(p.name || "").trim().toLowerCase()).filter(Boolean)
+        );
+
+        // 2. Units in assigned properties
+        const { data: assignedUnits } = propertyIds.length
+          ? await adminClient.from("units").select("id").in("property_id", propertyIds)
+          : { data: [] };
+        const assignedUnitIds = new Set((assignedUnits || []).map((u: any) => u.id));
+
+        // 3. Rental contracts with this agent
+        const { data: contracts } = await adminClient
+          .from("rental_contracts")
+          .select("tenant_id, tenant_name")
+          .eq("agent_id", auth.userId);
+        const contractTenantIds = new Set((contracts || []).map((c: any) => c.tenant_id).filter(Boolean));
+        const contractTenantNames = new Set(
+          (contracts || []).map((c: any) => String(c.tenant_name || "").trim().toLowerCase()).filter(Boolean)
+        );
+
+        // 4. Inquiries / chat messages with this agent
+        const { data: inquiries } = await adminClient
           .from("chat_messages")
           .select("sender_email")
           .eq("agent_id", auth.userId);
-        const inquiryEmails = new Set((inquiries || []).map((inquiry: any) => String(inquiry.sender_email || "").toLowerCase()).filter(Boolean));
-        tenants = tenants.filter((tenant) => tenant.createdBy === auth.userId || inquiryEmails.has(String(tenant.email || "").toLowerCase()));
-      } catch {
-        tenants = tenants.filter((tenant) => tenant.createdBy === auth.userId);
+        const inquiryEmails = new Set(
+          (inquiries || []).map((i: any) => String(i.sender_email || "").trim().toLowerCase()).filter(Boolean)
+        );
+
+        // 5. Direct messages with this agent
+        const { data: directMessages } = await adminClient
+          .from("messages")
+          .select("sender_id, receiver_id")
+          .or(`sender_id.eq.${auth.userId},receiver_id.eq.${auth.userId}`);
+        const messagePartnerIds = new Set(
+          (directMessages || []).flatMap((m: any) => [m.sender_id, m.receiver_id]).filter((id: string) => id && id !== auth.userId)
+        );
+
+        // Tag every tenant with assistance relationship
+        tenants = tenants.map((tenant) => {
+          let assistReason: string | null = null;
+          if (tenant.createdBy === auth.userId) {
+            assistReason = "Registered Client";
+          } else if (tenant.unitId && assignedUnitIds.has(tenant.unitId)) {
+            assistReason = tenant.propertyName ? `Assigned to ${tenant.propertyName}` : "Assigned Unit";
+          } else if (tenant.propertyName && propertyNames.has(String(tenant.propertyName).trim().toLowerCase())) {
+            assistReason = `Property: ${tenant.propertyName}`;
+          } else if (contractTenantIds.has(tenant.id) || contractTenantNames.has(String(tenant.name || "").trim().toLowerCase())) {
+            assistReason = "Rental Contract";
+          } else if (inquiryEmails.has(String(tenant.email || "").trim().toLowerCase())) {
+            assistReason = "Client Inquiry";
+          } else if (messagePartnerIds.has(tenant.id)) {
+            assistReason = "Direct Contact";
+          }
+          return {
+            ...tenant,
+            isAssisted: Boolean(assistReason),
+            assistReason: assistReason || "Available Renter",
+          };
+        });
+
+        // Sort: Assisted tenants appear first
+        tenants.sort((a: any, b: any) => (b.isAssisted ? 1 : 0) - (a.isAssisted ? 1 : 0));
+      } catch (err) {
+        console.error("Filter agent tenants error:", err);
       }
     }
     return NextResponse.json({ success: true, tenants: tenants.map(t => sanitizeResponse(t)) });

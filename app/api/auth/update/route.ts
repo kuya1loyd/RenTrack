@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUserId } from "@/lib/security";
 import { getAdminSupabase, findUserById, initDatabase } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import {
-  requireAuth, validateApiRequest, withSecurityHeaders, withCorsHeaders,
-  sanitizeObject, getClientIp
+  requireAuth, validateApiRequest,
 } from "@/lib/api-security";
-import { logAudit } from "@/lib/db";
 
-const ALLOWED_UPDATE_FIELDS = ["name", "email", "phone", "gender", "birthdate", "address"];
-const PASSWORD_FIELDS = ["currentPassword", "newPassword"];
+const ALLOWED_UPDATE_FIELDS = ["name", "email", "phone", "gender", "birthdate", "address", "avatarUrl", "avatar_url"];
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -64,23 +60,23 @@ export async function PATCH(request: NextRequest) {
       if (!ALLOWED_UPDATE_FIELDS.includes(key)) continue;
       if (val === undefined || val === null) continue;
 
-      const dbKey = key;
-
-      if (dbKey === "email") {
+      if (key === "avatarUrl" || key === "avatar_url") {
+        updateData["avatar_url"] = String(val);
+      } else if (key === "email") {
         const sanitized = String(val).toLowerCase().trim().replace(/[^a-zA-Z0-9@._+-]/g, "");
         if (!sanitized.includes("@")) {
           return NextResponse.json({ success: false, error: "Invalid email format" }, { status: 400 });
         }
-        updateData[dbKey] = sanitized;
-      } else if (dbKey === "phone") {
-        updateData[dbKey] = String(val).replace(/[^0-9+]/g, "").slice(0, 20);
-      } else if (dbKey === "birthdate") {
+        updateData["email"] = sanitized;
+      } else if (key === "phone") {
+        updateData["phone"] = String(val).replace(/[^0-9+]/g, "").slice(0, 20);
+      } else if (key === "birthdate") {
         const dateValue = String(val).trim();
         if (dateValue) {
-          updateData[dbKey] = dateValue;
+          updateData["birthdate"] = dateValue;
         }
       } else {
-        updateData[dbKey] = String(val).replace(/[<>]/g, "").slice(0, 200);
+        updateData[key] = String(val).replace(/[<>]/g, "").slice(0, 200);
       }
     }
 

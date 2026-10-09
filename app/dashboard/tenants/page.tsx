@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
 import {
-  Users, Search, Phone, Mail, Building2, Home, DollarSign, CheckCircle2, XCircle, Trash2, Shield, Eye, X, MoreHorizontal
+  Users, Search, CheckCircle2, XCircle, Trash2, Shield, Eye, X, MoreHorizontal
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,18 +12,18 @@ import { Input } from "@/components/ui/input";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, formatDate, getInitials } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { getTenants, TenantRecord, addNotification } from "@/lib/data";
+import { getTenants, safeParseJson, TenantRecord, addNotification } from "@/lib/data";
 import { toast } from "sonner";
 
-const staggerContainer = { hidden: {}, visible: { transition: { staggerChildren: 0.05, delayChildren: 0.1 } } };
 const fadeInUp = { hidden: { opacity: 0, y: 15 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } };
 
 export default function TenantsPage() {
   const { user } = useAuth();
   const [tenants, setTenants] = useState<TenantRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [tenantStatusFilter, setTenantStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [selectedTenant, setSelectedTenant] = useState<TenantRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TenantRecord | null>(null);
@@ -59,9 +60,8 @@ export default function TenantsPage() {
   }, []);
 
   const filteredTenants = tenants.filter((t) =>
-    t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (t.propertyName || "").toLowerCase().includes(searchTerm.toLowerCase())
+    `${t.name} ${t.email} ${t.phone || ""} ${t.propertyName || ""} ${t.unitNumber || ""}`.toLowerCase().includes(searchTerm.trim().toLowerCase()) &&
+    (tenantStatusFilter === "all" || t.status === tenantStatusFilter)
   );
 
   const handleVerify = async (tenantId: string, status: "approved" | "rejected") => {
@@ -72,7 +72,7 @@ export default function TenantsPage() {
         credentials: "include",
         body: JSON.stringify({ userId: tenantId, status }),
       });
-      const result = await res.json();
+      const result = await safeParseJson(res);
       if (result.success) {
         toast.success(`ID verification ${status}`);
         setTenants(prev => prev.map(t => t.id === tenantId ? { ...t, idVerificationStatus: status } : t));
@@ -97,7 +97,7 @@ export default function TenantsPage() {
         credentials: "include",
         body: JSON.stringify({ userId: deleteTarget.id }),
       });
-      const result = await res.json();
+      const result = await safeParseJson(res);
       if (result.success) {
         toast.success("Tenant deleted successfully");
         setTenants(prev => prev.filter(t => t.id !== deleteTarget.id));
@@ -127,9 +127,15 @@ export default function TenantsPage() {
         credentials: "include",
         body: JSON.stringify(createForm),
       });
-      const result = await res.json();
+      const result = await safeParseJson(res);
       if (result.success) {
-        toast.success(result.emailSent ? "Account created and credentials emailed" : "Account created, but the credentials email could not be sent");
+        if (result.emailSent) {
+          toast.success(`Account created. Login details were emailed to ${createForm.email}.`);
+        } else {
+          toast.error(result.emailStatus === "not_configured"
+            ? "Account created, but no login email was sent because SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS."
+            : "Account created, but the login email could not be delivered. Check SMTP settings and server logs.");
+        }
         setCreateForm({ name: "", email: "", password: "", phone: "", address: "", role: "tenant" });
         setShowCreateTenant(false);
         const records = await getTenants(user);
@@ -148,89 +154,107 @@ export default function TenantsPage() {
   const avgRent = tenants.length > 0 ? tenants.reduce((s, t) => s + (t.rentAmount || 0), 0) / tenants.length : 0;
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="h-[calc(100vh-8rem)]">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-4">
+      <section className="flex flex-col gap-3 rounded-xl border border-blue-100 bg-[#eaf3ff] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Tenants</h2>
-          <p className="text-text-secondary text-sm mt-1">All tenants currently using the platform</p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Resident management</p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-950">Tenants</h2>
+          <p className="mt-1 text-xs text-slate-600">Review tenant profiles, lease dates, status, and rent.</p>
         </div>
-        <Button onClick={() => setShowCreateTenant(true)} className="bg-blue-600 hover:bg-blue-700">
+        <Button onClick={() => setShowCreateTenant(true)} className="h-9 bg-blue-700 text-white hover:bg-blue-800">
           <Users className="h-4 w-4 mr-2" />
           Create Tenant
         </Button>
+      </section>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-[#dce8f5] bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:flex-row sm:items-center sm:p-4">
+        <label className="relative min-w-0 flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input placeholder="Search tenants, properties, or unit..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="h-9 rounded-lg border-slate-200 pl-9" aria-label="Search tenants" />
+        </label>
+        <select aria-label="Filter tenants by status" value={tenantStatusFilter} onChange={(event) => setTenantStatusFilter(event.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-700">
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
         {[
-          { label: "Total Tenants", value: tenants.length, color: "from-primary-500 to-primary-600" },
-          { label: "Active", value: activeCount, color: "from-green-500 to-green-600" },
-          { label: "Inactive", value: tenants.length - activeCount, color: "from-gray-500 to-gray-600" },
-          { label: "Avg. Rent", value: formatCurrency(avgRent), color: "from-accent-500 to-accent-600" },
+          { label: "Total tenants", value: tenants.length, tone: "text-blue-700 bg-blue-50" },
+          { label: "Active", value: activeCount, tone: "text-emerald-700 bg-emerald-50" },
+          { label: "Inactive", value: tenants.length - activeCount, tone: "text-slate-700 bg-slate-100" },
+          { label: "Average rent", value: formatCurrency(avgRent), tone: "text-amber-700 bg-amber-50" },
         ].map((stat, i) => (
-          <motion.div key={i} variants={fadeInUp} whileHover={{ scale: 1.02, y: -2 }} transition={{ duration: 0.2 }}>
-            <Card className="hover:shadow-lg transition-all duration-300"><CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-text-secondary">{stat.label}</p>
-                  <p className="text-xl font-bold text-foreground mt-0.5">{stat.value}</p>
-                </div>
-                <div className={cn("h-8 w-8 rounded-lg bg-gradient-to-br flex items-center justify-center text-white text-xs font-bold", stat.color)}>
-                  {typeof stat.value === "number" ? stat.value : "₱"}
-                </div>
-              </div>
-            </CardContent></Card>
-          </motion.div>
+          <Card key={i} className="border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]"><CardContent className="flex items-center justify-between gap-2 p-3 sm:p-4">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{stat.label}</p>
+              <p className="mt-1 truncate text-base font-bold tabular-nums text-slate-900 sm:text-lg">{stat.value}</p>
+            </div>
+            <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", stat.tone)}><Users className="h-4 w-4" /></span>
+          </CardContent></Card>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-22rem)] min-h-[400px]">
-        <Card className="lg:col-span-1 flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-border">
-            <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
-              <Input placeholder="Search tenants..." value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 h-9" />
-            </div>
+      <div className="space-y-4">
+        <Card className="overflow-hidden border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+          <div className="border-b border-slate-100 bg-[#f6f9fd] px-4 py-3">
+            <h3 className="text-sm font-semibold text-slate-900">Tenant directory</h3>
+            <p className="mt-1 text-xs text-slate-500">{filteredTenants.length} tenant{filteredTenants.length === 1 ? "" : "s"} match your filters</p>
           </div>
-          <div className="flex-1 overflow-y-auto p-2">
+          <div className="overflow-x-auto">
             {loading ? (
-              <div className="text-center py-10">
-                <div className="h-6 w-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                <p className="text-xs text-text-secondary">Loading...</p>
+              <div role="status" className="px-4 py-10 text-center text-sm text-slate-500">
+                <div className="mx-auto mb-3 h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                Loading tenants…
               </div>
             ) : filteredTenants.length === 0 ? (
-              <div className="text-center py-10">
-                <Users className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                <p className="text-xs text-text-secondary">No tenants found</p>
+              <div className="px-4 py-10 text-center">
+                <Users className="mx-auto mb-2 h-8 w-8 text-slate-300" />
+                <p className="text-xs text-slate-600">No tenants match these filters.</p>
               </div>
             ) : (
-              <div className="space-y-1">
-                {filteredTenants.map((tenant) => (
-                  <button
-                    key={tenant.id}
-                    onClick={() => setSelectedTenant(tenant)}
-                    className={cn(
-                      "w-full text-left p-3 rounded-xl transition-all duration-200",
-                      selectedTenant?.id === tenant.id
-                        ? "bg-primary-50 border border-primary-200"
-                        : "hover:bg-surface-secondary border border-transparent"
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Avatar src={tenant.avatarUrl} fallback={tenant.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)} size="sm" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{tenant.name}</p>
-                        <p className="text-xs text-text-secondary truncate">{tenant.email}</p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+              <>
+                <table className="hidden w-full min-w-[760px] border-collapse text-left sm:table">
+                  <thead className="bg-white text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    <tr><th className="px-4 py-3">Tenant</th><th className="px-4 py-3">Property / unit</th><th className="px-4 py-3">Contract dates</th><th className="px-4 py-3">Monthly rent</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Action</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredTenants.map((tenant) => (
+                      <tr key={tenant.id} className={cn("text-xs transition-colors hover:bg-blue-50/40", selectedTenant?.id === tenant.id && "bg-blue-50/70")}>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <Avatar src={tenant.avatarUrl} fallback={getInitials(tenant.name)} size="sm" />
+                            <div className="min-w-0"><p className="truncate font-semibold text-slate-900">{tenant.name}</p><p className="mt-0.5 truncate text-[10px] text-slate-500">{tenant.email}</p></div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3"><p className="font-medium text-slate-800">{tenant.propertyName || "—"}</p><p className="mt-0.5 text-[10px] text-slate-500">{tenant.unitNumber ? `Unit ${tenant.unitNumber}` : "—"}</p></td>
+                        <td className="px-4 py-3 text-[10px] text-slate-600"><p>Start: {tenant.contractStart ? formatDate(tenant.contractStart) : "—"}</p><p className="mt-0.5">End: {tenant.contractEnd ? formatDate(tenant.contractEnd) : "—"}</p></td>
+                        <td className="whitespace-nowrap px-4 py-3 font-semibold tabular-nums text-slate-900">{tenant.rentAmount != null ? `${formatCurrency(tenant.rentAmount)}/mo` : "—"}</td>
+                        <td className="px-4 py-3"><Badge variant={tenant.status === "active" ? "success" : "outline"} className="text-[10px] capitalize">{tenant.status}</Badge></td>
+                        <td className="px-4 py-3 text-right"><Button type="button" size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => setSelectedTenant(tenant)}><Eye className="mr-1 h-3 w-3" />Details</Button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="divide-y divide-slate-100 sm:hidden">
+                  {filteredTenants.map((tenant) => (
+                    <button key={tenant.id} type="button" onClick={() => setSelectedTenant(tenant)} className={cn("flex w-full items-start gap-3 px-3 py-3 text-left hover:bg-blue-50/40", selectedTenant?.id === tenant.id && "bg-blue-50/70")}>
+                      <Avatar src={tenant.avatarUrl} fallback={getInitials(tenant.name)} size="sm" />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center justify-between gap-2"><span className="truncate text-xs font-semibold text-slate-900">{tenant.name}</span><Badge variant={tenant.status === "active" ? "success" : "outline"} className="text-[10px] capitalize">{tenant.status}</Badge></span>
+                        <span className="mt-0.5 block truncate text-[10px] text-slate-500">{tenant.propertyName || "No property"} · {tenant.unitNumber ? `Unit ${tenant.unitNumber}` : "No unit"}</span>
+                        <span className="mt-1 block text-[10px] text-slate-500">Lease {tenant.contractStart ? formatDate(tenant.contractStart) : "—"} – {tenant.contractEnd ? formatDate(tenant.contractEnd) : "—"}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </Card>
 
-        <Card className="lg:col-span-2 flex flex-col overflow-hidden">
+        {selectedTenant && <Card className="flex flex-col overflow-hidden border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
           {selectedTenant ? (
             <div className="flex-1 overflow-y-auto">
               <div className="p-6 border-b border-border flex items-center justify-between">
@@ -334,9 +358,12 @@ export default function TenantsPage() {
                       onClick={() => setShowIdModal(true)}
                       className="relative rounded-xl border border-border overflow-hidden cursor-pointer group"
                     >
-                      <img
+                      <Image
                         src={selectedTenant.idVerificationUrl}
                         alt="ID Verification"
+                        width={640}
+                        height={480}
+                        unoptimized
                         className="w-full h-auto max-h-[40vh] object-contain bg-gray-50 blur-sm group-hover:blur-none transition-all duration-300"
                       />
                       <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/5 transition-colors">
@@ -369,7 +396,7 @@ export default function TenantsPage() {
               </div>
             </div>
           )}
-        </Card>
+        </Card>}
 
         <AnimatePresence>
           {showIdModal && selectedTenant?.idVerificationUrl && (
@@ -393,9 +420,12 @@ export default function TenantsPage() {
                 >
                   <X className="h-4 w-4" />
                 </button>
-                <img
+                <Image
                   src={selectedTenant.idVerificationUrl}
                   alt="ID Verification"
+                  width={1280}
+                  height={960}
+                  unoptimized
                   className="w-full h-auto max-h-[80vh] object-contain rounded-lg"
                 />
               </motion.div>

@@ -4,6 +4,21 @@ import { NextRequest, NextResponse } from "next/server";
 const SESSION_COOKIE_NAME = "renttrack_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
 
+function isSecureCookieEnvironment(): boolean {
+  if (process.env.NODE_ENV === "production") return true;
+  return !!process.env.NEXT_PUBLIC_APP_URL && /^https:\/\//i.test(process.env.NEXT_PUBLIC_APP_URL);
+}
+
+function getSessionCookieOptions(maxAge = SESSION_TTL_SECONDS) {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: isSecureCookieEnvironment(),
+    path: "/",
+    maxAge,
+  };
+}
+
 function requireSessionSecret(): string {
   const value = process.env.SESSION_SECRET;
   if (!value) {
@@ -80,38 +95,14 @@ export async function getCurrentUser(request: NextRequest) {
 }
 
 export function setSessionCookie(response: NextResponse, userId: string) {
-  response.cookies.set(SESSION_COOKIE_NAME, createSessionToken(userId), {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: SESSION_TTL_SECONDS,
-  });
+  response.cookies.set(SESSION_COOKIE_NAME, createSessionToken(userId), getSessionCookieOptions());
 }
 
 export function regenerateSession(response: NextResponse, userId: string) {
-  response.cookies.set(SESSION_COOKIE_NAME, "", {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 0,
-  });
-  response.cookies.set(SESSION_COOKIE_NAME, createSessionToken(userId), {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: SESSION_TTL_SECONDS,
-  });
+  response.cookies.set(SESSION_COOKIE_NAME, "", { ...getSessionCookieOptions(0), maxAge: 0 });
+  response.cookies.set(SESSION_COOKIE_NAME, createSessionToken(userId), getSessionCookieOptions());
 }
 
 export function clearSessionCookie(response: NextResponse) {
-  response.cookies.set(SESSION_COOKIE_NAME, "", {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 0,
-  });
+  response.cookies.set(SESSION_COOKIE_NAME, "", { ...getSessionCookieOptions(0), maxAge: 0 });
 }

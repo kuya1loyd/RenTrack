@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
+import { safeParseJson } from "@/lib/data";
 
 function VerifyOtpContent() {
   const searchParams = useSearchParams();
@@ -27,6 +28,8 @@ function VerifyOtpContent() {
   useEffect(() => {
     if (prefilledEmail) {
       setEmail(prefilledEmail);
+      setResendCooldown(60);
+      setHasRequestedCode(true);
     }
   }, [prefilledEmail]);
 
@@ -46,11 +49,12 @@ function VerifyOtpContent() {
     }
     setIsSubmitting(true);
     try {
-      const result = await fetch("/api/auth/signup/verify-otp", {
+      const res = await fetch("/api/auth/signup/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, otp }),
-      }).then((res) => res.json());
+      });
+      const result = await safeParseJson(res);
 
       if (result.success && result.verified) {
         setStatus("success");
@@ -72,11 +76,12 @@ function VerifyOtpContent() {
     if (!email || isResending || resendCooldown > 0) return;
     setIsResending(true);
     try {
-      const result = await fetch("/api/auth/resend-verification", {
+      const res = await fetch("/api/auth/resend-verification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
-      }).then((res) => res.json());
+      });
+      const result = await safeParseJson(res);
 
       if (result.success) {
         toast.success("Verification code sent! Please check your email.");
@@ -170,55 +175,134 @@ function VerifyOtpContent() {
           <div className="rounded-3xl border border-border bg-surface/95 p-6 pb-5 shadow-xl shadow-black/4">
             {status === "form" && (
               <>
-                <div className="text-center mb-6">
-                  <Mail className="h-12 w-12 text-blue-400 mx-auto mb-4" />
+                <div className="text-center mb-5">
+                  <div className="relative mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                    <Mail className="h-7 w-7 text-blue-600" />
+                    <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-blue-600"></span>
+                    </span>
+                  </div>
                   <h2 className="text-2xl font-bold text-text-primary tracking-tight">Verify your email</h2>
-                  <p className="mt-1.5 text-sm text-text-secondary">Enter the 6-digit verification code sent to your email.</p>
+                  <p className="mt-1.5 text-xs text-text-secondary">Enter the 6-digit verification code sent to your email address.</p>
                 </div>
+
+                {/* Loading / Waiting for code delivery state */}
+                {isResending ? (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="mb-4 flex items-center gap-3 rounded-2xl border border-blue-200 bg-blue-50/90 p-3.5 text-left dark:border-blue-800 dark:bg-blue-950/40"
+                  >
+                    <Loader2 className="h-5 w-5 shrink-0 animate-spin text-blue-600" />
+                    <div>
+                      <p className="text-xs font-semibold text-blue-950 dark:text-blue-100">Sending verification code...</p>
+                      <p className="text-[11px] text-blue-700/80 dark:text-blue-300/80">Connecting to secure email server...</p>
+                    </div>
+                  </motion.div>
+                ) : resendCooldown > 0 ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-4 overflow-hidden rounded-2xl border border-blue-200/90 bg-gradient-to-br from-blue-50/90 via-sky-50/50 to-white p-3.5 text-left shadow-xs dark:border-blue-800/60 dark:from-blue-950/50 dark:to-slate-900"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600/10 text-blue-600">
+                        <Loader2 className="h-4.5 w-4.5 animate-spin text-blue-600" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between text-xs font-semibold text-blue-950 dark:text-blue-100">
+                          <span className="flex items-center gap-1.5">
+                            Waiting for code to arrive
+                            <span className="inline-block h-1.5 w-1.5 animate-ping rounded-full bg-blue-500" />
+                          </span>
+                          <span className="rounded-md bg-blue-100 px-1.5 py-0.5 font-mono text-[11px] font-bold text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
+                            {resendCooldown}s
+                          </span>
+                        </div>
+                        <p className="mt-0.5 truncate text-[11px] text-blue-700/80 dark:text-blue-300/80">
+                          Sent to <span className="font-semibold text-blue-950 dark:text-blue-100">{email || "your email"}</span>. Please check your inbox & spam.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-blue-200/60 dark:bg-blue-900/40">
+                      <motion.div
+                        className="h-full rounded-full bg-blue-600"
+                        initial={{ width: "100%" }}
+                        animate={{ width: `${(resendCooldown / 60) * 100}%` }}
+                        transition={{ duration: 1, ease: "linear" }}
+                      />
+                    </div>
+                  </motion.div>
+                ) : null}
+
                 <form onSubmit={handleVerify} className="space-y-4">
                   <div>
-                    <label className="block text-xs font-medium text-text-secondary mb-1">Email</label>
+                    <label className="block text-xs font-medium text-text-secondary mb-1">Email Address</label>
                     <Input
                       type="email"
                       placeholder="you@email.com"
                       value={email}
+                      disabled={isSubmitting || isResending}
                       onChange={(e) => setEmail(e.target.value)}
                       className="h-10 text-sm rounded-xl border-border bg-surface-secondary focus:border-primary-500 focus:ring-primary-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-text-secondary mb-1">Verification Code</label>
+                    <label className="block text-xs font-medium text-text-secondary mb-1">6-Digit Verification Code</label>
                     <Input
                       type="text"
                       placeholder="123456"
                       value={otp}
+                      disabled={isSubmitting}
                       onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                       maxLength={6}
-                      className="h-10 text-sm text-center text-2xl tracking-widest rounded-xl border-border bg-surface-secondary focus:border-primary-500 focus:ring-primary-500/20"
+                      className="h-11 text-base text-center font-mono tracking-widest rounded-xl border-border bg-surface-secondary focus:border-primary-500 focus:ring-primary-500/20"
                     />
                   </div>
                   <Button
                     type="submit"
                     variant="gradient"
                     size="lg"
-                    className="w-full h-10"
-                    disabled={isSubmitting}
+                    className="w-full h-11 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                    disabled={isSubmitting || !otp || otp.length < 6}
                   >
-                    {isSubmitting ? "Verifying..." : "Verify Email"}
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                        <span>Verifying code...</span>
+                      </>
+                    ) : (
+                      <span>Verify Email & Continue</span>
+                    )}
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="w-full h-8 text-[10px]"
+                    className="w-full h-9 text-xs rounded-xl border-slate-200 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                     disabled={isResending || resendCooldown > 0}
                     onClick={handleResend}
                   >
-                    {isResending ? "Sending..." : resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : hasRequestedCode ? "Resend verification code" : "Send verification code"}
+                    {isResending ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Sending new code...</span>
+                      </>
+                    ) : resendCooldown > 0 ? (
+                      <>
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+                        <span>Waiting for code ({resendCooldown}s)</span>
+                      </>
+                    ) : hasRequestedCode ? (
+                      "Resend verification code"
+                    ) : (
+                      "Send verification code"
+                    )}
                   </Button>
                 </form>
                 <p className="text-[10px] text-center text-text-tertiary mt-3">
-                  Didn&apos;t receive it? Check your spam folder or contact support.
+                  Didn&apos;t receive it? Check your spam folder or wait for the cooldown timer.
                 </p>
               </>
             )}

@@ -5,7 +5,7 @@ import { motion, useDragControls } from "framer-motion";
 import { X, UserPlus, Mail, Phone, MapPin, CalendarDays, KeyRound, Home, PhilippinePeso } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Conversation, sendMessage, markAllMessagesRead } from "@/lib/data";
+import { Conversation, sendMessage, markAllMessagesRead, safeParseJson } from "@/lib/data";
 
 interface AccountRequestReviewModalProps {
   request: Conversation | null;
@@ -75,7 +75,7 @@ export default function AccountRequestReviewModal({ request, onClose, onCreated 
           address: details.address === "N/A" ? "" : details.address,
         }),
       });
-      const result = await response.json();
+      const result = await safeParseJson(response);
       if (!result.success) {
         toast.error(result.error || "Failed to create tenant account");
         return;

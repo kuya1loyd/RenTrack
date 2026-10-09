@@ -39,6 +39,23 @@ export async function POST(request: NextRequest) {
     await logAudit(auth.userId, "rating_created", { targetType: sanitized.targetType, targetId: sanitized.targetId, rating: sanitized.rating }, auth.ip, auth.userAgent);
 
     try {
+      const users = await (await import("@/lib/db")).getAllUsers();
+      const adminRecipients = users.filter((u: any) => ["admin", "owner"].includes(u.role));
+      const { createNotification } = await import("@/lib/db");
+      const senderName = auth.user?.name || "A tenant";
+      for (const admin of adminRecipients) {
+        await createNotification({
+          userId: admin.id,
+          title: `New ${sanitized.rating}★ Rating`,
+          message: `${senderName} submitted a ${sanitized.rating}-star rating for ${sanitized.targetType}.`,
+          type: "system",
+        });
+      }
+    } catch (notifErr) {
+      console.error("Failed to notify admins of rating:", notifErr);
+    }
+
+    try {
       if (isSmtpConfigured()) {
         const users = await (await import("@/lib/db")).getAllUsers();
         const recipients = users.filter((u: any) => (u.role === "owner" || u.role === "admin" || u.role === "agent") && u.email);

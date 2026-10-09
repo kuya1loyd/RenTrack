@@ -18,7 +18,22 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get("userId");
     const countOnly = searchParams.get("count") === "true";
 
+    const isOwner = auth.user?.role === "owner";
+    const filterForRole = (list: any[]) => {
+      if (!isOwner) return list;
+      return list.filter((n: any) => {
+        const text = `${n.title || ""} ${n.message || ""}`.toLowerCase();
+        return !text.includes("support request") && !text.includes("to support") && !text.includes("new support");
+      });
+    };
+
     if (countOnly && userId) {
+      if (isOwner) {
+        const all = await getNotifications(userId);
+        const filtered = filterForRole(all);
+        const count = filtered.filter((n: any) => !n.read).length;
+        return NextResponse.json({ success: true, count });
+      }
       const count = await getUnreadCount(userId);
       return NextResponse.json({ success: true, count });
     }
@@ -27,7 +42,8 @@ export async function GET(request: NextRequest) {
       ? await getNotifications(userId)
       : await getNotifications(auth.userId);
 
-    return NextResponse.json({ success: true, notifications: notifications.map((n: any) => sanitizeResponse(n)) });
+    const filtered = filterForRole(notifications);
+    return NextResponse.json({ success: true, notifications: filtered.map((n: any) => sanitizeResponse(n)) });
   } catch (error) {
     console.error("Get notifications error:", error);
     return NextResponse.json({ success: false, error: "Failed to fetch notifications" }, { status: 500 });

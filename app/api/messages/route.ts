@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUserId, getCurrentUser } from "@/lib/security";
-import { getConversations, getMessages, sendMessage, markAllMessagesRead, getUnreadMessageCount, findUserById, createNotification } from "@/lib/db";
-import { requireAuth, withSecurityHeaders, withCorsHeaders, validateApiRequest, getClientIp } from "@/lib/api-security";
+import { getConversations, sendMessage, getUnreadMessageCount, findUserById, createNotification } from "@/lib/db";
+import { requireAuth, validateApiRequest, getClientIp } from "@/lib/api-security";
 import { logAudit } from "@/lib/db";
 import { sendEmail, getSiteUrl } from "@/lib/mail";
 
@@ -62,17 +61,16 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const replySender = await findUserById(auth.userId);
-      if (replySender?.role === "agent") {
-        await createNotification({
-          userId: receiverId,
-          title: "Agent Reply",
-          message: `${replySender.name} replied to your message.`,
-          type: "system",
-        });
-      }
+      const msgSender = await findUserById(auth.userId);
+      const senderDisplayName = msgSender?.name || "User";
+      await createNotification({
+        userId: receiverId,
+        title: `New Message from ${senderDisplayName}`,
+        message: subject ? `${subject}: ${messageBody.slice(0, 100)}` : messageBody.slice(0, 100),
+        type: "system",
+      });
     } catch (err) {
-      console.error("Failed to create agent reply notification:", err);
+      console.error("Failed to create message notification:", err);
     }
 
     return NextResponse.json({ success: true, message });

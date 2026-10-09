@@ -1,19 +1,33 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { Bell, Shield, MapPin, Home, Search, Menu, ChevronRight, Star, Phone, Mail, KeyRound, CreditCard, BarChart3, Building2, Users, X, UserPlus, BedDouble, Bath, Car, Grid2X2, Ruler, Wifi, Snowflake, Sofa, Utensils, WashingMachine, TreePine, LockKeyhole } from "lucide-react";
+import Image from "next/image";
+import { Bell, Shield, MapPin, Home, Search, Menu, ChevronRight, ChevronDown, Star, Phone, Mail, MessageCircle, ArrowRight, CreditCard, BarChart3, Building2, Users, X, UserPlus, BedDouble, Bath, Car, Grid2X2, Ruler, Wifi, Snowflake, Sofa, Utensils, WashingMachine, TreePine, LockKeyhole, SlidersHorizontal, Sparkles, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import UnitImageCarousel from "@/components/unit-image-carousel";
+import PublicAgentCard from "@/components/public-agent-card";
+import AgentCarousel from "@/components/agent-carousel";
+import { safeParseJson } from "@/lib/data";
 
 const DestinationsMap = dynamic(() => import("@/components/destinations-map"), { ssr: false });
 
+type PublicAgent = {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  experience?: string;
+  location?: string;
+  avatarUrl?: string | null;
+  createdAt?: string | null;
+};
+
 const navItems = [
   { label: "Home", href: "/" },
-  { label: "Properties", href: "#properties" },
   { label: "Destinations", href: "#destinations" },
   { label: "Contact", href: "#contact" },
   { label: "About", href: "#about" },
@@ -28,28 +42,6 @@ const unitImages = [
   "/images/landing/feature-security.jpg",
 ];
 
-const heroImages = [
-  "/images/favicon/landingpage.png",
-  "/images/landingpage2.png",
-];
-
-const fallbackHeroImage = "/images/favicon/landingpage.png";
-
-const landingBanners = [
-  "/images/favicon/landingpage.png",
-  "/images/landingpage2.png",
-];
-
-const fallbackBannerImage = "/images/favicon/landingpage.png";
-const CHAT_DRAFT_KEY = "renttrack_chat_draft";
-
-const destinations = [
-  { name: "Cebu", region: "Central Visayas", image: "/images/favicon/Cebu.webp" },
-  { name: "Manila", region: "National Capital Region", image: "/images/favicon/Manila.jpg" },
-  { name: "Butuan", region: "Agusan del Norte", image: "/images/favicon/Agusan del Norte.jpg" },
-  { name: "Davao", region: "Davao Region", image: "/images/favicon/Davao.jpg" },
-];
-
 const features = [
   { icon: Building2, title: "Property Management", desc: "Manage multiple properties and units across different locations. Track occupancy, maintenance, and lease details.", image: "/images/landing/feature-property.jpg" },
   { icon: Users, title: "Tenant Management", desc: "Register tenants, assign units, manage contracts, and maintain complete tenant profiles with ease.", image: "/images/landing/feature-tenant.jpg" },
@@ -59,39 +51,45 @@ const features = [
   { icon: Shield, title: "Role-Based Access", desc: "Secure RBAC with Admin, Owner, Agent, and Tenant roles. Audit logs for full accountability and transparency.", image: "/images/landing/feature-security.jpg" },
 ];
 
+function ContactGroup({ title, contacts, emptyMessage }: { title: string; contacts: { name: string; email: string; phone: string }[]; emptyMessage?: string }) {
+  return (
+    <section className="border-t border-slate-200 pt-3 first:border-0 first:pt-0">
+      <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+      {contacts.length ? contacts.map((contact, index) => (
+        <div key={`${contact.name}-${index}`} className="mt-2 rounded-lg bg-slate-50 p-3">
+          <p className="text-sm font-medium text-slate-900">{contact.name}</p>
+          {contact.email && <a href={`mailto:${contact.email}`} className="mt-1 block break-all text-xs text-blue-700 hover:underline">{contact.email}</a>}
+          {contact.phone && <a href={`tel:${contact.phone}`} className="mt-1 block text-xs text-blue-700 hover:underline">{contact.phone}</a>}
+          {!contact.email && !contact.phone && <p className="mt-1 text-xs text-slate-500">Use RentTrack support for contact.</p>}
+        </div>
+      )) : <p className="mt-2 text-xs text-slate-500">{emptyMessage || "No public contact details available."}</p>}
+    </section>
+  );
+}
+
 export default function LandingPage() {
   const [properties, setProperties] = useState<any[]>([]);
+  const [propertyCountsReady, setPropertyCountsReady] = useState(false);
   const [units, setUnits] = useState<any[]>([]);
+  const [agents, setAgents] = useState<PublicAgent[]>([]);
+  const [agentsLoading, setAgentsLoading] = useState(true);
+  const [agentsUnavailable, setAgentsUnavailable] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [heroIndex, setHeroIndex] = useState(0);
-  const [isImageLoaded, setIsImageLoaded] = useState(false);
-  const [bannerIndex, setBannerIndex] = useState(0);
+  const [openNavDropdown, setOpenNavDropdown] = useState<string | null>(null);
+  const [contactPeople, setContactPeople] = useState<{ admins: { name: string; email: string; phone: string }[]; owners: { name: string; email: string; phone: string }[] } | null>(null);
+  const [contactLoading, setContactLoading] = useState(true);
+  const [contactError, setContactError] = useState("");
   const [selectedProperty, setSelectedProperty] = useState<any | null>(null);
-  const [showContactModal, setShowContactModal] = useState(false);
-  const [contactForm, setContactForm] = useState({ name: "", email: "", phone: "", message: "" });
-  const [contactSending, setContactSending] = useState(false);
-  const [propertyAgent, setPropertyAgent] = useState<any | null>(null);
-  const [chatOpen, setChatOpen] = useState(true);
-  const [chatUser, setChatUser] = useState({ name: "", email: "", phone: "" });
-  const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const [propertyTypeFilter, setPropertyTypeFilter] = useState("");
   const [minPriceFilter, setMinPriceFilter] = useState("");
   const [maxPriceFilter, setMaxPriceFilter] = useState("");
-  const [chatInput, setChatInput] = useState("");
-  const [chatSending, setChatSending] = useState(false);
-  const [chatStarting, setChatStarting] = useState(false);
-  const [chatSelectedAgent, setChatSelectedAgent] = useState<any | null>(null);
-  const chatInquiryIdsRef = useRef<string[]>([]);
-  const chatReplyIdsRef = useRef<Set<string>>(new Set());
-  const chatInputRef = useRef<HTMLInputElement>(null);
-  const chatDraftLoadedRef = useRef(false);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState<any | null>(null);
-  const [showAgentDetails, setShowAgentDetails] = useState(false);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [bedroomFilter, setBedroomFilter] = useState("");
+  const [bathroomFilter, setBathroomFilter] = useState("");
+  const [furnishingFilter, setFurnishingFilter] = useState("");
   const [showApplicationSuccess, setShowApplicationSuccess] = useState(false);
+  const [applicationConfirmationEmailSent, setApplicationConfirmationEmailSent] = useState(false);
   const [showAgentApplication, setShowAgentApplication] = useState(false);
   const [agentApplication, setAgentApplication] = useState({ name: "", email: "", phone: "", address: "", gender: "", birthdate: "" });
   const [agentResume, setAgentResume] = useState<File | null>(null);
@@ -104,11 +102,12 @@ export default function LandingPage() {
           fetch("/api/data/properties"),
           fetch("/api/data/units"),
         ]);
-        const propData = await propRes.json();
-        const unitData = await unitRes.json();
+        const propData = await safeParseJson(propRes);
+        const unitData = await safeParseJson(unitRes);
         console.log("Landing page properties:", propData);
         console.log("Landing page units:", unitData);
-        if (propData.success && propData.properties.length > 0) {
+        setPropertyCountsReady(Boolean(propRes.ok && propData.success && !propData.degraded && Array.isArray(propData.properties)));
+        if (propData.success && Array.isArray(propData.properties)) {
           setProperties(propData.properties);
         }
         if (unitData.success && unitData.units.length > 0) {
@@ -121,123 +120,32 @@ export default function LandingPage() {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setHeroIndex((prev) => (prev + 1) % heroImages.length);
-      setIsImageLoaded(false);
-    }, 5000);
-    return () => clearInterval(interval);
+    let mounted = true;
+    fetch("/api/public/contacts", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await safeParseJson(response);
+        if (!response.ok || !data.success) throw new Error("Contact information is unavailable.");
+        if (mounted) setContactPeople({ admins: data.admins || [], owners: data.owners || [] });
+      })
+      .catch((error) => { if (mounted) setContactError(error instanceof Error ? error.message : "Contact information is unavailable."); })
+      .finally(() => { if (mounted) setContactLoading(false); });
+    return () => { mounted = false; };
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setBannerIndex((prev) => (prev + 1) % landingBanners.length);
-    }, 4000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      if (!selectedProperty?.agentId) {
-        setPropertyAgent(null);
-        return;
-      }
-      try {
-        const res = await fetch(`/api/data/users/${selectedProperty.agentId}`);
-        const data = await res.json();
-        if (data.success) setPropertyAgent(data.user);
-      } catch (err) {
-        console.error("Failed to load property agent", err);
-      }
-    })();
-  }, [selectedProperty?.agentId]);
-
-  useEffect(() => {
-    (async () => {
-      if (showContactModal) {
-        try {
-          const res = await fetch("/api/auth/users/agents");
-          const data = await res.json();
-          if (data.success) setAgents(data.users);
-        } catch (err) {
-          console.error("Failed to load agents", err);
+    let mounted = true;
+    fetch("/api/auth/users/agents", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await safeParseJson(response);
+        if (!response.ok || !data.success || data.degraded || !Array.isArray(data.users)) {
+          throw new Error("Agent information is temporarily unavailable.");
         }
-      }
-    })();
-  }, [showContactModal]);
-
-  useEffect(() => {
-    (async () => {
-      if (chatOpen) {
-        try {
-          const res = await fetch("/api/auth/users/agents");
-          const data = await res.json();
-          if (data.success) setAgents(data.users);
-        } catch (err) {
-          console.error("Failed to load agents for chat", err);
-        }
-      }
-    })();
-  }, [chatOpen]);
-
-  useEffect(() => {
-    if (chatOpen) {
-      // Focus the message box after the panel is mounted so the launcher is
-      // immediately usable with a keyboard or screen reader.
-      requestAnimationFrame(() => chatInputRef.current?.focus());
-    }
-  }, [chatOpen]);
-
-  // Visitor replies are saved on the inquiry record. Poll only the inquiries
-  // created in this browser so an agent response appears in the open chat.
-  useEffect(() => {
-    if (!chatOpen) return;
-    const loadReplies = async () => {
-      if (chatInquiryIdsRef.current.length === 0) return;
-      try {
-        const ids = chatInquiryIdsRef.current.join(",");
-        const res = await fetch(`/api/chat/messages?ids=${encodeURIComponent(ids)}`, { cache: "no-store" });
-        const data = await res.json();
-        if (!data.success) return;
-        const replies = (data.messages || []).filter((message: any) => message.replyText && !chatReplyIdsRef.current.has(message.id));
-        if (replies.length === 0) return;
-        replies.forEach((message: any) => chatReplyIdsRef.current.add(message.id));
-        setChatMessages((previous) => [
-          ...previous,
-          ...replies.map((message: any) => ({ sender: "agent", text: message.replyText, createdAt: message.repliedAt || new Date().toISOString() })),
-        ]);
-      } catch {
-        // A failed background poll should not interrupt composing a message.
-      }
-    };
-    loadReplies();
-    const interval = window.setInterval(loadReplies, 10000);
-    return () => window.clearInterval(interval);
-  }, [chatOpen]);
-
-  useEffect(() => {
-    try {
-      const draft = window.sessionStorage.getItem(CHAT_DRAFT_KEY);
-      if (draft) setChatInput(draft);
-    } catch {
-      // Storage can be unavailable in private browsing.
-    } finally {
-      chatDraftLoadedRef.current = true;
-    }
+        if (mounted) setAgents(data.users);
+      })
+      .catch(() => { if (mounted) setAgentsUnavailable(true); })
+      .finally(() => { if (mounted) setAgentsLoading(false); });
+    return () => { mounted = false; };
   }, []);
-
-  useEffect(() => {
-    if (!chatDraftLoadedRef.current) return;
-    try {
-      if (chatInput) {
-        window.sessionStorage.setItem(CHAT_DRAFT_KEY, chatInput);
-      } else {
-        window.sessionStorage.removeItem(CHAT_DRAFT_KEY);
-      }
-    } catch {
-      // Storage can be unavailable in private browsing; the in-memory draft
-      // still works normally in that case.
-    }
-  }, [chatInput]);
 
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const locations = Array.from(new Set(properties
@@ -246,6 +154,27 @@ export default function LandingPage() {
   const propertyTypes = Array.from(new Set(properties.map((property: any) => property.type).filter(Boolean)));
   const minPrice = minPriceFilter ? Number(minPriceFilter) : 0;
   const maxPrice = maxPriceFilter ? Number(maxPriceFilter) : Number.POSITIVE_INFINITY;
+  const matchesRoomCount = (property: any, kind: "bedroom" | "bathroom", filter: string) => {
+    if (!filter) return true;
+    const directValue = Number(property?.[`${kind}s`]);
+    const featureText = (Array.isArray(property?.features) ? property.features : [])
+      .filter((feature: unknown): feature is string => typeof feature === "string")
+      .join(" ");
+    const match = featureText.match(new RegExp(`(\\d+)\\s*\\+?\\s*${kind}s?`, "i"));
+    const count = Number.isFinite(directValue) && directValue > 0 ? directValue : match ? Number(match[1]) : null;
+    if (count === null) return false;
+    return filter === "4+" ? count >= 4 : count === Number(filter);
+  };
+  const matchesFurnishing = (property: any) => {
+    if (!furnishingFilter) return true;
+    return Array.isArray(property?.features) && property.features.some((feature: unknown) => {
+      if (typeof feature !== "string") return false;
+      const normalized = feature.toLowerCase().replace(/[-_]/g, " ").trim();
+      return furnishingFilter === "Furnished"
+        ? /^(fully\s+|semi\s+)?furnished\b/.test(normalized)
+        : /^unfurnished\b/.test(normalized);
+    });
+  };
   const matchesPropertyFilters = (property: any, unit?: any) => {
     const propertyName = property?.name || "";
     const propertyLocation = property?.location || property?.city || property?.province || unit?.location || unit?.propertyLocation || "";
@@ -257,7 +186,10 @@ export default function LandingPage() {
       && (!locationFilter || propertyLocation === locationFilter)
       && (!propertyTypeFilter || propertyType === propertyTypeFilter)
       && rentAmount >= minPrice
-      && rentAmount <= maxPrice;
+      && rentAmount <= maxPrice
+      && matchesRoomCount(property, "bedroom", bedroomFilter)
+      && matchesRoomCount(property, "bathroom", bathroomFilter)
+      && matchesFurnishing(property);
   };
 
   const filteredProperties = properties.filter((property: any) => matchesPropertyFilters(property));
@@ -278,13 +210,16 @@ export default function LandingPage() {
       });
       form.append("resume", agentResume);
       const response = await fetch("/api/agent-applications", { method: "POST", body: form });
-      const result = await response.json();
+      const result = await safeParseJson(response);
       if (!response.ok || !result.success) throw new Error(result.error || "Application failed");
       setShowAgentApplication(false);
       setAgentApplication({ name: "", email: "", phone: "", address: "", gender: "", birthdate: "" });
       setAgentResume(null);
+      setApplicationConfirmationEmailSent(Boolean(result.confirmationEmailSent));
       setShowApplicationSuccess(true);
-      toast.success("Application submitted successfully! Our team will review your application.");
+      toast[result.confirmationEmailSent ? "success" : "error"](result.confirmationEmailSent
+        ? "Application submitted. A confirmation email was sent."
+        : "Application submitted, but the confirmation email could not be sent.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Application failed");
     } finally {
@@ -300,7 +235,7 @@ export default function LandingPage() {
           <div className="relative flex h-16 items-center justify-between">
             <Link href="/" className="nav-letter-animate flex items-center gap-2 transition-transform duration-300 hover:scale-[1.02]">
               <div className="relative h-8 w-8">
-                   <img src="/images/landing/logo.png" alt="RentTrack" className="w-full h-full object-contain rounded-full" />
+                   <Image src="/images/landing/logo.png" alt="RentTrack" width={32} height={32} className="h-full w-full rounded-full object-contain" />
               </div>
               <span className="text-lg font-bold text-slate-700 drop-shadow-sm">Rent<span className="text-slate-500">Track</span></span>
             </Link>
@@ -311,6 +246,19 @@ export default function LandingPage() {
                   {item.label}
                 </a>
               ))}
+              <div className="relative">
+                <button type="button" onClick={() => setOpenNavDropdown(openNavDropdown === "properties" ? null : "properties")} aria-expanded={openNavDropdown === "properties"} className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950">
+                  Properties <ChevronDown className={`h-4 w-4 transition-transform ${openNavDropdown === "properties" ? "rotate-180" : ""}`} />
+                </button>
+                {openNavDropdown === "properties" && (
+                  <div className="absolute left-0 top-full z-50 mt-3 min-w-48 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+                    <a href="#properties" onClick={() => setOpenNavDropdown(null)} className="block rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700">For Sale</a>
+                    <a href="#properties" onClick={() => setOpenNavDropdown(null)} className="block rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700">For Rent</a>
+                    <a href="#destinations" onClick={() => setOpenNavDropdown(null)} className="block rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700">Projects</a>
+                  </div>
+                )}
+              </div>
+              <Link href="/agents" className="nav-link-letter text-sm font-medium text-slate-600 transition-colors duration-200 hover:text-slate-950">Agents</Link>
             </div>
 
             <div className="hidden items-center gap-2 md:flex">
@@ -324,6 +272,7 @@ export default function LandingPage() {
               </motion.div>
             </div>
 
+            <Link href="/agents" className="mr-2 text-sm font-semibold text-slate-700 transition-colors hover:text-blue-700 md:hidden">Agents</Link>
             <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="rounded-lg p-2 text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 md:hidden">
               <Menu className="h-5 w-5" />
             </button>
@@ -332,8 +281,13 @@ export default function LandingPage() {
 
         {mobileMenuOpen && (
           <div className="border-t border-slate-200 bg-white md:hidden">
+            <button type="button" onClick={() => setOpenNavDropdown(openNavDropdown === "properties" ? null : "properties")} className="flex w-full items-center justify-between border-b border-slate-100 px-4 py-3 text-left text-sm font-medium text-slate-700">
+              Properties <ChevronDown className={`h-4 w-4 transition-transform ${openNavDropdown === "properties" ? "rotate-180" : ""}`} />
+            </button>
+            {openNavDropdown === "properties" && <div className="border-b border-slate-100 bg-slate-50 px-4 py-1"><a href="#properties" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-slate-600">For Sale</a><a href="#properties" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-slate-600">For Rent</a><a href="#destinations" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-sm text-slate-600">Projects</a></div>}
+            <Link href="/agents" onClick={() => setMobileMenuOpen(false)} className="block border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700">Agents</Link>
             {navItems.map((item) => (
-              <a key={item.label} href={item.href} className="block border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700">
+              <a key={item.label} href={item.href} onClick={() => setMobileMenuOpen(false)} className="block border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700">
                 {item.label}
               </a>
             ))}
@@ -346,16 +300,21 @@ export default function LandingPage() {
         )}
       </nav>
 
-       {/* â”€â”€â”€ Hero â”€â”€â”€ */}
-      <section className="relative flex min-h-[460px] items-center justify-center overflow-hidden sm:min-h-[500px]">
-         <motion.div
-           className="absolute inset-0"
-           animate={{ scale: [1, 1.05, 1] }}
-           transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-         >
-           <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/images/favicon/Landing page and login page.png')" }} />
-         </motion.div>
-         <div className="absolute inset-0 bg-black/15" />
+       {/* ─── Hero ─── */}
+      <section className="relative flex min-h-115 items-center justify-center overflow-hidden sm:min-h-125">
+         <div className="absolute inset-0">
+           <Image
+             src="/images/favicon/Landing page and login page.png"
+             alt="HedgeHomes Realty & Brokerage"
+             fill
+             priority
+             quality={100}
+             unoptimized
+             sizes="100vw"
+             className="object-cover object-center"
+           />
+         </div>
+         <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/45" />
 
          <motion.div
            initial={{ opacity: 0, y: 22 }}
@@ -401,25 +360,23 @@ export default function LandingPage() {
                transition={{ duration: 0.65, delay: 0.45 }}
                className="mb-7 max-w-xl text-base leading-7 text-blue-50 sm:text-lg"
              >
-               Find verified apartments, condos & houses for rent in Cebu, Manila, Butuan, and Davao.
+               Explore rental listings and connect with local property experts.
              </motion.p>
 
              <motion.div
                initial={{ opacity: 0, y: 24 }}
                animate={{ opacity: 1, y: 0 }}
                transition={{ duration: 0.6, delay: 0.55 }}
-               whileHover={{ scale: 1.03 }}
-               whileTap={{ scale: 0.98 }}
-               className="inline-flex"
+               className="inline-flex flex-col items-center gap-4"
              >
                <motion.a
                  href="#properties"
-                 className="relative inline-flex h-12 items-center justify-center gap-2 overflow-hidden rounded-lg bg-white px-6 text-sm font-semibold text-blue-700 shadow-xl transition-colors hover:bg-blue-50"
-                 whileHover={{ scale: 1.03 }}
+                 className="relative inline-flex h-12 items-center justify-center gap-2 overflow-hidden rounded-xl bg-white px-7 text-sm font-semibold text-blue-700 shadow-xl shadow-black/20 transition-all hover:bg-blue-50"
+                 whileHover={{ scale: 1.04, boxShadow: "0 20px 30px -10px rgba(0,0,0,0.3)" }}
                  whileTap={{ scale: 0.98 }}
                >
                  <motion.span
-                   className="absolute inset-0 bg-gradient-to-r from-blue-200/40 to-transparent"
+                   className="absolute inset-0 bg-linear-to-r from-blue-200/40 to-transparent"
                    animate={{ x: ["-100%", "100%"] }}
                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
                  />
@@ -468,7 +425,7 @@ export default function LandingPage() {
                  ))}
                </div>
                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2 }} className="mt-3 text-xs font-medium text-white/70 sm:text-sm">
-                 Active cities: Cebu • Manila • Butuan • Davao
+                 Our service areas: Cebu • Manila • Butuan • Davao
                </motion.p>
              </motion.div>
            </div>
@@ -482,54 +439,98 @@ export default function LandingPage() {
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.16em] text-blue-600">Explore RentTrack</p>
               <h2 className="mt-1 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Featured Properties</h2>
-              <p className="mt-2 max-w-2xl text-sm text-slate-600 sm:text-base">New properties and available rental units from our owners.</p>
+              <p className="mt-2 max-w-2xl text-sm text-slate-600 sm:text-base">Browse rental properties managed by owners and agents.</p>
             </div>
             <a href="#contact" className="text-sm font-semibold text-blue-600 transition-colors hover:text-blue-800">Need help finding a place? <span aria-hidden="true">→</span></a>
           </div>
 
-          <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(37,99,235,0.10)] sm:p-6">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[1.15fr_1.8fr_1fr_1fr_auto_auto] xl:items-end">
-              <label className="text-sm text-gray-700">
-                <span className="mb-1 block">Location</span>
-                <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}
-                  className="h-12 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-base outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100">
-                  <option value="">Any</option>
-                  {locations.map((location) => <option key={location} value={location}>{location}</option>)}
-                </select>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="relative z-40 mb-8 rounded-[28px] border border-slate-200 bg-white p-2 shadow-[0_8px_24px_rgba(15,23,42,0.06)] hover:shadow-[0_14px_32px_rgba(37,99,235,0.08)] transition-shadow duration-300"
+          >
+            <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+              <label className="flex h-14 min-w-0 flex-1 items-center gap-3 rounded-full border border-slate-200 px-4 xl:min-w-75">
+                <MapPin className="h-5 w-5 shrink-0 text-blue-600" />
+                <span className="sr-only">Search by address or location</span>
+                <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Enter an address, street, barangay, city or province" className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
+                <Search className="h-4 w-4 shrink-0 text-slate-400" />
               </label>
-              <label className="text-sm text-gray-700">
-                <span className="mb-1 block">Property Type</span>
-                <select value={propertyTypeFilter} onChange={(e) => setPropertyTypeFilter(e.target.value)}
-                  className="h-12 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-base outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100">
-                  <option value="">Any</option>
-                  {propertyTypes.map((type) => <option key={type} value={type}>{type === "condominium" ? "Condominium" : type === "house" ? "House" : type}</option>)}
-                </select>
-              </label>
-              <label className="text-sm text-gray-700">
-                <span className="mb-1 block">Min. Price</span>
-                <select value={minPriceFilter} onChange={(e) => setMinPriceFilter(e.target.value)}
-                  className="h-12 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-base outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100">
-                  <option value="">Any</option><option value="5000">₱5,000</option><option value="10000">₱10,000</option><option value="20000">₱20,000</option>
-                </select>
-              </label>
-              <label className="text-sm text-gray-700">
-                <span className="mb-1 block">Max. Price</span>
-                <select value={maxPriceFilter} onChange={(e) => setMaxPriceFilter(e.target.value)}
-                  className="h-12 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-base outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100">
-                  <option value="">Any</option><option value="10000">₱10,000</option><option value="20000">₱20,000</option><option value="50000">₱50,000</option>
-                </select>
-              </label>
-              <button type="button" onClick={() => { setSearchTerm(""); setLocationFilter(""); setPropertyTypeFilter(""); setMinPriceFilter(""); setMaxPriceFilter(""); }}
-                className="h-12 rounded-lg px-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-blue-700">CLEAR</button>
-              <button type="button" onClick={() => document.getElementById("properties-results")?.scrollIntoView({ behavior: "smooth" })}
-                className="h-12 rounded-lg bg-blue-600 px-6 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700">SEARCH</button>
+              <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
+                <span className="inline-flex h-12 shrink-0 items-center gap-2 rounded-full border border-slate-300 px-4 text-sm font-medium text-slate-800"><Home className="h-4 w-4 text-blue-600" />For Rent</span>
+                <label className="relative flex h-12 min-w-36.25 items-center rounded-full border border-slate-300 px-4">
+                  <span className="sr-only">Property type</span>
+                  <select value={propertyTypeFilter} onChange={(e) => setPropertyTypeFilter(e.target.value)} className="w-full appearance-none bg-transparent pr-6 text-sm font-medium text-slate-800 outline-none">
+                    <option value="">Any Type</option>
+                    {propertyTypes.map((type) => <option key={type} value={type}>{type === "condominium" ? "Condominium" : type === "house" ? "House" : type}</option>)}
+                  </select>
+                  {propertyTypeFilter && <span className="pointer-events-none absolute right-8 flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold text-white">1</span>}
+                  <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 text-slate-700" />
+                </label>
+                <label className="relative flex h-12 min-w-38.75 items-center rounded-full border border-slate-300 px-4">
+                  <span className="sr-only">Price range</span>
+                  <select aria-label="Price range" value={`${minPriceFilter}:${maxPriceFilter}`} onChange={(e) => { const [min, max] = e.target.value.split(":"); setMinPriceFilter(min); setMaxPriceFilter(max); }} className="w-full appearance-none bg-transparent pr-6 text-sm font-medium text-slate-800 outline-none">
+                    <option value=":">Price Range</option><option value=":10000">Under ₱10,000</option><option value="5000:20000">₱5,000–₱20,000</option><option value="10000:50000">₱10,000–₱50,000</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 text-slate-700" />
+                </label>
+                <details className="group relative z-60">
+                  <summary className="inline-flex h-12 cursor-pointer list-none items-center gap-2 rounded-full border border-slate-300 px-4 text-sm font-medium text-slate-800 transition hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+                    <SlidersHorizontal className="h-4 w-4" />More Filters<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <div className="more-filter-panel absolute right-0 top-full mt-2 w-[min(680px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+                    <div className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">More filters</div>
+                    <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                      <div>
+                        <label className="text-xs font-medium text-slate-600">Bedrooms</label>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {['Any', '1', '2', '3', '4+'].map((option) => (
+                            <button key={option} type="button" aria-pressed={option === "Any" ? !bedroomFilter : bedroomFilter === option} onClick={() => setBedroomFilter(option === "Any" || bedroomFilter === option ? "" : option)} className={`flex h-10 min-w-10 items-center justify-center rounded-full border px-2 text-sm font-semibold transition ${((option === 'Any' && !bedroomFilter) || bedroomFilter === option) ? 'border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'border-slate-300 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-700'}`}>
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600">Bathrooms</label>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {['Any', '1', '2', '3', '4+'].map((option) => (
+                            <button key={option} type="button" aria-pressed={option === "Any" ? !bathroomFilter : bathroomFilter === option} onClick={() => setBathroomFilter(option === "Any" || bathroomFilter === option ? "" : option)} className={`flex h-10 min-w-10 items-center justify-center rounded-full border px-2 text-sm font-semibold transition ${((option === 'Any' && !bathroomFilter) || bathroomFilter === option) ? 'border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'border-slate-300 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-700'}`}>
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600">Furnishing</label>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {['Furnished', 'Unfurnished'].map((option) => (
+                            <button key={option} type="button" aria-pressed={furnishingFilter === option} onClick={() => setFurnishingFilter(furnishingFilter === option ? "" : option)} className={`rounded-full border px-3 py-2 text-sm font-medium transition ${furnishingFilter === option ? "border-blue-500 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-700"}`}>
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-600">Location</label>
+                        <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-blue-500">
+                          <option value="">Any location</option>
+                          {locations.map((location) => <option key={location} value={location}>{location}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-4 text-xs text-slate-500">
+                      <span>Showing {filteredProperties.length} rental {filteredProperties.length === 1 ? "property" : "properties"}</span>
+                      <button type="button" onClick={(event) => event.currentTarget.closest("details")?.removeAttribute("open")} className="font-semibold text-blue-600 hover:text-blue-700">Done</button>
+                    </div>
+                  </div>
+                </details>
+                <button type="button" onClick={() => { setSearchTerm(""); setLocationFilter(""); setPropertyTypeFilter(""); setMinPriceFilter(""); setMaxPriceFilter(""); setBedroomFilter(""); setBathroomFilter(""); setFurnishingFilter(""); }} className="inline-flex h-12 items-center gap-2 rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-400 transition hover:border-slate-300 hover:text-slate-700"><span aria-hidden="true">↻</span>Clear filters</button>
+              </div>
             </div>
-            <div className="mt-4 flex max-w-md items-center gap-2 xl:hidden">
-              <Search className="h-4 w-4 text-gray-500" />
-              <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by property, city, or unit..."
-                className="h-10 w-full border-b border-gray-300 text-sm outline-none focus:border-gray-900" />
-            </div>
-          </div>
+          </motion.div>
 
           <div id="properties-results">
           {displayProperties.length === 0 ? (
@@ -537,8 +538,8 @@ export default function LandingPage() {
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-600">
                 <Home className="h-7 w-7" />
               </div>
-              <h3 className="text-lg font-semibold mb-2 text-gray-900">Be One of Our First Tenants</h3>
-               <p className="text-sm text-gray-600 max-w-md mx-auto">New verified units are being added. Check back soon for available homes.</p>
+              <h3 className="text-lg font-semibold mb-2 text-gray-900">No rental properties match right now</h3>
+               <p className="text-sm text-gray-600 max-w-md mx-auto">Try adjusting your filters, or check back later for new listings.</p>
                <div className="mt-5">
                  <a href="#contact" className="inline-flex h-9 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg items-center justify-center gap-2 shadow-sm transition-colors">
                  Contact Us<ChevronRight className="ml-2 h-4 w-4" />
@@ -616,58 +617,146 @@ export default function LandingPage() {
         </div>
       </motion.section>
 
-      {/* â”€â”€â”€ Most Popular Destinations â”€â”€â”€ */}
-      <motion.section id="destinations" className="py-16 bg-white" initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.6 }}>
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-10">
-            <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-sm font-medium text-blue-600 mb-4">
-              <Star className="h-4 w-4" />Destinations
-            </span>
-            <h2 className="text-3xl font-bold text-gray-900">Most Popular Destinations</h2>
-            <p className="mt-3 text-gray-600 max-w-2xl mx-auto">Explore rental properties in the Philippines&apos; most sought-after locations</p>
+      {/* Agent showcase */}
+      <motion.section
+        aria-labelledby="featured-agents-title"
+        className="relative overflow-hidden bg-white py-16 text-slate-900 sm:py-20"
+        initial={{ opacity: 0 }}
+        whileInView={{ opacity: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.6 }}
+      >
+        <div className="relative mx-auto max-w-[1660px] px-4 sm:px-6 lg:px-10">
+          <div className="mb-9 flex flex-col gap-5 sm:mb-11 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">
+                <span aria-hidden="true" className="h-px w-8 bg-blue-600" />
+                People behind the homes
+              </p>
+              <h2 id="featured-agents-title" className="mt-3 text-3xl font-bold tracking-[-0.04em] sm:text-4xl">
+                Meet your local <span className="text-blue-700">experts</span>
+              </h2>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
+                Connect with owner-managed agents who can help you find a place to call home.
+              </p>
+            </div>
+            <Link href="/agents" className="inline-flex w-fit items-center gap-2 border-b border-blue-600/60 pb-1 text-sm font-semibold text-blue-700 transition hover:border-blue-700 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-4">
+              View all agents <ArrowRight aria-hidden="true" className="h-4 w-4" />
+            </Link>
           </div>
 
-          <div className="relative mx-auto h-[22rem] w-full max-w-5xl overflow-hidden rounded-2xl border border-gray-200 bg-slate-100 shadow-lg shadow-blue-950/10 sm:h-[28rem] lg:h-[32rem]">
-            <DestinationsMap />
-          </div>
+          {agentsLoading ? (
+            <div role="status" className="flex min-h-56 items-center justify-center border border-slate-200 bg-slate-50 px-6 text-center text-sm text-slate-600">
+              Loading local agents… <span className="sr-only">Please wait.</span>
+            </div>
+          ) : agentsUnavailable ? (
+            <div role="alert" className="flex min-h-56 flex-col items-center justify-center border border-amber-200 bg-amber-50/60 px-6 text-center">
+              <p className="text-base font-semibold text-slate-900">Agent profiles are temporarily unavailable</p>
+              <p className="mt-2 max-w-lg text-sm leading-6 text-slate-600">We couldn’t reach the agent directory just now. Please visit the directory again shortly.</p>
+              <Link href="/agents" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600">
+                Open agent directory <ArrowRight aria-hidden="true" className="h-4 w-4" />
+              </Link>
+            </div>
+          ) : agents.length === 0 ? (
+            <div role="status" className="flex min-h-56 flex-col items-center justify-center border border-slate-200 bg-slate-50 px-6 text-center">
+              <p className="text-base font-semibold text-slate-900">No owner-managed agents are listed yet</p>
+              <p className="mt-2 max-w-lg text-sm leading-6 text-slate-600">Check back soon to meet the people helping renters find their next home.</p>
+            </div>
+          ) : (
+            <AgentCarousel label="Local agents">
+              {agents.map((agent) => (
+                <PublicAgentCard
+                  key={agent.id}
+                  agent={agent}
+                  variant="compact"
+                />
+              ))}
+            </AgentCarousel>
+          )}
         </div>
       </motion.section>
 
-      {/* â”€â”€â”€ Features â”€â”€â”€ */}
-      <motion.section id="about" className="bg-gray-50 py-14 sm:py-16" initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.6 }}>
+      {/* ─── Most Popular Destinations ─── */}
+      <motion.section id="destinations" className="py-16 bg-white" initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.6 }}>
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-10 text-center">
-            <span className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-sm font-medium text-blue-600">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="text-center mb-10"
+          >
+            <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-sm font-medium text-blue-600 mb-4 shadow-2xs">
+              <motion.span animate={{ rotate: [0, 15, -10, 0] }} transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}>
+                <Star className="h-4 w-4 fill-blue-600 text-blue-600" />
+              </motion.span>
+              Destinations
+            </span>
+            <h2 className="text-3xl font-bold text-gray-900 tracking-tight sm:text-4xl">Most Popular Destinations</h2>
+            <p className="mt-3 text-gray-600 max-w-2xl mx-auto text-sm sm:text-base">Explore rental properties in the Philippines&apos; most sought-after locations</p>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98, y: 24 }}
+            whileInView={{ opacity: 1, scale: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.65, ease: "easeOut" }}
+            className="relative mx-auto h-88 w-full max-w-5xl overflow-hidden rounded-2xl border border-gray-200 bg-slate-100 shadow-xl shadow-blue-950/10 sm:h-112 lg:h-128"
+          >
+            <DestinationsMap />
+          </motion.div>
+        </div>
+      </motion.section>
+
+      {/* ─── Features ─── */}
+      <motion.section id="about" className="bg-gray-50/80 py-16 sm:py-20" initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.6 }}>
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="mb-12 text-center"
+          >
+            <span className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-sm font-medium text-blue-600 shadow-2xs">
               <Shield className="h-4 w-4" />Features
             </span>
-            <h2 className="text-3xl font-bold tracking-[-0.04em] text-gray-900 sm:text-4xl">Everything You Need to Manage Rentals</h2>
+            <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">Everything You Need to Manage Rentals</h2>
             <p className="mx-auto mt-3 max-w-2xl text-sm text-gray-600 sm:text-base">Powerful tools for property owners, agents, and tenants</p>
-          </div>
+          </motion.div>
 
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {features.map((feature, i) => (
               <motion.div
                 key={i}
-                initial={{ opacity: 0, y: 24 }}
+                initial={{ opacity: 0, y: 28 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: i * 0.09 }}
+                viewport={{ once: true, margin: "-40px" }}
+                transition={{ duration: 0.5, delay: i * 0.08, ease: "easeOut" }}
                 whileHover={{ y: -8 }}
-                className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-all duration-300 hover:shadow-xl"
+                className="group overflow-hidden rounded-2xl border border-gray-200/90 bg-white shadow-xs transition-all duration-300 hover:border-blue-200 hover:shadow-[0_20px_40px_-15px_rgba(37,99,235,0.18)]"
               >
-                <div className="relative h-40 overflow-hidden bg-gradient-to-br from-blue-100 to-indigo-100">
-                  <motion.div whileHover={{ scale: 1.06 }} transition={{ duration: 0.6, ease: "easeOut" }} className="relative h-full w-full">
-                    <img src={feature.image} alt={feature.title} className="absolute inset-0 h-full w-full object-cover" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                <div className="relative h-44 overflow-hidden bg-linear-to-br from-blue-100 to-indigo-100">
+                  <motion.div
+                    whileHover={{ scale: 1.07 }}
+                    transition={{ duration: 0.5, ease: "easeOut" }}
+                    className="relative h-full w-full"
+                  >
+                    <Image src={feature.image} alt={feature.title} fill sizes="(max-width: 768px) 100vw, 33vw" className="object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                   </motion.div>
                 </div>
-                <div className="p-4">
-                  <div className="mb-2 flex items-center gap-2">
-                    <motion.div animate={{ rotate: [0, 360] }} transition={{ duration: 20, repeat: Infinity, ease: "linear", delay: i * 0.5 }} className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                      <feature.icon className="h-4 w-4" />
+                <div className="p-5">
+                  <div className="mb-2.5 flex items-center gap-2.5">
+                    <motion.div
+                      whileHover={{ scale: 1.15, rotate: 8 }}
+                      transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white"
+                    >
+                      <feature.icon className="h-4.5 w-4.5" />
                     </motion.div>
-                    <h3 className="text-base font-semibold text-gray-900">{feature.title}</h3>
+                    <h3 className="text-base font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">{feature.title}</h3>
                   </div>
-                  <p className="text-sm text-gray-600">{feature.desc}</p>
+                  <p className="text-sm leading-relaxed text-gray-600">{feature.desc}</p>
                 </div>
               </motion.div>
             ))}
@@ -675,55 +764,66 @@ export default function LandingPage() {
         </div>
       </motion.section>
 
-      {/* â”€â”€â”€ Contact â”€â”€â”€ */}
-      <motion.section id="contact" className="py-16 bg-white" initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.6 }}>
+      {/* ─── Contact ─── */}
+      <motion.section id="contact" className="py-16 sm:py-20 bg-white" initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.6 }}>
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-sm font-medium text-blue-600 mb-4">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="text-center mb-12"
+          >
+            <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-1.5 text-sm font-medium text-blue-600 mb-4 shadow-2xs">
               <Mail className="h-4 w-4" />Contact Us
             </span>
-            <h2 className="text-3xl font-bold text-gray-900">Get in Touch</h2>
-            <p className="mt-3 text-gray-600 max-w-2xl mx-auto">Have questions about RentTrack? Our team is ready to help.</p>
-          </div>
+            <h2 className="text-3xl font-bold text-gray-900 tracking-tight sm:text-4xl">Get in Touch</h2>
+            <p className="mt-3 text-gray-600 max-w-2xl mx-auto text-sm sm:text-base">Have questions about RentTrack? Our team is ready to help.</p>
+          </motion.div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-8 text-center bg-gray-50 rounded-lg">
-              <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50">
-                <MapPin className="h-6 w-6 text-blue-600" />
-              </div>
-              <h3 className="text-lg font-semibold mb-3 text-gray-900">Location</h3>
-               <p className="text-sm text-gray-600">Cebu, Manila, Butuan, Davao, Philippines</p>
-            </div>
-            <div className="p-8 text-center bg-gray-50 rounded-lg">
-              <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50">
-                <Mail className="h-6 w-6 text-blue-600" />
-              </div>
-              <h3 className="text-lg font-semibold mb-3 text-gray-900">Email</h3>
-              <p className="text-sm text-gray-600">admin@renttrack.com</p>
-            </div>
-            <div className="p-8 text-center bg-gray-50 rounded-lg">
-              <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50">
-                <Phone className="h-6 w-6 text-blue-600" />
-              </div>
-              <h3 className="text-lg font-semibold mb-3 text-gray-900">Support</h3>
-              <p className="text-sm text-gray-600">We typically respond within 24 hours.</p>
-            </div>
+            {[
+              { icon: MapPin, title: "Location", desc: "Supporting renters and property owners across the Philippines." },
+              { icon: Mail, title: "Email", desc: contactPeople?.admins.find((contact) => contact.email)?.email || "Contact details currently unavailable." },
+              { icon: Phone, title: "Support", desc: contactPeople?.admins.find((contact) => contact.phone)?.phone || "Send us a message and our team will get back to you." },
+            ].map((item, idx) => (
+              <motion.div
+                key={item.title}
+                initial={{ opacity: 0, y: 25 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: idx * 0.1 }}
+                whileHover={{ y: -6, scale: 1.02 }}
+                className="group p-8 text-center bg-gray-50/70 rounded-2xl border border-slate-200/80 transition-all duration-300 hover:bg-white hover:border-blue-200 hover:shadow-lg"
+              >
+                <motion.div
+                  whileHover={{ scale: 1.15, rotate: 6 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                  className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 shadow-2xs group-hover:bg-blue-600 group-hover:text-white transition-colors"
+                >
+                  <item.icon className="h-6 w-6" />
+                </motion.div>
+                <h3 className="text-lg font-semibold mb-3 text-gray-900">{item.title}</h3>
+                <p className="text-sm text-gray-600 leading-relaxed">{item.desc}</p>
+              </motion.div>
+            ))}
           </div>
         </div>
       </motion.section>
 
-      {/* â”€â”€â”€ Footer â”€â”€â”€ */}
-      <footer className="bg-white border-t border-gray-200 py-12">
+      {/* ─── Footer ─── */}
+      <footer className="border-t-4 border-amber-500 bg-amber-50/40 py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div className="md:col-span-2">
               <Link href="/" className="flex items-center gap-2 mb-4">
                 <div className="relative h-9 w-9">
-                <img src="/images/landing/logo.png" alt="RentTrack" className="w-full h-full object-contain rounded-full" />
+                <Image src="/images/landing/logo.png" alt="RentTrack" width={36} height={36} className="h-full w-full rounded-full object-contain" />
                 </div>
                 <span className="text-lg font-bold text-gray-900">Rent<span className="text-blue-600">Track</span></span>
               </Link>
-              <p className="text-sm text-gray-600 max-w-md">
-                HedgeHomes Realty and Brokerage â€” powered by RentTrack. A Rental Payment, Receivables, and Property Monitoring System for House and Condominium Room Rentals.
+              <p className="max-w-md text-sm leading-6 text-gray-600">
+                HedgeHomes Realty and Brokerage, powered by RentTrack. Rental payment, receivables, and property monitoring for homes and condominiums.
               </p>
             </div>
             <div>
@@ -739,8 +839,8 @@ export default function LandingPage() {
             <div>
               <h4 className="font-semibold text-sm mb-4 text-gray-900">Contact</h4>
               <ul className="space-y-3">
-                <li className="flex items-center gap-2 text-sm text-gray-600"><MapPin className="h-4 w-4 text-blue-600" /> Cebu, Manila, Butuan, Davao, Philippines</li>
-                <li className="flex items-center gap-2 text-sm text-gray-600"><Mail className="h-4 w-4 text-blue-600" /> admin@renttrack.com</li>
+                <li className="flex items-center gap-2 text-sm text-gray-600"><MapPin className="h-4 w-4 text-amber-700" /> Philippines</li>
+                {contactPeople?.admins.find((contact) => contact.email)?.email && <li className="flex items-center gap-2 break-all text-sm text-gray-600"><Mail className="h-4 w-4 shrink-0 text-amber-700" /> {contactPeople.admins.find((contact) => contact.email)?.email}</li>}
               </ul>
             </div>
           </div>
@@ -752,9 +852,21 @@ export default function LandingPage() {
 
       <AnimatePresence>
         {selectedProperty && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50" onClick={() => setSelectedProperty(null)} />
-            <div className="relative w-full max-w-3xl overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl max-h-[92vh]">
+          <div className="fixed inset-0 z-9999 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-xs"
+              onClick={() => setSelectedProperty(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="relative w-full max-w-3xl overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl max-h-[92vh]"
+            >
               <div className="relative h-64 bg-gray-100 sm:h-80">
                 {(() => {
                   const relatedUnits = units.filter((unit: any) => (unit.propertyId || unit.property_id) === selectedProperty.id);
@@ -764,7 +876,17 @@ export default function LandingPage() {
                   ].filter((image, index, all) => Boolean(image) && all.indexOf(image) === index);
                   return <UnitImageCarousel images={images} alt={selectedProperty.name || selectedProperty.unitNumber || "Property image"} className="h-full w-full" />;
                 })()}
-                <button onClick={() => setSelectedProperty(null)} aria-label="Close property details" className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-600 shadow-sm hover:bg-white hover:text-gray-950"><X className="h-4 w-4" /></button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedProperty(null);
+                  }}
+                  aria-label="Close property details"
+                  className="absolute right-4 top-4 z-50 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 backdrop-blur-sm text-gray-700 shadow-lg hover:bg-white hover:text-gray-950 transition-all cursor-pointer pointer-events-auto"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
               <div className="space-y-6 p-6 sm:p-8">
                 <div>
@@ -827,223 +949,18 @@ export default function LandingPage() {
                     <p className="text-sm text-gray-700 leading-relaxed">{selectedProperty.description}</p>
                   </div>
                 )}
-                {propertyAgent && (
-                  <div className="p-4 rounded-xl bg-blue-50 border border-blue-100">
-                    <p className="text-xs text-blue-600 mb-2 font-medium">Assigned Agent</p>
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
-                        {propertyAgent.name?.charAt(0)?.toUpperCase() || "A"}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">{propertyAgent.name}</p>
-                        <p className="text-xs text-gray-600">{propertyAgent.email}</p>
-                        {propertyAgent.phone && <p className="text-xs text-gray-600">{propertyAgent.phone}</p>}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <button
-                  onClick={() => setShowContactModal(true)}
-                  className="h-12 w-full rounded-xl bg-blue-600 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
-                >
-                  Contact Agent
-                </button>
               </div>
               <div className="border-t border-gray-200 p-6 sm:px-8">
                 <button onClick={() => setSelectedProperty(null)} className="h-11 w-full rounded-xl border border-gray-200 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">Close</button>
               </div>
-            </div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Contact Agent Modal */}
-      <AnimatePresence>
-        {showContactModal && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50" onClick={() => { setShowContactModal(false); setSelectedAgent(null); }} />
-            <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Contact Agent</h3>
-                <button onClick={() => { setShowContactModal(false); setSelectedAgent(null); }} className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              {!selectedAgent ? (
-                <div className="space-y-4">
-                  <p className="text-sm text-gray-600">Choose an agent to contact. You can view their details before sending a message.</p>
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {agents.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-4">No agents available right now.</p>
-                    ) : (
-                      agents.map((agent) => (
-                        <button
-                          key={agent.id}
-                          onClick={() => setSelectedAgent(agent)}
-                          className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-colors text-left"
-                        >
-                          <div className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
-                            {agent.name?.charAt(0)?.toUpperCase() || "A"}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{agent.name}</p>
-                            <p className="text-xs text-gray-500 truncate">{agent.email}</p>
-                          </div>
-                          <ChevronRight className="h-4 w-4 text-gray-400" />
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-xl bg-blue-50 border border-blue-100">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="h-12 w-12 rounded-full bg-blue-600 text-white flex items-center justify-center text-base font-bold">
-                        {selectedAgent.name?.charAt(0)?.toUpperCase() || "A"}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">{selectedAgent.name}</p>
-                        <p className="text-xs text-gray-600">{selectedAgent.email}</p>
-                        {selectedAgent.phone && <p className="text-xs text-gray-600">{selectedAgent.phone}</p>}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <span className="text-gray-500">Role:</span>
-                        <span className="ml-1 font-medium text-gray-700 capitalize">{selectedAgent.role}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Agent ID:</span>
-                        <span className="ml-1 font-medium text-gray-700">{selectedAgent.id}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Status:</span>
-                        <span className={`ml-1 font-medium ${selectedAgent.idVerificationStatus === "approved" ? "text-green-600" : "text-yellow-600"}`}>
-                          {selectedAgent.idVerificationStatus || "Pending"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Your Name</label>
-                    <input
-                      type="text"
-                      value={contactForm.name}
-                      onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
-                      className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-                      placeholder="Enter your name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address</label>
-                    <input
-                      type="email"
-                      value={contactForm.email}
-                      onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
-                      className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-                      placeholder="Enter your email"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Cellphone Number</label>
-                    <input
-                      type="tel"
-                      value={contactForm.phone}
-                      onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
-                      className="w-full h-10 px-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-                      placeholder="09XX XXX XXXX"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Message</label>
-                    <textarea
-                      value={contactForm.message}
-                      onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
-                      rows={4}
-                      className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none"
-                      placeholder="I'm interested in this property..."
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-3 mt-6">
-                <button onClick={() => { setShowContactModal(false); setSelectedAgent(null); }} className="flex-1 h-10 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
-                {selectedAgent && (
-                  <button
-                    onClick={async () => {
-                      if (!contactForm.name || !contactForm.email || !contactForm.phone || !contactForm.message) {
-                        alert("Please fill in your name, email, cellphone, and message");
-                        return;
-                      }
-                      setContactSending(true);
-                      try {
-                        await fetch("/api/chat/messages", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            text: `Contact Form Message:\n${contactForm.message}`,
-                            propertyId: selectedProperty?.id || null,
-                            senderName: contactForm.name,
-                            senderEmail: contactForm.email,
-                            senderPhone: contactForm.phone,
-                          }),
-                        });
-                        setShowSuccessModal(true);
-                        setContactForm({ name: "", email: "", phone: "", message: "" });
-                        setSelectedAgent(null);
-                      } catch {
-                        alert("Failed to send message. Please try again.");
-                      } finally {
-                        setContactSending(false);
-                      }
-                    }}
-                    disabled={contactSending}
-                    className="flex-1 h-10 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
-                  >
-                    {contactSending ? "Sending..." : "Send Message"}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Success Modal */}
-      <AnimatePresence>
-        {showSuccessModal && (
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50" onClick={() => setShowSuccessModal(false)} />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 text-center"
-            >
-              <div className="h-16 w-16 rounded-full bg-green-100 text-green-600 flex items-center justify-center mx-auto mb-4">
-                <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Message Sent!</h3>
-              <p className="text-sm text-gray-600 mb-6">Your message has been sent! An agent will contact you soon.</p>
-              <button
-                onClick={() => setShowSuccessModal(false)}
-                className="w-full h-10 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
-              >
-                OK
-              </button>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
       <AnimatePresence>
         {showApplicationSuccess && (
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="application-success-title">
+          <div className="fixed inset-0 z-99999 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="application-success-title">
             <motion.button
               type="button"
               aria-label="Close application submitted dialog"
@@ -1060,14 +977,14 @@ export default function LandingPage() {
               transition={{ type: "spring", stiffness: 260, damping: 22 }}
               className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white p-7 text-center shadow-2xl"
             >
-              <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400" />
+              <div className="absolute inset-x-0 top-0 h-1.5 bg-linear-to-r from-blue-500 via-indigo-500 to-cyan-400" />
               <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 ring-8 ring-emerald-50">
                 <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4L19 7" />
                 </svg>
               </div>
               <h2 id="application-success-title" className="text-xl font-bold text-slate-900">Application submitted!</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">Your application is now pending review. An owner will contact you using the email address you provided.</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Your application is now pending review. {applicationConfirmationEmailSent ? "A confirmation was sent to your email, and we will email you when a decision has been made." : "We could not send a confirmation email, but your application was received."}</p>
               <div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <button type="button" onClick={() => setShowApplicationSuccess(false)} className="h-11 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Done</button>
                 <button type="button" onClick={() => { setShowApplicationSuccess(false); document.getElementById("properties")?.scrollIntoView({ behavior: "smooth" }); }} className="h-11 rounded-xl bg-blue-600 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700">Browse rentals</button>
@@ -1078,10 +995,20 @@ export default function LandingPage() {
       </AnimatePresence>
       <AnimatePresence>
         {showAgentApplication && (
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50" onClick={() => setShowAgentApplication(false)} />
-            <motion.form onSubmit={submitAgentApplication} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
-              <button type="button" onClick={() => setShowAgentApplication(false)} className="absolute right-4 top-4 text-gray-500"><X className="h-5 w-5" /></button>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/50 cursor-pointer" onClick={() => setShowAgentApplication(false)} />
+            <motion.form onSubmit={submitAgentApplication} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl cursor-default" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowAgentApplication(false);
+                }}
+                className="absolute right-4 top-4 z-50 p-1.5 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors cursor-pointer pointer-events-auto"
+                aria-label="Close application modal"
+              >
+                <X className="h-5 w-5" />
+              </button>
               <h2 className="text-xl font-bold text-gray-900">Apply as an Agent</h2>
               <p className="mt-1 text-sm text-gray-500">Submit your information and resume for owner review.</p>
               <section className="mt-5 rounded-xl border border-blue-100 bg-blue-50/60 p-4">
@@ -1114,137 +1041,23 @@ export default function LandingPage() {
           </div>
         )}
       </AnimatePresence>
-      {/* Chat Widget */}
-      <div className="fixed bottom-6 right-6 z-[9998]">
-        {chatOpen && (
-          <div className="mb-4 w-80 h-96 bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
-            <div className="p-4 bg-blue-600 text-white flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold">RentTrack</p>
-                <p className="text-xs text-blue-100">We&apos;re Here to Help! 😊</p>
-              </div>
-              <button onClick={() => setChatOpen(false)} className="text-white/90 hover:text-white">
-                <X className="h-4 w-4" />
-              </button>
+      <details className="contact-disclosure group fixed bottom-4 right-4 z-50 sm:bottom-6 sm:right-6">
+        <summary aria-label="Show admin and owner contacts" title="Admin and owner contacts" className="relative flex h-14 w-14 cursor-pointer list-none items-center justify-center rounded-full bg-blue-600 text-white shadow-[0_6px_18px_rgba(15,23,42,0.24)] ring-2 ring-white/80 transition-colors hover:bg-blue-700 [&::-webkit-details-marker]:hidden">
+          <span className="absolute inset-0 animate-ping rounded-full bg-blue-500/25 motion-reduce:animate-none" />
+          <MessageCircle className="relative h-7 w-7" strokeWidth={2.4} />
+          <Phone className="absolute h-3.5 w-3.5 rotate-[-35deg]" strokeWidth={2.7} />
+        </summary>
+        <aside aria-label="Admin and owner contact information" className="contact-popover absolute bottom-full right-0 mb-3 max-h-[70vh] w-[min(360px,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">RentTrack contacts</p>
+          <h2 className="mt-1 text-lg font-bold text-slate-900">Admin &amp; Owner</h2>
+          {contactLoading ? <p className="py-6 text-sm text-slate-500">Loading contacts...</p> : contactError ? <p role="alert" className="py-5 text-sm text-red-700">{contactError}</p> : contactPeople && (
+            <div className="mt-4 space-y-4">
+              <ContactGroup title="Administrator" contacts={contactPeople.admins} />
+              <ContactGroup title="Property owners" contacts={contactPeople.owners} emptyMessage="No owner contact details are public right now." />
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-blue-50">
-              {chatMessages.length === 0 && (
-                <div className="space-y-3 mt-4">
-                  <div className="max-w-[90%] rounded-2xl rounded-tl-sm bg-blue-600 px-4 py-3 text-sm text-white shadow-sm">Hi there! Thanks for reaching out to RentTrack. How can we help you today?</div>
-                  <p className="text-xs text-gray-500 text-center">Enter your details and choose an agent before sending your message.</p>
-                  <select
-                    value={chatSelectedAgent?.id || ""}
-                    onChange={(e) => {
-                      const agent = agents.find((a) => a.id === e.target.value) || null;
-                      setChatSelectedAgent(agent);
-                    }}
-                    className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-700 shadow-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
-                  >
-                    <option value="">Select an agent</option>
-                    {agents.map((agent) => (
-                      <option key={agent.id} value={agent.id}>{agent.name}</option>
-                    ))}
-                  </select>
-                  {chatSelectedAgent && (
-                    <div className="p-2 rounded-lg bg-white border border-gray-200">
-                      <p className="text-xs font-medium text-gray-900">{chatSelectedAgent.name}</p>
-                      <p className="text-[11px] text-gray-500">{chatSelectedAgent.email}</p>
-                      {chatSelectedAgent.phone && <p className="text-[11px] text-gray-500">{chatSelectedAgent.phone}</p>}
-                      <p className="text-[11px] text-gray-400 mt-1">Agent ID: {chatSelectedAgent.id}</p>
-                    </div>
-                  )}
-                  <input
-                    type="text"
-                    value={chatUser.name}
-                    onChange={(e) => setChatUser({ ...chatUser, name: e.target.value })}
-                    placeholder="Your name"
-                    className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-700 shadow-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
-                  />
-                  <input
-                    type="email"
-                    value={chatUser.email}
-                    onChange={(e) => setChatUser({ ...chatUser, email: e.target.value })}
-                    placeholder="Your email"
-                    className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-700 shadow-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
-                  />
-                  <input
-                    type="tel"
-                    value={chatUser.phone}
-                    onChange={(e) => setChatUser({ ...chatUser, phone: e.target.value })}
-                    placeholder="Your cellphone number"
-                    className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-700 shadow-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
-                  />
-                </div>
-              )}
-              {chatMessages.map((msg, idx) => (
-                <div key={idx} className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[80%] rounded-xl px-3 py-2 text-xs ${msg.sender === "user" ? "bg-blue-600 text-white" : msg.sender === "system" ? "bg-slate-100 border border-slate-200 text-slate-700" : "bg-white border border-gray-200 text-gray-800"}`}>
-                    <p>{msg.text}</p>
-                    <p className={`mt-1 text-[10px] ${msg.sender === "user" ? "text-blue-100" : "text-gray-400"}`}>{new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-             <form onSubmit={async (e) => {
-              e.preventDefault();
-              if (!chatInput.trim()) return;
-              if (!chatUser.name.trim() || !chatUser.email.trim() || !chatUser.phone.trim()) {
-                alert("Please enter your name, email, and cellphone number first");
-                return;
-              }
-              if (!chatSelectedAgent) {
-                alert("Please select an agent to chat with");
-                return;
-              }
-              const text = chatInput.trim();
-              const confirmationText = "Message received. An agent will reply by email.";
-              setChatInput("");
-              setChatMessages((prev) => [...prev, { sender: "user", text, createdAt: new Date().toISOString() }, { sender: "system", text: confirmationText, createdAt: new Date().toISOString() }]);
-              setChatSending(true);
-              try {
-                const res = await fetch("/api/chat/messages", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ text, propertyId: selectedProperty?.id || null, senderName: chatUser.name, senderEmail: chatUser.email, senderPhone: chatUser.phone, agentId: chatSelectedAgent.id, agentName: chatSelectedAgent.name }),
-                });
-                const data = await res.json();
-                if (data.success && data.inquiryId && !chatInquiryIdsRef.current.includes(data.inquiryId)) {
-                  chatInquiryIdsRef.current.push(data.inquiryId);
-                }
-              } catch {
-                // Keep the static confirmation message visible without pretending the agent is typing or responding live.
-              } finally {
-                setChatSending(false);
-              }
-            }} className="p-3 border-t border-gray-200 bg-white">
-              <div className="flex gap-2">
-                <input
-                  ref={chatInputRef}
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Type a message..."
-                  aria-label="Chat message"
-                  className="flex-1 h-11 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-700 shadow-sm outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
-                />
-                <button type="submit" disabled={chatSending || !chatInput.trim()} className="h-11 px-4 rounded-xl bg-blue-600 text-white text-xs font-semibold disabled:opacity-50 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20">
-                  Send
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-        <button
-          onClick={() => setChatOpen((prev) => !prev)}
-          type="button"
-          aria-label={chatOpen ? "Close chat" : "Open chat"}
-          className="h-12 w-12 rounded-full bg-blue-600 text-white shadow-lg shadow-blue-600/30 flex items-center justify-center hover:scale-110 transition-transform"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-        </button>
-      </div>
+          )}
+        </aside>
+      </details>
     </main>
   );
 }

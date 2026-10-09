@@ -73,6 +73,8 @@ CREATE TABLE IF NOT EXISTS public.users (
   password TEXT,
   role TEXT NOT NULL DEFAULT 'tenant' CHECK (role IN ('admin', 'owner', 'agent', 'tenant')),
   phone TEXT,
+  created_by TEXT REFERENCES public.users(id) ON DELETE SET NULL,
+  commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
   address TEXT,
   payment_pin_hash TEXT,
   payment_pin_set_at TIMESTAMPTZ,
@@ -99,6 +101,8 @@ CREATE TABLE IF NOT EXISTS public.users (
 );
 
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'tenant' CHECK (role IN ('admin', 'owner', 'agent', 'tenant'));
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_by TEXT REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS commission_rate DOUBLE PRECISION NOT NULL DEFAULT 0;
 
 ALTER TABLE public.users DROP COLUMN IF EXISTS languages;
 ALTER TABLE public.users DROP COLUMN IF EXISTS hobbies;
@@ -166,6 +170,10 @@ CREATE TABLE IF NOT EXISTS uploads (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+ALTER TABLE uploads DROP CONSTRAINT IF EXISTS uploads_type_check;
+ALTER TABLE uploads ADD CONSTRAINT uploads_type_check
+  CHECK (type IN ('avatar', 'id_verification', 'property', 'unit', 'receipt', 'contract'));
+
 CREATE TABLE IF NOT EXISTS properties (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -173,6 +181,8 @@ CREATE TABLE IF NOT EXISTS properties (
   type TEXT NOT NULL CHECK (type IN ('house', 'condominium')),
   units INTEGER DEFAULT 0,
   occupied_units INTEGER DEFAULT 0,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
   monthly_revenue DECIMAL(12,2) DEFAULT 0,
   status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -220,6 +230,27 @@ CREATE TABLE IF NOT EXISTS tenants (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   created_by TEXT
 );
+
+CREATE TABLE IF NOT EXISTS rental_contracts (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  agent_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+  property_name TEXT NOT NULL,
+  tenant_id TEXT REFERENCES tenants(id) ON DELETE SET NULL,
+  tenant_name TEXT,
+  title TEXT NOT NULL,
+  message TEXT,
+  file_upload_id TEXT,
+  file_name TEXT,
+  file_mime_type TEXT,
+  status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'sent', 'rejected')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS rental_contracts_owner_created_idx ON rental_contracts(owner_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS rental_contracts_agent_created_idx ON rental_contracts(agent_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS move_out_requests (
   id TEXT PRIMARY KEY,
@@ -286,10 +317,13 @@ CREATE TABLE IF NOT EXISTS agent_applications (
   resume_name TEXT,
   resume_mime_type TEXT,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  rejection_reason TEXT,
   reviewed_by TEXT,
   reviewed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE agent_applications ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
 
 CREATE TABLE IF NOT EXISTS payment_verification_codes (
   id TEXT PRIMARY KEY,
@@ -324,6 +358,34 @@ CREATE TABLE IF NOT EXISTS ratings (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id, user_type, target_type, target_id)
 );
+
+CREATE TABLE IF NOT EXISTS agent_certificates (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  issuer TEXT,
+  issued_on DATE,
+  storage_path TEXT NOT NULL UNIQUE,
+  file_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL CHECK (mime_type IN ('application/pdf', 'image/jpeg', 'image/png')),
+  size INTEGER NOT NULL CHECK (size > 0),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS agent_certificates_agent_id_created_at_idx
+  ON agent_certificates(agent_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_badges (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  badge_key TEXT NOT NULL,
+  awarded_by TEXT NOT NULL REFERENCES public.users(id),
+  awarded_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(agent_id, badge_key)
+);
+
+CREATE INDEX IF NOT EXISTS agent_badges_agent_id_awarded_at_idx
+  ON agent_badges(agent_id, awarded_at DESC);
 
 CREATE TABLE IF NOT EXISTS complaints (
   id TEXT PRIMARY KEY,
@@ -364,6 +426,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   sender_name TEXT,
   sender_email TEXT,
   sender_phone TEXT,
+  tenant_id TEXT REFERENCES public.users(id) ON DELETE SET NULL,
   agent_id TEXT REFERENCES agents(id),
   agent_name TEXT,
   reply_text TEXT,
@@ -373,6 +436,29 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   visitor_replied_at TIMESTAMPTZ,
   status TEXT DEFAULT 'new' CHECK (status IN ('new', 'read', 'replied')),
   created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS chat_messages_agent_tenant_idx
+  ON public.chat_messages(agent_id, tenant_id);
+
+CREATE TABLE IF NOT EXISTS agent_reviews (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  tenant_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  inquiry_id TEXT NOT NULL REFERENCES public.chat_messages(id) ON DELETE CASCADE,
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  comment TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(agent_id, tenant_id)
+);
+
+CREATE INDEX IF NOT EXISTS agent_reviews_agent_id_created_at_idx
+  ON agent_reviews(agent_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.system_config (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ============================================
@@ -385,7 +471,11 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 BEGIN
-  EXECUTE sql USING params;
+  IF params IS NULL OR cardinality(params) = 0 THEN
+    EXECUTE sql;
+  ELSE
+    EXECUTE sql USING params;
+  END IF;
 END;
 $$;
 

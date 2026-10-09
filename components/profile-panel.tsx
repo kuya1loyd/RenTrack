@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/lib/auth";
 import { optimizeAvatar } from "@/lib/image-upload";
 import { toast } from "sonner";
+import { ManagementBanner } from "@/components/management-panel";
 
 type Tab = "general" | "edit-profile";
 
@@ -67,6 +68,18 @@ export default function ProfilePanel() {
     }
   }, [user]);
 
+  const safeParseResponse = async (res: Response) => {
+    try {
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        return await res.json();
+      }
+      return { success: false, error: `Server returned status ${res.status}` };
+    } catch {
+      return { success: false, error: "Failed to read server response" };
+    }
+  };
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -77,7 +90,7 @@ export default function ProfilePanel() {
         credentials: "include",
         body: JSON.stringify({ id: user?.id, name, email, phone, gender, birthdate, address }),
       });
-      const result = await res.json();
+      const result = await safeParseResponse(res);
       if (result.success) {
         toast.success("Profile updated successfully");
         await refreshUser();
@@ -107,7 +120,7 @@ export default function ProfilePanel() {
         credentials: "include",
         body: JSON.stringify({ id: user?.id, currentPassword, newPassword }),
       });
-      const result = await res.json();
+      const result = await safeParseResponse(res);
       if (result.success) {
         toast.success("Password changed successfully");
         setCurrentPassword("");
@@ -130,7 +143,7 @@ export default function ProfilePanel() {
       formData.append("file", optimizedFile);
       formData.append("type", "avatar");
       const res = await fetch("/api/auth/upload", { method: "POST", body: formData, credentials: "include" });
-      const result = await res.json();
+      const result = await safeParseResponse(res);
       if (result.success) {
         toast.success("Profile picture updated");
         await refreshUser();
@@ -153,7 +166,7 @@ export default function ProfilePanel() {
       formData.append("file", file);
       formData.append("type", "id_verification");
       const res = await fetch("/api/auth/upload", { method: "POST", body: formData, credentials: "include" });
-      const result = await res.json();
+      const result = await safeParseResponse(res);
       if (result.success) {
         toast.success("ID uploaded for verification");
         await refreshUser();
@@ -169,48 +182,37 @@ export default function ProfilePanel() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto space-y-6">
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-rose-500 via-pink-500 to-purple-600 p-8 sm:p-10">
-        <div className="absolute -top-4 -right-4 w-40 h-40 bg-white/10 rounded-full blur-2xl animate-pulse" />
-        <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-white/10 rounded-full blur-xl animate-bounce" style={{ animationDuration: "3s" }} />
-        <div className="absolute top-1/2 left-1/3 w-24 h-24 bg-white/5 rounded-full blur-lg animate-ping" style={{ animationDuration: "4s" }} />
-        <div className="relative flex items-center gap-4">
-          <motion.div
-            animate={{ scale: [1, 1.05, 1] }}
-            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-          >
-            <Avatar src={user?.avatarUrl} fallback={user?.name?.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2) || "U"} size="xl" className="h-16 w-16 text-lg border-4 border-white/20 shadow-lg" />
-          </motion.div>
-          <div>
-            <h2 className="text-3xl font-bold text-white tracking-tight">My Profile</h2>
-            <p className="text-white/70 text-sm mt-1.5">Manage your account settings and preferences</p>
-          </div>
-        </div>
-      </div>
+      <ManagementBanner
+        category="ACCOUNT SETTINGS"
+        title="My Profile"
+        description="Manage your account profile, contact information, and security credentials."
+        icon={User}
+      />
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as Tab)} className="space-y-6">
-        <TabsList className="bg-white border border-gray-200 p-1 rounded-2xl shadow-sm">
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1 w-full">
+        <div className="flex items-center">
+          <TabsList className="inline-flex w-auto h-auto items-center gap-1.5 bg-white border border-gray-200 p-1.5 rounded-2xl shadow-xs">
             {tabs.map((tab, index) => {
               const Icon = tab.icon;
               return (
                 <motion.div
                   key={tab.id}
-                  initial={{ opacity: 0, y: 10 }}
+                  initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
                 >
                   <TabsTrigger
                     value={tab.id}
-                    className="flex items-center gap-1.5 px-2 py-2 rounded-xl text-xs font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md transition-all hover:bg-gray-50"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-xs text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                   >
-                    <Icon className="h-3.5 w-3.5" />
-                    <span className="hidden xl:inline">{tab.label}</span>
+                    <Icon className="h-4 w-4" />
+                    <span>{tab.label}</span>
                   </TabsTrigger>
                 </motion.div>
               );
             })}
-          </div>
-        </TabsList>
+          </TabsList>
+        </div>
 
         <TabsContent value="general" className="space-y-4">
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.3 }}>

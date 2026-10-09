@@ -1,23 +1,35 @@
 import nodemailer from "nodemailer";
+import type SMTPPool from "nodemailer/lib/smtp-pool";
 
 const SMTP_HOST = process.env.SMTP_HOST;
 const SMTP_PORT = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined;
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
+let cachedTransporter: nodemailer.Transporter<SMTPPool.SentMessageInfo, SMTPPool.Options> | null = null;
+let transporterResolved = false;
 
 function createTransporter() {
+  if (transporterResolved) return cachedTransporter;
+  transporterResolved = true;
   if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
     return null;
   }
-  return nodemailer.createTransport({
+  cachedTransporter = nodemailer.createTransport({
     host: SMTP_HOST,
     port: SMTP_PORT,
     secure: SMTP_PORT === 465,
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 100,
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 30_000,
     auth: {
       user: SMTP_USER,
       pass: SMTP_PASS,
     },
   });
+  return cachedTransporter;
 }
 
 export function isSmtpConfigured() {
@@ -121,7 +133,7 @@ export async function sendEmail({ to, subject, text, html, bcc }: { to: string; 
   }
 }
 
-export async function sendSystemEmail({ to, subject, text, html, bcc }: { to: string; subject: string; text?: string; html?: string; bcc?: string }) {
+export async function sendSystemEmail({ to, subject, text, html, bcc, replyTo }: { to: string; subject: string; text?: string; html?: string; bcc?: string; replyTo?: string }) {
   const configured = isSmtpConfigured();
   console.log("[Mail] SMTP configured:", configured, { to, subject, from: process.env.SMTP_USER });
   if (!configured) {
@@ -138,6 +150,7 @@ export async function sendSystemEmail({ to, subject, text, html, bcc }: { to: st
       from: SMTP_USER,
       to,
       bcc,
+      replyTo,
       subject,
       text: text || html?.replace(/<[^>]+>/g, "") || "",
       html,

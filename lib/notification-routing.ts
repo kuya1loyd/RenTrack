@@ -30,8 +30,13 @@ export function getNotificationDashboardHref(
   // Account creation requests open the existing review modal in the admin/owner layouts.
   if (title.includes("account creation request")) return defaultHref[role] || "/dashboard";
 
+  if (/contract/.test(text)) {
+    if (isOwner) return "/dashboard/owner#contracts";
+    if (isAgent) return "/dashboard/agent#contracts";
+  }
+
   if (text.includes("agent applicant") || text.includes("agent application") || text.includes("applied to become an agent") || text.includes("agent email verified")) {
-    if (isOwner) return "/dashboard/owner/agents";
+    if (isOwner) return "/dashboard/owner?view=applicants#agents";
     if (isAdmin) return "/dashboard/admin?tab=users";
     if (isTenant) return "/dashboard/tenant/settings";
     return defaultHref[role] || "/dashboard";

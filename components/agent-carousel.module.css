@@ -1,0 +1,82 @@
+.carousel {
+  position: relative;
+}
+
+.track {
+  display: flex;
+  gap: 22px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  padding: 6px 4px 18px;
+  margin: 0 -4px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.track::-webkit-scrollbar {
+  display: none;
+}
+
+.track:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 4px;
+  border-radius: 20px;
+}
+
+.slide {
+  flex: 0 0 min(80vw, 290px);
+  scroll-snap-align: start;
+  display: flex;
+}
+
+.slide > * {
+  width: 100%;
+}
+
+.controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.arrow {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid #dbe3ee;
+  border-radius: 50%;
+  background: #fff;
+  color: #1e3a8a;
+  box-shadow: 0 3px 10px #0f172a10;
+  cursor: pointer;
+  transition: background 180ms ease, color 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.arrow:hover:not(:disabled) {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.arrow:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.arrow:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track {
+    scroll-behavior: auto;
+  }
+  .arrow {
+    transition: none;
+  }
+}

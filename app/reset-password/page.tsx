@@ -7,6 +7,7 @@ import { Mail, Lock, ArrowLeft, CheckCircle2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { safeParseJson } from "@/lib/data";
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -33,7 +34,7 @@ function ResetPasswordForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      const data = await res.json();
+      const data = await safeParseJson(res);
       if (data.success) {
         setIsSuccess(true);
         toast.success("If an account exists with this email, you will receive a password reset link.");
@@ -68,7 +69,7 @@ function ResetPasswordForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, newPassword }),
       });
-      const data = await res.json();
+      const data = await safeParseJson(res);
       if (data.success) {
         setIsSuccess(true);
         toast.success("Password reset successfully! You can now log in with your new password.");

@@ -1,38 +1,28 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Image from "next/image";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import {
-  User, Key, Save, Eye, EyeOff, Edit3, Shield, Upload
+  User, Key, Save, Eye, EyeOff, Edit3, Shield, Camera, Mail, Phone, MapPin, Calendar as CalendarIcon, CheckCircle2, ArrowLeft,
 } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Avatar } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { optimizeAvatar } from "@/lib/image-upload";
 import { calculateProfileCompleteness, type UserProfile } from "@/lib/profile";
 import { toast } from "sonner";
+import { formatDate } from "@/lib/utils";
 
-type Tab = "general" | "edit-profile" | "password";
+type Tab = "overview" | "edit-profile";
 
-const tabs: { id: Tab; label: string; icon: typeof User }[] = [
-  { id: "general", label: "General", icon: User },
-  { id: "edit-profile", label: "Edit Profile", icon: Edit3 },
-  { id: "password", label: "Password", icon: Key },
-];
-
-export default function SettingsPage() {
+export default function SettingsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { user, refreshUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<Tab>("general");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [name, setName] = useState(user?.name || "");
   const [email, setEmail] = useState(user?.email || "");
   const [phone, setPhone] = useState(user?.phone || "");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [gender, setGender] = useState(user?.gender || "");
   const [birthdate, setBirthdate] = useState(user?.birthdate || "");
@@ -43,33 +33,64 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!user) return;
     if (didSyncRef.current && userIdRef.current === user.id) return;
-    if (didSyncRef.current && userIdRef.current !== user.id) {
-      setName(user.name);
-      setEmail(user.email);
-      setPhone(user.phone || "");
-      setGender(user.gender || "");
-      setBirthdate(user.birthdate || "");
-      setAddress(user.address || "");
-      userIdRef.current = user.id;
-      didSyncRef.current = true;
-      return;
-    }
-    if (!didSyncRef.current) {
-      setName(user.name);
-      setEmail(user.email);
-      setPhone(user.phone || "");
-      setGender(user.gender || "");
-      setBirthdate(user.birthdate || "");
-      setAddress(user.address || "");
-      userIdRef.current = user.id;
-      didSyncRef.current = true;
-    }
-   }, [user]);
-
+    setName(user.name);
+    setEmail(user.email);
+    setPhone(user.phone || "");
+    setGender(user.gender || "");
+    setBirthdate(user.birthdate || "");
+    setAddress(user.address || "");
+    userIdRef.current = user.id;
+    didSyncRef.current = true;
+  }, [user]);
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const [isUploadingId, setIsUploadingId] = useState(false);
+
+  const safeParseResponse = async (res: Response) => {
+    try {
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        return await res.json();
+      }
+      return { success: false, error: `Server returned status ${res.status}` };
+    } catch {
+      return { success: false, error: "Failed to read server response" };
+    }
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingAvatar(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("type", "avatar");
+      const res = await fetch("/api/auth/upload", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      const result = await safeParseResponse(res);
+      if (result.success && result.url) {
+        await fetch("/api/auth/update", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ id: user?.id, avatarUrl: result.url }),
+        });
+        toast.success("Profile picture updated");
+        await refreshUser();
+      } else {
+        toast.error(result.error || "Failed to upload image");
+      }
+    } catch {
+      toast.error("Failed to upload image");
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,7 +102,7 @@ export default function SettingsPage() {
         credentials: "include",
         body: JSON.stringify({ id: user?.id, name, email, phone, gender, birthdate, address }),
       });
-      const result = await res.json();
+      const result = await safeParseResponse(res);
       if (result.success) {
         toast.success("Profile updated successfully");
         await refreshUser();
@@ -105,332 +126,520 @@ export default function SettingsPage() {
       toast.error("New password must be at least 6 characters");
       return;
     }
+    if (confirmPassword && newPassword !== confirmPassword) {
+      toast.error("New passwords do not match");
+      return;
+    }
+    setIsChangingPassword(true);
     try {
-      const res = await fetch("/api/auth/update", {
-        method: "PATCH",
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ id: user?.id, currentPassword, newPassword }),
+        body: JSON.stringify({ currentPassword, newPassword }),
       });
-      const result = await res.json();
+      const result = await safeParseResponse(res);
       if (result.success) {
-        toast.success("Password changed successfully");
+        toast.success("Password updated successfully");
         setCurrentPassword("");
         setNewPassword("");
-        await refreshUser();
+        setConfirmPassword("");
       } else {
-        toast.error(result.error || "Failed to change password");
+        toast.error(result.error || "Failed to update password");
       }
     } catch {
-      toast.error("An error occurred");
+      toast.error("Failed to update password");
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsUploadingAvatar(true);
-    try {
-      const optimizedFile = await optimizeAvatar(file);
-      const formData = new FormData();
-      formData.append("file", optimizedFile);
-      formData.append("type", "avatar");
-      const res = await fetch("/api/auth/upload", { method: "POST", body: formData, credentials: "include" });
-      const result = await res.json();
-      if (result.success) {
-        toast.success("Profile picture updated");
-        await refreshUser();
-      } else {
-        toast.error(result.error || "Failed to upload profile picture");
-      }
-    } catch {
-      toast.error("An error occurred");
-    } finally {
-      setIsUploadingAvatar(false);
-    }
-  };
-
-  const handleIdUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsUploadingId(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("type", "id_verification");
-      const res = await fetch("/api/auth/upload", { method: "POST", body: formData, credentials: "include" });
-      const result = await res.json();
-      if (result.success) {
-        toast.success("ID uploaded for verification");
-        await refreshUser();
-      } else {
-        toast.error(result.error || "Failed to upload ID");
-      }
-    } catch {
-      toast.error("An error occurred");
-    } finally {
-      setIsUploadingId(false);
-    }
-  };
+  if (!user) {
+    return (
+      <div className="flex min-h-[300px] items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+      </div>
+    );
+  }
 
   const profile: UserProfile = {
-    name: user?.name,
-    email: user?.email,
-    phone,
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
     gender,
     birthdate,
     address,
-    avatarUrl: user?.avatarUrl,
+    avatarUrl: user.avatarUrl,
   };
   const profileCompleteness = calculateProfileCompleteness(profile);
 
-  return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto space-y-6">
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-rose-500 via-pink-500 to-purple-600 p-8 sm:p-10">
-        <div className="absolute -top-4 -right-4 w-40 h-40 bg-white/10 rounded-full blur-2xl" />
-        <div className="relative flex items-center gap-4">
-          <Avatar src={user?.avatarUrl} fallback={user?.name?.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2) || "U"} size="xl" className="h-16 w-16 text-lg border-4 border-white/20" />
-          <div>
-            <h2 className="text-3xl font-bold text-white tracking-tight">My Profile</h2>
-            <p className="text-white/70 text-sm mt-1.5">Manage your account settings and preferences</p>
+  const dashboardHref = user.role === "admin"
+    ? "/dashboard/admin"
+    : user.role === "tenant"
+    ? "/dashboard/tenant"
+    : user.role === "owner"
+    ? "/dashboard/owner"
+    : user.role === "agent"
+    ? "/dashboard/agent"
+    : "/dashboard";
+
+  const dashboardName = user.role === "admin"
+    ? "Admin Dashboard"
+    : user.role === "tenant"
+    ? "Tenant Dashboard"
+    : user.role === "owner"
+    ? "Owner Dashboard"
+    : user.role === "agent"
+    ? "Agent Dashboard"
+    : "Dashboard";
+
+  const settingsContent = (
+    <div className={embedded ? "w-full space-y-5" : "w-full max-w-5xl mx-auto space-y-5"}>
+      {/* Compact, Perfect-Fit Header Card */}
+      <div className="relative overflow-hidden rounded-2xl bg-[#071326] p-5 sm:p-6 text-white shadow-md">
+        {/* Navigation pill inside card */}
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span className="text-white font-medium">Settings Console</span>
+            <span>•</span>
+            <span>Manage profile, credentials and security</span>
           </div>
+          <Link
+            href={dashboardHref}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 px-2.5 py-1 text-[11px] font-medium text-white transition-colors"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <span>Return to {dashboardName}</span>
+          </Link>
+        </div>
+        <div className="relative z-10 flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+            {/* Avatar with Camera Upload */}
+            <div className="relative shrink-0">
+              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-full overflow-hidden border-2 border-white/20 bg-slate-800 flex items-center justify-center shadow-md">
+                {user.avatarUrl ? (
+                  <Image
+                    src={user.avatarUrl}
+                    alt={user.name}
+                    width={80}
+                    height={80}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="text-xl font-bold text-white">
+                    {user.name?.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() || "U"}
+                  </span>
+                )}
+              </div>
+              <label
+                className="absolute bottom-0 right-0 flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md cursor-pointer transition-colors"
+                title="Change profile photo"
+              >
+                <Camera className="h-3.5 w-3.5" />
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarUpload}
+                  disabled={isUploadingAvatar}
+                />
+              </label>
+            </div>
+
+            {/* User Details */}
+            <div>
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">{user.name}</h1>
+                <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold text-blue-200 capitalize border border-white/15">
+                  {user.role}
+                </span>
+                {user.idVerificationStatus === "approved" && (
+                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300 border border-emerald-400/30 flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> Verified
+                  </span>
+                )}
+              </div>
+              <p className="text-xs sm:text-sm text-slate-300 mt-1">{user.email}</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Member since {user.createdAt ? formatDate(user.createdAt) : "Recently"}
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Stat Pill */}
+          <div className="self-center sm:self-start rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-center backdrop-blur-xs">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Profile Strength
+            </span>
+            <div className="flex items-center gap-2 mt-0.5">
+              <div className="w-20 h-2 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                  style={{ width: `${profileCompleteness.percentage}%` }}
+                />
+              </div>
+              <span className="text-xs font-bold text-white">{profileCompleteness.percentage}%</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Ambient subtle glow */}
+        <div className="absolute -right-12 -top-12 h-44 w-44 rounded-full bg-blue-600/15 blur-2xl pointer-events-none" />
+      </div>
+
+      {/* Compact Pill Tabs Navigation */}
+      <div className="flex items-center">
+        <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-xs">
+          <button
+            type="button"
+            onClick={() => setActiveTab("overview")}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+              activeTab === "overview"
+                ? "bg-blue-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            <User className="h-3.5 w-3.5" />
+            <span>Overview</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("edit-profile")}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+              activeTab === "edit-profile"
+                ? "bg-blue-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            <Edit3 className="h-3.5 w-3.5" />
+            <span>Edit Profile</span>
+          </button>
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as Tab)} className="space-y-6">
-        <TabsList className="bg-white border border-gray-200 p-1 rounded-2xl shadow-sm">
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1 w-full">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <TabsTrigger
-                  key={tab.id}
-                  value={tab.id}
-                  className="flex items-center gap-1.5 px-2 py-2 rounded-xl text-xs font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md transition-all"
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  <span className="hidden xl:inline">{tab.label}</span>
-                </TabsTrigger>
-              );
-            })}
+      {/* TAB 1: OVERVIEW */}
+      {activeTab === "overview" && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+          className="space-y-5"
+        >
+          {/* Personal Information Overview Card */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs">
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <User className="h-4 w-4 text-blue-600" />
+              <span>Personal Information</span>
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/70">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Full Name</span>
+                <p className="text-sm font-semibold text-slate-900 mt-1">{user.name || "Not set"}</p>
+              </div>
+              <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/70">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Email Address</span>
+                <p className="text-sm font-semibold text-slate-900 mt-1 truncate">{user.email || "Not set"}</p>
+              </div>
+              <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/70">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Phone Number</span>
+                <p className="text-sm font-semibold text-slate-900 mt-1">{phone || user.phone || "Not set"}</p>
+              </div>
+              <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/70">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Gender</span>
+                <p className="text-sm font-semibold text-slate-900 mt-1 capitalize">{gender || "Not specified"}</p>
+              </div>
+              <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/70">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Birthdate</span>
+                <p className="text-sm font-semibold text-slate-900 mt-1">
+                  {birthdate ? formatDate(birthdate) : "Not specified"}
+                </p>
+              </div>
+              <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/70">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Address</span>
+                <p className="text-sm font-semibold text-slate-900 mt-1 truncate">{address || "Not set"}</p>
+              </div>
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setActiveTab("edit-profile")}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                <span>Edit Information</span>
+              </button>
+            </div>
           </div>
-        </TabsList>
 
-        <TabsContent value="general" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-blue-50 flex items-center justify-center">
-                  <User className="h-5 w-5 text-blue-600" />
-                </div>
-                <div>
-                  <CardTitle>General</CardTitle>
-                  <CardDescription>View your profile information</CardDescription>
-                </div>
+          {/* Password & Security Quick Card */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                <Shield className="h-5 w-5" />
               </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center gap-4">
-                <Avatar src={user?.avatarUrl} fallback={user?.name?.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2) || "U"} size="lg" />
-                <div>
-                  <p className="text-sm font-medium text-foreground">{user?.name || "Not set"}</p>
-                  <p className="text-xs text-text-secondary">{user?.email || "Not set"}</p>
-                </div>
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+                  <span>Password &amp; Security</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Update your account password and review credential security settings.
+                </p>
               </div>
-               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                 <div>
-                   <label className="block text-sm font-medium text-text-secondary mb-1">Full Name</label>
-                   <p className="text-sm font-medium text-foreground">{user?.name || "Not set"}</p>
-                 </div>
-                 <div>
-                   <label className="block text-sm font-medium text-text-secondary mb-1">Account Email</label>
-                   <p className="text-sm font-medium text-foreground">{user?.email || "Not set"}</p>
-                 </div>
-                  <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-1">Phone Number</label>
-                    <p className="text-sm font-medium text-foreground">{phone || user?.phone || "Not set"}</p>
-                  </div>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab("edit-profile")}
+              className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer self-start sm:self-auto shrink-0"
+            >
+              <Key className="h-3.5 w-3.5 text-slate-500" />
+              <span>Change Password</span>
+            </button>
+          </div>
+        </motion.div>
+      )}
 
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-emerald-50 flex items-center justify-center">
-                  <Shield className="h-5 w-5 text-emerald-600" />
-                </div>
-                <div>
-                  <CardTitle>Personal Details</CardTitle>
-                  <CardDescription>Your personal information</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
+      {/* TAB 2: EDIT PROFILE (includes Profile Information and Password & Security together) */}
+      {activeTab === "edit-profile" && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+          className="space-y-6"
+        >
+          {/* Section 1: Update Profile Details */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <Edit3 className="h-4 w-4 text-blue-600" />
+                <span>Personal Information</span>
+              </h2>
+              <span className="text-[11px] font-medium text-slate-400">Update your account details</span>
+            </div>
+
+            <form onSubmit={handleSaveProfile} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">Phone Number</label>
-                  <p className="text-sm font-medium text-foreground">{phone || user?.phone || "Not set"}</p>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full h-10 px-3.5 rounded-xl border border-slate-300 text-xs sm:text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">Gender</label>
-                  <p className="text-sm font-medium text-foreground">{gender || "Not specified"}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">Birthdate</label>
-                  <p className="text-sm font-medium text-foreground">{birthdate ? new Date(birthdate).toLocaleDateString() : "Not specified"}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">Address</label>
-                  <p className="text-sm font-medium text-foreground">{address || user?.address || "Not set"}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
-        <TabsContent value="edit-profile">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-blue-50 flex items-center justify-center">
-                  <Edit3 className="h-5 w-5 text-blue-600" />
-                </div>
                 <div>
-                  <CardTitle>Edit Profile</CardTitle>
-                  <CardDescription>Update your personal details and contact information</CardDescription>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full h-10 px-3.5 rounded-xl border border-slate-300 text-xs sm:text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Phone Number
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 09171234567"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full h-10 px-3.5 rounded-xl border border-slate-300 text-xs sm:text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Gender
+                  </label>
+                  <select
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value)}
+                    className="w-full h-10 px-3 rounded-xl border border-slate-300 text-xs sm:text-sm text-slate-900 bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Birthdate
+                  </label>
+                  <input
+                    type="date"
+                    value={birthdate}
+                    onChange={(e) => setBirthdate(e.target.value)}
+                    className="w-full h-10 px-3.5 rounded-xl border border-slate-300 text-xs sm:text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Address
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="City, Province or full address"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    className="w-full h-10 px-3.5 rounded-xl border border-slate-300 text-xs sm:text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSaveProfile} className="space-y-4">
-                <div className="flex items-center gap-6 mb-6">
+
+              <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("overview")}
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  <span>{isSaving ? "Saving..." : "Save Changes"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Section 2: Password & Security (Together in Edit Profile) */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <Key className="h-4 w-4 text-blue-600" />
+                <span>Password &amp; Security</span>
+              </h2>
+              <span className="text-[11px] font-medium text-slate-400">Account credentials</span>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">
+              Enter your current password and choose a strong new password with at least 6 characters.
+            </p>
+
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Current Password
+                  </label>
                   <div className="relative">
-                    <Avatar
-                      src={user?.avatarUrl}
-                      fallback={user?.name?.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2) || "U"}
-                      size="xl"
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="Current password"
+                      className="w-full h-10 pl-3.5 pr-10 rounded-xl border border-slate-300 text-xs sm:text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                     />
-                    <label className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-primary-500 text-white flex items-center justify-center cursor-pointer hover:bg-primary-600 transition-colors">
-                      <Upload className="h-4 w-4" />
-                      <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} disabled={isUploadingAvatar} />
-                    </label>
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">{user?.name}</p>
-                    <Badge variant="outline" className="mt-1 capitalize">{user?.role}</Badge>
-                    {isUploadingAvatar && <p className="text-xs text-text-secondary mt-1">Uploading...</p>}
-                  </div>
-                </div>
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                   <div>
-                     <label className="block text-sm font-medium text-foreground mb-1.5">Full Name</label>
-                     <Input value={name} onChange={(e) => setName(e.target.value)} />
-                   </div>
-                   <div>
-                     <label className="block text-sm font-medium text-foreground mb-1.5">Email</label>
-                     <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-                   </div>
-                   <div>
-                     <label className="block text-sm font-medium text-foreground mb-1.5">Phone</label>
-                     <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+63 XXX XXX XXXX" />
-                   </div>
-                   <div>
-                     <label className="block text-sm font-medium text-foreground mb-1.5">Address</label>
-                     <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Your full address" />
-                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1.5">Gender</label>
-                    <Input value={gender} onChange={(e) => setGender(e.target.value)} placeholder="e.g. Male / Female / Other" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1.5">Birthdate</label>
-                    <Input type="date" value={birthdate} onChange={(e) => setBirthdate(e.target.value)} />
-                  </div>
-                  {(user?.role === "tenant" || user?.role === "agent") && (
-                    <div className="sm:col-span-2 pt-4 border-t border-border">
-                      <label className="block text-sm font-medium text-foreground mb-2">ID Verification</label>
-                      <p className="text-xs text-text-secondary mb-3">Upload a valid ID to verify your identity and enable booking/reservation features.</p>
-                      {user?.idVerificationUrl ? (
-                        <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-secondary">
-                          <img src={user.idVerificationUrl} alt="ID" className="h-16 w-24 object-cover rounded" />
-                          <div>
-                            <Badge variant="outline" className={
-                              user?.idVerificationStatus === "approved" ? "bg-green-50 text-green-600 border-green-200" :
-                              user?.idVerificationStatus === "rejected" ? "bg-red-50 text-red-600 border-red-200" :
-                              "bg-yellow-50 text-yellow-600 border-yellow-200"
-                            }>
-                              {user?.idVerificationStatus || "Pending"}
-                            </Badge>
-                            <p className="text-xs text-text-secondary mt-1">ID uploaded</p>
-                          </div>
-                        </div>
-                      ) : (
-                        <label className="flex items-center justify-center gap-2 h-24 rounded-lg border-2 border-dashed border-border hover:border-primary-300 cursor-pointer transition-colors">
-                          <Upload className="h-5 w-5 text-text-tertiary" />
-                          <span className="text-sm text-text-secondary">Click to upload ID</span>
-                          <input type="file" accept="image/*" className="hidden" onChange={handleIdUpload} disabled={isUploadingId} />
-                        </label>
-                      )}
-                      {isUploadingId && <p className="text-xs text-text-secondary mt-1">Uploading ID...</p>}
-                    </div>
-                  )}
-                </div>
-                <Button type="submit" disabled={isSaving}>
-                  {isSaving ? (
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Saving...
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5">
-                      <Save className="h-4 w-4 mr-1.5" />
-                      Save Changes
-                    </span>
-                  )}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="password">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                  <Key className="h-5 w-5 text-amber-600" />
-                </div>
-                <div>
-                  <CardTitle>Password</CardTitle>
-                  <CardDescription>Change your account password</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleChangePassword} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">Current Password</label>
-                  <div className="relative">
-                    <Input type={showPassword ? "text" : "password"} value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)} className="pr-10" />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary">
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      title={showPassword ? "Hide password" : "Show password"}
+                    >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
                 </div>
+
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">New Password</label>
-                  <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="At least 6 characters" />
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    New Password
+                  </label>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Min. 6 characters"
+                    className="w-full h-10 px-3.5 rounded-xl border border-slate-300 text-xs sm:text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
-                <Button type="submit"><Key className="h-4 w-4 mr-1.5" />Update Password</Button>
-              </form>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </motion.div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Confirm New Password
+                  </label>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter new password"
+                    className="w-full h-10 px-3.5 rounded-xl border border-slate-300 text-xs sm:text-sm text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 flex items-center justify-end border-t border-slate-100">
+                <button
+                  type="submit"
+                  disabled={isChangingPassword}
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                >
+                  <Key className="h-3.5 w-3.5" />
+                  <span>{isChangingPassword ? "Updating Password..." : "Update Password"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </motion.div>
+      )}
+    </div>
+  );
+
+  if (embedded) {
+    return settingsContent;
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-col">
+      {/* Top Navigation Bar with Back Button and Brand */}
+      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur px-4 sm:px-6 lg:px-8 py-3 shadow-xs">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link
+              href={dashboardHref}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-all hover:-translate-x-0.5"
+            >
+              <ArrowLeft className="h-4 w-4 text-slate-500" />
+              <span>Back to {dashboardName}</span>
+            </Link>
+            <span className="text-slate-300">/</span>
+            <span className="text-xs font-medium text-slate-500">Account Settings</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-2">
+              <Image src="/images/landing/logo.png" alt="RentTrack" width={26} height={26} className="h-6.5 w-6.5 object-contain" />
+              <span className="font-bold text-slate-900 text-sm hidden sm:inline">RentTrack</span>
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {settingsContent}
+      </main>
+    </div>
   );
 }

@@ -30,19 +30,24 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Failed to save reply" }, { status: 500 });
     }
 
+    const isSupport = complaint.target_type === "support" || complaint.targetType === "support";
+    const titleText = isSupport ? "Tenant replied to support request" : "Tenant replied to complaint";
+
     if (complaint.assigned_to) {
       await createNotification({
         userId: complaint.assigned_to,
-        title: "Tenant replied to support request",
+        title: titleText,
         message: `${auth.user.name} replied to: ${complaint.subject}`,
         type: "system",
       });
     } else {
-      const { data: staff } = await getAdminSupabase().schema("public").from("users").select("id").in("role", ["admin", "owner", "agent"]);
+      // Support replies strictly go to admin only (never owner)
+      const rolesToNotify = isSupport ? ["admin"] : ["admin", "agent"];
+      const { data: staff } = await getAdminSupabase().schema("public").from("users").select("id").in("role", rolesToNotify);
       for (const member of staff || []) {
         await createNotification({
           userId: member.id,
-          title: "Tenant replied to support request",
+          title: titleText,
           message: `${auth.user.name} replied to: ${complaint.subject}`,
           type: "system",
         });

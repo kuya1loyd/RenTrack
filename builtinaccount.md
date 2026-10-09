@@ -7,9 +7,9 @@ Default accounts are created automatically on first run when their configured cr
 Set these environment variables before deployment to define built-in account credentials:
 
 - `ADMIN_EMAIL` - Admin account email (default: admin@renttrack.com)
-- `ADMIN_PASSWORD` - Admin account password (required; use a strong value)
+- `ADMIN_PASSWORD` - Adminrentrack
 - `OWNER_EMAIL` - Owner account email (default: renttrackowner@gmail.com)
-- `OWNER_PASSWORD` - Owner account password (required; use a strong value)
+- `OWNER_PASSWORD` - RentrackOwner
 
 ## Roles
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import {
   Building2, Plus, Search, MapPin, Home, Users, DollarSign, Edit, Trash2, Eye, X, Check, Upload,
 } from "lucide-react";
@@ -13,10 +14,9 @@ import { Progress } from "@/components/ui/progress";
 import { Modal } from "@/components/ui/modal";
 import { cn, formatCurrency } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { getProperties, getUnits, addProperty, deleteProperty, Property, Unit, notifyAdmins } from "@/lib/data";
+import { getProperties, getUnits, addProperty, deleteProperty, safeParseJson, Property, Unit, notifyAdmins } from "@/lib/data";
 import { toast } from "sonner";
 
-const staggerContainer = { hidden: {}, visible: { transition: { staggerChildren: 0.06, delayChildren: 0.1 } } };
 const fadeInUp = { hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } };
 const PROPERTY_FEATURES = ["1 Bedroom", "2 Bedrooms", "3 Bedrooms", "4+ Bedrooms", "1 Bathroom", "2 Bathrooms", "3+ Bathrooms", "Parking Space", "Furnished", "Air Conditioning", "Wi-Fi", "Laundry Area", "Kitchen", "Outdoor Area", "Gated Property"];
 const PROPERTY_CONDITIONS = ["Excellent – Ready to Move In", "Very Good – Well Maintained", "Good – Minor Wear and Tear", "Fair – Some Repairs Needed", "Needs Improvement – Repairs Required"];
@@ -37,12 +37,12 @@ export default function PropertiesPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [formData, setFormData] = useState({ name: "", location: "", type: "house" as "house" | "condominium", units: 0, features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "" });
+  const [formData, setFormData] = useState({ name: "", location: "", latitude: "", longitude: "", type: "house" as "house" | "condominium", units: 0, features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "" });
   const [propertyImage, setPropertyImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
@@ -52,8 +52,9 @@ export default function PropertiesPage() {
   useEffect(() => {
     (async () => {
       try {
-        const props = await getProperties(user);
+        const [props, unitsData] = await Promise.all([getProperties(user), getUnits(user)]);
         setProperties(props);
+        setUnits(unitsData);
       } catch (err) {
         console.error("Failed to load properties", err);
         toast.error("Failed to load properties");
@@ -84,9 +85,17 @@ export default function PropertiesPage() {
       toast.error("Please fill in all required fields");
       return;
     }
+    if (Boolean(formData.latitude) !== Boolean(formData.longitude)) {
+      toast.error("Enter both latitude and longitude to map this property");
+      return;
+    }
     if (!user) return;
     try {
-      const submitData = { ...formData };
+      const submitData = {
+        ...formData,
+        latitude: formData.latitude ? Number(formData.latitude) : undefined,
+        longitude: formData.longitude ? Number(formData.longitude) : undefined,
+      };
       if (propertyImage) {
         submitData.imageUrl = await new Promise<string>((resolve) => {
           const reader = new FileReader();
@@ -103,7 +112,7 @@ export default function PropertiesPage() {
         setProperties(props);
       }
       setShowAddModal(false);
-      setFormData({ name: "", location: "", type: "house", units: 0, features: [], condition: "", availabilityStatus: "Available", imageUrl: "" });
+      setFormData({ name: "", location: "", latitude: "", longitude: "", type: "house", units: 0, features: [], condition: "", availabilityStatus: "Available", imageUrl: "" });
       setPropertyImage(null);
       setImagePreview("");
       notifyAdmins({ title: "New Property Created", message: `${formData.name} was added by ${user.name}`, type: "property", read: false });
@@ -120,9 +129,17 @@ export default function PropertiesPage() {
       toast.error("Please fill in all required fields");
       return;
     }
+    if (Boolean(formData.latitude) !== Boolean(formData.longitude)) {
+      toast.error("Enter both latitude and longitude to map this property");
+      return;
+    }
     setIsSaving(true);
     try {
-      const submitData = { ...formData };
+      const submitData = {
+        ...formData,
+        latitude: formData.latitude ? Number(formData.latitude) : undefined,
+        longitude: formData.longitude ? Number(formData.longitude) : undefined,
+      };
       if (propertyImage) {
         const reader = new FileReader();
         submitData.imageUrl = await new Promise<string>((resolve) => {
@@ -136,7 +153,7 @@ export default function PropertiesPage() {
         credentials: "include",
         body: JSON.stringify({ id: selectedProperty.id, data: submitData }),
       });
-      const result = await response.json();
+      const result = await safeParseJson(response);
       if (!response.ok || !result.success) throw new Error(result.error || "Failed to update property");
       setProperties((current) => current.map((property) => property.id === selectedProperty.id ? { ...property, ...submitData } : property));
       setShowEditModal(false);
@@ -153,7 +170,7 @@ export default function PropertiesPage() {
 
   const openEdit = (property: Property) => {
     setSelectedProperty(property);
-    setFormData({ name: property.name, location: property.location, type: property.type, units: property.units, features: property.features || [], condition: property.condition || "", availabilityStatus: property.availabilityStatus || "Available", imageUrl: property.imageUrl || "" });
+    setFormData({ name: property.name, location: property.location, latitude: property.latitude?.toString() || "", longitude: property.longitude?.toString() || "", type: property.type, units: property.units, features: property.features || [], condition: property.condition || "", availabilityStatus: property.availabilityStatus || "Available", imageUrl: property.imageUrl || "" });
     setImagePreview(property.imageUrl || "");
     setPropertyImage(null);
     setShowEditModal(true);
@@ -178,7 +195,7 @@ export default function PropertiesPage() {
             <p className="text-white/70 text-sm mt-1.5">Manage your rental properties and their units</p>
           </div>
           {canManage && (
-            <Button onClick={() => { setFormData({ name: "", location: "", type: "house", units: 0, features: [], condition: "", availabilityStatus: "Available", imageUrl: "" }); setPropertyImage(null); setImagePreview(""); setShowAddModal(true); }}
+              <Button onClick={() => { setFormData({ name: "", location: "", latitude: "", longitude: "", type: "house", units: 0, features: [], condition: "", availabilityStatus: "Available", imageUrl: "" }); setPropertyImage(null); setImagePreview(""); setShowAddModal(true); }}
               className="bg-white text-orange-700 hover:bg-orange-50 shadow-lg"><Plus className="h-4 w-4 mr-1.5" />Add Property</Button>
           )}
         </div>
@@ -209,7 +226,7 @@ export default function PropertiesPage() {
                   <Card className="overflow-hidden hover:shadow-lg transition-all duration-300">
                     <div className="h-40 relative bg-gray-100">
                       {property.imageUrl ? (
-                        <img src={property.imageUrl} alt={property.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        <Image src={property.imageUrl} alt={property.name} width={640} height={320} unoptimized className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                       ) : (
                         <div className="h-full bg-gradient-to-br from-primary-500/10 to-primary-600/5 flex items-center justify-center">
                           <Building2 className="h-12 w-12 text-gray-300" />
@@ -300,6 +317,16 @@ export default function PropertiesPage() {
             <label className="block text-sm font-medium text-foreground mb-1.5">Location *</label>
             <Input value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} placeholder="e.g. Butuan City" />
           </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Latitude</label>
+              <Input type="number" step="any" min="-90" max="90" value={formData.latitude} onChange={(e) => setFormData({ ...formData, latitude: e.target.value })} placeholder="e.g. 8.9475" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Longitude</label>
+              <Input type="number" step="any" min="-180" max="180" value={formData.longitude} onChange={(e) => setFormData({ ...formData, longitude: e.target.value })} placeholder="e.g. 125.5406" />
+            </div>
+          </div>
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Type</label>
             <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as "house" | "condominium" })}
@@ -331,7 +358,7 @@ export default function PropertiesPage() {
             <label className="block text-sm font-medium text-foreground mb-1.5">Property Image</label>
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition-colors" onClick={() => document.getElementById("property-image-upload")?.click()}>
               {imagePreview ? (
-                <img src={imagePreview} alt="Preview" className="max-h-40 mx-auto rounded-lg mb-2" />
+                <Image src={imagePreview} alt="Preview" width={640} height={320} unoptimized className="mx-auto mb-2 max-h-40 rounded-lg object-contain" />
               ) : (
                 <>
                   <Upload className="h-8 w-8 mx-auto mb-2 text-gray-400" />
@@ -371,7 +398,7 @@ export default function PropertiesPage() {
         {selectedProperty && (
           <div className="space-y-4">
             {selectedProperty.imageUrl && (
-              <img src={selectedProperty.imageUrl} alt={selectedProperty.name} className="w-full h-48 object-cover rounded-xl" />
+              <Image src={selectedProperty.imageUrl} alt={selectedProperty.name} width={640} height={384} unoptimized className="h-48 w-full rounded-xl object-cover" />
             )}
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 rounded-xl bg-surface-secondary">
@@ -412,6 +439,16 @@ export default function PropertiesPage() {
             <label className="block text-sm font-medium text-foreground mb-1.5">Location *</label>
             <Input value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} />
           </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Latitude</label>
+              <Input type="number" step="any" min="-90" max="90" value={formData.latitude} onChange={(e) => setFormData({ ...formData, latitude: e.target.value })} placeholder="e.g. 8.9475" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Longitude</label>
+              <Input type="number" step="any" min="-180" max="180" value={formData.longitude} onChange={(e) => setFormData({ ...formData, longitude: e.target.value })} placeholder="e.g. 125.5406" />
+            </div>
+          </div>
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Type</label>
             <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as "house" | "condominium" })}
@@ -443,7 +480,7 @@ export default function PropertiesPage() {
             <label className="block text-sm font-medium text-foreground mb-1.5">Property Image</label>
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition-colors" onClick={() => document.getElementById("property-image-edit")?.click()}>
               {imagePreview ? (
-                <img src={imagePreview} alt="Preview" className="max-h-40 mx-auto rounded-lg mb-2" />
+                <Image src={imagePreview} alt="Preview" width={640} height={320} unoptimized className="mx-auto mb-2 max-h-40 rounded-lg object-contain" />
               ) : (
                 <>
                   <Upload className="h-8 w-8 mx-auto mb-2 text-gray-400" />

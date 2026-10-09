@@ -4,11 +4,10 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, X, LayoutDashboard, Users, Building2, CreditCard, Bell, ChevronDown, Settings } from "lucide-react";
+import { Menu, X, LayoutDashboard, Users, Building2, CreditCard, Bell, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getPendingPaymentsCount, getUnreadCount, getUnreadMessageCount, getNotifications, markNotificationRead, markAllNotificationsRead, Notification } from "@/lib/data";
+import { getPendingPaymentsCount, getUnreadMessageCount, getNotifications, markNotificationRead, markAllNotificationsRead, Notification } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
-import { Button } from "@/components/ui/button";
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard/agent", icon: LayoutDashboard },
@@ -83,19 +82,14 @@ export default function AgentNavbar() {
     const msg = (n.message || "").toLowerCase();
 
     if (type === "payment" || title.includes("payment") || msg.includes("payment") || msg.includes("receipt")) {
-      window.location.hash = "payments";
       router.push("/dashboard/agent#payments");
     } else if (type === "tenant" || title.includes("tenant") || title.includes("assignment") || msg.includes("assigned") || msg.includes("tenant")) {
-      window.location.hash = "tenants";
       router.push("/dashboard/agent#tenants");
     } else if (title.includes("message") || msg.includes("message") || type === "message") {
-      window.location.hash = "messages";
       router.push("/dashboard/agent#messages");
     } else if (type === "id_verification" || title.includes("verification")) {
-      window.location.hash = "verifications";
       router.push("/dashboard/agent#verifications");
     } else if (type === "property" || title.includes("property") || msg.includes("property")) {
-      window.location.hash = "properties";
       router.push("/dashboard/agent#properties");
     } else {
       router.push("/dashboard/agent");
@@ -112,7 +106,7 @@ export default function AgentNavbar() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <Link href="/dashboard/agent" className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center shadow-md">
+            <div className="h-9 w-9 rounded-xl bg-linear-to-br from-blue-600 to-blue-700 flex items-center justify-center shadow-md">
               <span className="text-white font-bold text-sm">RT</span>
             </div>
             <span className="text-lg font-bold text-gray-900 dark:text-white">

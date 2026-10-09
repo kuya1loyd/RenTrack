@@ -1,71 +1,50 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { X, ChevronDown, Loader2, Bell, Home, CreditCard, FileText, Building2, LifeBuoy, Info, Newspaper, Users, Settings } from "lucide-react";
+import {
+  Bell,
+  Building2,
+  Check,
+  ChevronDown,
+  CreditCard,
+  DoorOpen,
+  HelpCircle,
+  Home,
+  LogOut,
+  Map,
+  Menu,
+  MessageCircle,
+  Search,
+  Settings,
+  X,
+} from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { getNotifications, getUnreadMessageCount, markAllNotificationsRead, markNotificationRead, Notification } from "@/lib/data";
+import {
+  getNotifications,
+  getUnreadMessageCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+  Notification,
+} from "@/lib/data";
 import { getNotificationDashboardHref } from "@/lib/notification-routing";
-import { Button } from "@/components/ui/button";
-import { Avatar } from "@/components/ui/avatar";
 
 export default function TenantNavbar() {
-  const [scrolled, setScrolled] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [openGroup, setOpenGroup] = useState<string | null>(null);
-  const [mobileGroup, setMobileGroup] = useState<string | null>(null);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
-  const [logoutLoading, setLogoutLoading] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
-
-  useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 300);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    const closeMenus = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpenGroup(null);
-        setMobileGroup(null);
-        setShowNotifications(false);
-        setShowUserMenu(false);
-      }
-    };
-    window.addEventListener("keydown", closeMenus);
-    return () => window.removeEventListener("keydown", closeMenus);
-  }, []);
-
-  useEffect(() => {
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (!target.closest("[data-tenant-navbar]")) {
-        setOpenGroup(null);
-        setMobileGroup(null);
-        setShowNotifications(false);
-        setShowUserMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", closeOnOutsideClick);
-    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
-  }, []);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
   useEffect(() => {
     if (!user) {
@@ -75,613 +54,559 @@ export default function TenantNavbar() {
     }
 
     let mounted = true;
-    const refreshCounts = () => {
+    const refresh = () => {
       getNotifications(user.id)
-        .then((next) => { if (mounted) setNotifications(next); })
+        .then((items) => { if (mounted) setNotifications(items); })
         .catch(() => { if (mounted) setNotifications([]); });
       getUnreadMessageCount()
         .then((count) => { if (mounted) setUnreadMessageCount(count); })
         .catch(() => { if (mounted) setUnreadMessageCount(0); });
     };
 
-    refreshCounts();
-    const interval = window.setInterval(refreshCounts, 30_000);
-    window.addEventListener("focus", refreshCounts);
-    window.addEventListener("renttrack-notifications-updated", refreshCounts);
+    refresh();
+    const interval = window.setInterval(refresh, 30_000);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("renttrack-notifications-updated", refresh);
     return () => {
       mounted = false;
       window.clearInterval(interval);
-      window.removeEventListener("focus", refreshCounts);
-      window.removeEventListener("renttrack-notifications-updated", refreshCounts);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("renttrack-notifications-updated", refresh);
     };
   }, [user]);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileOpen(false);
+        setAccountOpen(false);
+        setOptionsOpen(false);
+        setNotificationsOpen(false);
+        setConfirmLogout(false);
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, []);
+
+  useEffect(() => {
+    const closeMenus = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (!target.closest("[data-tenant-account]")) setAccountOpen(false);
+      if (!target.closest("[data-tenant-options]")) setOptionsOpen(false);
+      if (!target.closest("[data-tenant-notifications]")) setNotificationsOpen(false);
+    };
+    document.addEventListener("mousedown", closeMenus);
+    return () => document.removeEventListener("mousedown", closeMenus);
+  }, []);
+
+  const initials = user?.name?.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join("") || "T";
+  const unreadCount = notifications.filter((notification) => !notification.read).length;
+
+  const isActive = (href: string) => {
+    const route = href.split("#")[0];
+    return route === "/dashboard/tenant"
+      ? pathname === route && !href.includes("#")
+      : pathname === route || pathname.startsWith(`${route}/`);
+  };
+
+  const toggleNotifications = () => {
+    setNotificationsOpen((open) => !open);
+    setAccountOpen(false);
+    setOptionsOpen(false);
+    setMobileOpen(false);
+  };
+
+  const openNotification = async (notification: Notification) => {
+    if (!user) return;
+    if (!notification.read) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n))
+      );
+      await markNotificationRead(notification.id).catch(() => {});
+    }
+    setNotificationsOpen(false);
+    setMobileOpen(false);
+    router.push(getNotificationDashboardHref(notification, user.role));
+  };
 
   const handleLogout = async () => {
-    setShowUserMenu(false);
-    setShowLogoutConfirm(false);
     setLogoutLoading(true);
     await logout();
     router.push("/");
   };
 
-  const primaryNavItems = [
-    { label: "Home", href: "/dashboard/tenant", icon: Home },
-  ] as const;
-
-  const groupedNavItems = [
-    {
-      label: "Rental",
-      items: [
-        { label: "Properties", href: "/dashboard/tenant/properties-page", icon: Building2 },
-        { label: "Units", href: "/dashboard/tenant/units", icon: Building2 },
-      ],
-    },
-    {
-      label: "Payments",
-      items: [
-        { label: "Payments", href: "/dashboard/tenant/payments", icon: CreditCard },
-        { label: "Documents", href: "/dashboard/tenant/history", icon: FileText },
-      ],
-    },
-    {
-      label: "More",
-      items: [
-        { label: "Support", href: "/dashboard/tenant/contact", icon: LifeBuoy },
-        { label: "About", href: "/dashboard/tenant/about", icon: Info },
-        { label: "News", href: "/dashboard/tenant/news", icon: Newspaper },
-      ],
-    },
-  ] as const;
-
-  const isActive = (href: string) => pathname === href || (href !== "/dashboard/tenant" && pathname.startsWith(`${href}/`));
-  const isGroupActive = (items: readonly { href: string }[]) => items.some((item) => isActive(item.href));
-  const toggleNotifications = () => {
-    const nextOpen = !showNotifications;
-    setShowNotifications(nextOpen);
-    setShowUserMenu(false);
-    if (nextOpen && user && unreadCount > 0) {
-      setNotifications((current) => current.map((notification) => ({ ...notification, read: true })));
-      void markAllNotificationsRead(user.id);
-    }
-  };
-
-  const handleNotificationClick = async (n: Notification) => {
-    if (!user) return;
-    if (!n.read) {
-      await markNotificationRead(n.id).catch(() => {});
-      getNotifications(user.id).then(setNotifications).catch(() => {});
-      window.dispatchEvent(new Event("renttrack-notifications-updated"));
-    }
-    setShowNotifications(false);
-    setMobileOpen(false);
-    router.push(getNotificationDashboardHref(n, user.role));
-  };
-
   return (
-    <nav
-      data-tenant-navbar
-      className={cn(
-        "fixed top-0 left-0 right-0 z-50 transition-all duration-500",
-        scrolled ? "bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl shadow-sm border-b border-gray-200 dark:border-gray-800" : "bg-white/80 dark:bg-gray-900/80 backdrop-blur-md shadow-sm border-b border-gray-200/50 dark:border-gray-800/50"
-      )}
-    >
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          <Link href="/dashboard/tenant" className="flex items-center gap-2.5 shrink-0 group">
-            <img src="/images/landing/logo.png" alt="RentTrack" className="h-9 w-9 rounded-xl object-contain shadow-md" />
-            <motion.span
-              className="text-lg font-bold text-gray-900 dark:text-white hidden sm:inline"
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.1, duration: 0.3, ease: [0.21, 0.47, 0.32, 0.98] }}
-            >
-              Rent<span className="text-blue-600">Track</span>
-            </motion.span>
+    <nav data-tenant-navbar aria-label="Tenant navigation">
+      <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-white/10 bg-[#071326] px-4 sm:px-6 lg:px-8 text-white shadow-sm">
+        {/* Left: Brand + Nav Links */}
+        <div className="flex items-center gap-6 lg:gap-8">
+          <Link
+            href="/dashboard/tenant"
+            className="flex items-center gap-3"
+            onClick={() => { setMobileOpen(false); setAccountOpen(false); setOptionsOpen(false); }}
+            aria-label="RentTrack dashboard"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl overflow-hidden shadow-sm">
+              <Image src="/images/landing/logo.png" alt="RentTrack" width={36} height={36} className="h-full w-full object-contain" />
+            </span>
+            <span className="text-lg font-bold tracking-tight text-white">RentTrack</span>
           </Link>
 
+          {/* Desktop Nav Links */}
           <div className="hidden md:flex items-center gap-1">
-            {loading ? (
-              <motion.div
-                className="flex items-center gap-2 px-4 py-2"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-              >
-                <motion.div
-                  className="h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
-                />
-                <span className="text-sm text-gray-500">Loading...</span>
-              </motion.div>
-            ) : (
-              <>
-                {primaryNavItems.map((item, index) => {
-                  const active = isActive(item.href);
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => { setOpenGroup(null); setShowNotifications(false); }}
-                    >
-                      <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.05, duration: 0.3, ease: [0.21, 0.47, 0.32, 0.98] }}
-                        whileHover={{ y: -2 }}
-                        whileTap={{ scale: 0.95 }}
-                        className={cn(
-                          "relative flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200 whitespace-nowrap",
-                          active
-                            ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30"
-                            : "text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
-                        )}
-                      >
-                        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span>{item.label}</span>
-                      </motion.div>
-                    </Link>
-                  );
-                })}
-                {groupedNavItems.map((group, groupIndex) => {
-                  const active = isGroupActive(group.items);
-                  const expanded = openGroup === group.label;
-                  return (
-                    <div key={group.label} className="relative">
-                      <motion.button
-                        type="button"
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: (primaryNavItems.length + groupIndex) * 0.05, duration: 0.3, ease: [0.21, 0.47, 0.32, 0.98] }}
-                        whileHover={{ y: -2 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => { setOpenGroup(expanded ? null : group.label); setShowNotifications(false); setShowUserMenu(false); }}
-                        aria-haspopup="menu"
-                        aria-expanded={expanded}
-                        className={cn(
-                          "flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-medium transition-all duration-200 whitespace-nowrap",
-                          active || expanded
-                            ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30"
-                            : "text-gray-600 dark:text-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white"
-                        )}
-                      >
-                        {group.label}
-                        <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-180")} aria-hidden="true" />
-                      </motion.button>
-                      <AnimatePresence>
-                        {expanded && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 6, scale: 0.97 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                            transition={{ duration: 0.16 }}
-                            role="menu"
-                            className="absolute left-0 top-full z-50 mt-2 min-w-48 overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl dark:border-gray-700 dark:bg-gray-800"
-                          >
-                            {group.items.map((item) => {
-                              const itemActive = isActive(item.href);
-                              const Icon = item.icon;
-                              return (
-                                <Link
-                                  key={item.href}
-                                  href={item.href}
-                                  role="menuitem"
-                                  onClick={() => { setOpenGroup(null); setShowNotifications(false); }}
-                                  className={cn(
-                                    "flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs font-medium transition-colors",
-                                    itemActive
-                                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30"
-                                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700/60 dark:hover:text-white"
-                                  )}
-                                >
-                                  <Icon className="h-4 w-4" aria-hidden="true" />
-                                  {item.label}
-                                </Link>
-                              );
-                            })}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  );
-                })}
-                <motion.button
-                  whileHover={{ scale: 1.08 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={toggleNotifications}
-                  aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
-                  className="relative rounded-xl p-2 text-gray-500 hover:bg-gray-50 hover:text-blue-600 dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  <Bell className="h-4 w-4" />
-                  {unreadCount > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[9px] font-bold text-white">{unreadCount}</span>}
-                </motion.button>
-                <AnimatePresence>
-                  {showNotifications && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                      className="absolute right-16 top-14 z-50 w-80 sm:w-96 rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800 overflow-hidden"
-                    >
-                      <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                        <h3 className="font-semibold text-gray-900 dark:text-white">Notifications</h3>
-                        {notifications.some((n) => !n.read) && (
-                          <button onClick={async () => { if (!user) return; await markAllNotificationsRead(user.id); getNotifications(user.id).then(setNotifications).catch(() => {}); }} className="text-xs text-blue-600 hover:text-blue-700">Mark all read</button>
-                        )}
-                      </div>
-                      <div className="max-h-80 overflow-y-auto">
-                        {notifications.length === 0 ? (
-                          <p className="px-3 py-8 text-center text-xs text-gray-500">No notifications yet</p>
-                        ) : (
-                          notifications.map((n) => (
-                            <button key={n.id} onClick={() => handleNotificationClick(n)} className={cn("w-full text-left p-4 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors dark:border-gray-700 cursor-pointer", !n.read && "bg-blue-50 dark:bg-blue-900/10")}>
-                              <div className="flex gap-3">
-                                <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg shrink-0", n.type === "payment" && "bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400", n.type === "tenant" && "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400", n.type === "property" && "bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400", n.type === "system" && "bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400")}>
-                                  {n.type === "payment" && <CreditCard className="h-4 w-4" />}
-                                  {n.type === "tenant" && <Users className="h-4 w-4" />}
-                                  {n.type === "property" && <Home className="h-4 w-4" />}
-                                  {n.type === "system" && <Settings className="h-4 w-4" />}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium text-gray-900 dark:text-white">{n.title}</p>
-                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{n.message}</p>
-                                  <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">{formatDate(n.createdAt)}</p>
-                                </div>
-                                {!n.read && <div className="h-2 w-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />}
-                              </div>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-                {user && (
-                  <motion.div
-                    className="relative ml-1"
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.4, duration: 0.3, ease: [0.21, 0.47, 0.32, 0.98] }}
-                  >
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => setShowUserMenu(!showUserMenu)}
-                      aria-label={`Profile${unreadMessageCount > 0 ? `, ${unreadMessageCount} unread messages` : ""}`}
-                      className="relative flex items-center gap-2 rounded-xl p-1.5 pr-3 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
-                    >
-                      <motion.div
-                        whileHover={{ rotate: 10 }}
-                        transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                        className="relative flex h-8 w-8 items-center justify-center rounded-full"
-                      >
-                        <Avatar src={user.avatarUrl} fallback={user.name?.charAt(0)?.toUpperCase() || "T"} size="sm" />
-                        {unreadMessageCount > 0 && (
-                          <span title={`${unreadMessageCount} unread messages`} className="absolute -bottom-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border-2 border-white bg-blue-600 px-0.5 text-[8px] font-bold text-white dark:border-gray-900">
-                            {unreadMessageCount > 9 ? "9+" : unreadMessageCount}
-                          </span>
-                        )}
-                      </motion.div>
-                      <motion.span
-                        className="hidden lg:block text-sm font-medium text-gray-700 dark:text-gray-200"
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.1 }}
-                      >
-                        {user.name}
-                      </motion.span>
-                      <motion.div
-                        animate={{ rotate: showUserMenu ? 180 : 0 }}
-                        transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                      >
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      </motion.div>
-                    </motion.button>
-                    <AnimatePresence>
-                      {showUserMenu && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 8, scale: 0.95, filter: "blur(4px)" }}
-                          animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-                          exit={{ opacity: 0, y: 8, scale: 0.95, filter: "blur(4px)" }}
-                          transition={{ duration: 0.2 }}
-                          className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 py-1.5 z-50 overflow-hidden"
-                        >
-                            <motion.div
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              transition={{ delay: 0.1 }}
-                              className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-700"
-                            >
-                              <p className="text-sm font-semibold text-gray-900 dark:text-white">{user.name}</p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.email}</p>
-                            </motion.div>
-                            {unreadCount > 0 && (
-                              <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
-                                  {unreadCount} unread notification{unreadCount > 1 ? "s" : ""}
-                                </span>
-                              </div>
-                            )}
-                            <div className="p-1.5 space-y-0.5">
-                              <motion.button
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                                onClick={() => { setShowUserMenu(false); router.push("/dashboard/tenant/settings"); }}
-                                className="w-full flex items-center rounded-lg px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                              >
-                                Profile
-                              </motion.button>
-                              <motion.button
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                                onClick={() => { setShowUserMenu(false); router.push("/dashboard/tenant/messages"); }}
-                                className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                              >
-                                Messages
-                                {unreadMessageCount > 0 && (
-                                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[9px] font-bold text-white">
-                                    {unreadMessageCount}
-                                  </span>
-                                )}
-                              </motion.button>
-                              <div className="border-t border-gray-100 dark:border-gray-700 mt-1 pt-1">
-                                <motion.button
-                                  whileHover={{ scale: 1.02 }}
-                                  whileTap={{ scale: 0.98 }}
-                                  onClick={() => { setShowUserMenu(false); setShowLogoutConfirm(true); }}
-                                  className="w-full flex items-center rounded-lg px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                                >
-                                  Logout
-                                </motion.button>
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </motion.div>
-                  )}
-                </>
+            <Link
+              href="/dashboard/tenant"
+              className={cn(
+                "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                isActive("/dashboard/tenant")
+                  ? "bg-white/10 text-white shadow-sm"
+                  : "text-slate-300 hover:bg-white/5 hover:text-white"
               )}
-            </div>
+            >
+              <Home className="h-4 w-4" />
+              <span>Dashboard</span>
+            </Link>
 
-            <div className="flex items-center gap-2 md:hidden">
-              {user && (
-                <>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => { toggleNotifications(); setMobileOpen(true); }}
-                    aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
-                    className="p-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 relative"
-                  >
-                    <Bell className="h-5 w-5 text-gray-600 dark:text-gray-300" />
-                    <AnimatePresence>
-                      {unreadCount > 0 && (
-                        <motion.span
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          exit={{ scale: 0 }}
-                          transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                          className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-lg"
-                        >
-                          {unreadCount}
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                  </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => { setShowUserMenu(!showUserMenu); setShowNotifications(false); }}
-                      aria-label={`Profile${unreadMessageCount > 0 ? `, ${unreadMessageCount} unread messages` : ""}`}
-                      className="relative rounded-xl p-1.5 hover:bg-gray-50 dark:hover:bg-gray-800"
-                    >
-                      <Avatar src={user.avatarUrl} fallback={user.name?.charAt(0)?.toUpperCase() || "T"} size="sm" />
-                      {unreadMessageCount > 0 && (
-                        <span title={`${unreadMessageCount} unread messages`} className="absolute -bottom-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border-2 border-white bg-blue-600 px-0.5 text-[8px] font-bold text-white dark:border-gray-900">
-                          {unreadMessageCount > 9 ? "9+" : unreadMessageCount}
-                        </span>
-                      )}
-                    </motion.button>
-                </>
+            <Link
+              href="/dashboard/tenant/payments"
+              className={cn(
+                "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                isActive("/dashboard/tenant/payments")
+                  ? "bg-white/10 text-white shadow-sm"
+                  : "text-slate-300 hover:bg-white/5 hover:text-white"
               )}
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={() => setMobileOpen(!mobileOpen)}
-                className="p-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 relative"
-              >
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={mobileOpen ? "close" : "menu"}
-                    initial={{ rotate: -90, opacity: 0 }}
-                    animate={{ rotate: 0, opacity: 1 }}
-                    exit={{ rotate: 90, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    {mobileOpen ? <X className="h-5 w-5" /> : <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Menu</span>}
-                  </motion.div>
-                </AnimatePresence>
-                {loading && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                  </div>
+            >
+              <CreditCard className="h-4 w-4" />
+              <span>My Payments</span>
+            </Link>
+
+            <Link
+              href="/dashboard/tenant/properties-page"
+              className={cn(
+                "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                isActive("/dashboard/tenant/properties-page")
+                  ? "bg-white/10 text-white shadow-sm"
+                  : "text-slate-300 hover:bg-white/5 hover:text-white"
+              )}
+            >
+              <Building2 className="h-4 w-4" />
+              <span>My Property</span>
+            </Link>
+
+            <Link
+              href="/dashboard/tenant/contact"
+              className={cn(
+                "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                isActive("/dashboard/tenant/contact")
+                  ? "bg-white/10 text-white shadow-sm"
+                  : "text-slate-300 hover:bg-white/5 hover:text-white"
+              )}
+            >
+              <HelpCircle className="h-4 w-4" />
+              <span>Support</span>
+            </Link>
+
+            {/* Options Dropdown */}
+            <div className="relative" data-tenant-options>
+              <button
+                type="button"
+                onClick={() => { setOptionsOpen((prev) => !prev); setAccountOpen(false); setNotificationsOpen(false); }}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                  optionsOpen
+                    ? "bg-white/15 text-white"
+                    : "bg-white/10 text-slate-200 hover:bg-white/15 hover:text-white"
                 )}
-              </motion.button>
+                aria-expanded={optionsOpen}
+                aria-haspopup="true"
+              >
+                <span>Options</span>
+                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", optionsOpen && "rotate-180")} />
+              </button>
+
+              <AnimatePresence>
+                {optionsOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute left-0 mt-2 min-w-[200px] rounded-xl border border-slate-200 bg-white p-1.5 text-slate-700 shadow-xl z-50"
+                  >
+                    <Link
+                      href="/dashboard/tenant/move-out"
+                      onClick={() => setOptionsOpen(false)}
+                      className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                    >
+                      <DoorOpen className="h-4 w-4 text-slate-500" />
+                      <span>Move-out Request</span>
+                    </Link>
+                    <div className="my-1 border-t border-slate-100" />
+                    <Link
+                      href="/dashboard/tenant/browse"
+                      onClick={() => setOptionsOpen(false)}
+                      className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                    >
+                      <Search className="h-4 w-4 text-slate-500" />
+                      <span>Available Homes</span>
+                    </Link>
+                    <Link
+                      href="/dashboard/tenant/map"
+                      onClick={() => setOptionsOpen(false)}
+                      className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                    >
+                      <Map className="h-4 w-4 text-slate-500" />
+                      <span>Property Map</span>
+                    </Link>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
         </div>
 
-        {/* Mobile Notifications */}
-        <AnimatePresence>
-          {mobileOpen && showNotifications && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="md:hidden bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 py-3"
-            >
-              <p className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Notifications</p>
-              {notifications.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-3">No notifications yet</p>
-              ) : (
-                <div className="space-y-2">
-                  {notifications.slice(0, 5).map((n) => (
-                    <button type="button" key={n.id} onClick={() => handleNotificationClick(n)} className={cn("w-full text-left p-2.5 rounded-lg transition-colors cursor-pointer", !n.read ? "bg-blue-50 dark:bg-blue-900/10" : "hover:bg-gray-50 dark:hover:bg-gray-800")}>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">{n.title}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{n.message}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Mobile Menu */}
-        <AnimatePresence>
-          {mobileOpen && !showNotifications && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="md:hidden bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800"
-            >
-              <div className="px-4 py-3 space-y-1">
-                {loading ? (
-                  <div className="flex items-center justify-center py-4">
-                    <div className="h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-2" />
-                    <span className="text-sm text-gray-500">Loading...</span>
-                  </div>
-                ) : (
-                  <>
-                    {primaryNavItems.map((item, index) => {
-                      const active = isActive(item.href);
-                      const Icon = item.icon;
-                      return (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          onClick={() => { setMobileOpen(false); setShowUserMenu(false); setMobileGroup(null); }}
-                        >
-                          <motion.div
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: index * 0.05 }}
-                            className={cn(
-                              "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                              active
-                                ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30"
-                                : "text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-                            )}
-                          >
-                            <Icon className="h-4 w-4" aria-hidden="true" />
-                            {item.label}
-                          </motion.div>
-                        </Link>
-                      );
-                    })}
-                    <div className="my-2 border-t border-gray-100 dark:border-gray-800" />
-                    {groupedNavItems.map((group, index) => {
-                      const expanded = mobileGroup === group.label;
-                      const active = isGroupActive(group.items);
-                      return (
-                        <div key={group.label}>
-                          <motion.button
-                            type="button"
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: (primaryNavItems.length + index) * 0.05 }}
-                            onClick={() => setMobileGroup(expanded ? null : group.label)}
-                            aria-haspopup="menu"
-                            aria-expanded={expanded}
-                            className={cn(
-                              "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors",
-                              active || expanded
-                                ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30"
-                                : "text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
-                            )}
-                          >
-                            <span>{group.label}</span>
-                            <ChevronDown className={cn("h-4 w-4 transition-transform", expanded && "rotate-180")} aria-hidden="true" />
-                          </motion.button>
-                          <AnimatePresence initial={false}>
-                            {expanded && (
-                              <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: "auto", opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                className="overflow-hidden pl-3"
-                                role="menu"
-                              >
-                                {group.items.map((item) => {
-                                  const itemActive = isActive(item.href);
-                                  const Icon = item.icon;
-                                  return (
-                                    <Link
-                                      key={item.href}
-                                      href={item.href}
-                                      role="menuitem"
-                                      onClick={() => { setMobileOpen(false); setShowUserMenu(false); setMobileGroup(null); }}
-                                    >
-                                      <div className={cn(
-                                        "flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition-colors",
-                                        itemActive
-                                          ? "text-blue-600"
-                                          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
-                                      )}>
-                                        <Icon className="h-4 w-4" aria-hidden="true" />
-                                        <span>{item.label}</span>
-                                      </div>
-                                    </Link>
-                                  );
-                                })}
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      );
-                    })}
-                  </>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-      {showLogoutConfirm && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowLogoutConfirm(false)} />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-            transition={{ duration: 0.2 }}
-            className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6"
-            onClick={(e) => e.stopPropagation()}
+        {/* Right: Notification Bell + User Profile */}
+        <div className="flex items-center gap-2 sm:gap-2.5">
+          {/* Notifications Button with Badge */}
+          <button
+            type="button"
+            data-tenant-notifications
+            onClick={toggleNotifications}
+            aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
+            aria-expanded={notificationsOpen}
+            className="relative rounded-lg p-2 text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
-            <div className="flex flex-col items-center text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-red-600 mb-4">
-                {logoutLoading ? (
-                  <Loader2 className="h-7 w-7 animate-spin" />
-                ) : (
-                  <span className="text-2xl font-bold">!</span>
+            <Bell className="h-4.5 w-4.5" aria-hidden="true" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-[#071326]">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {/* User Account Pill */}
+          {user && (
+            <div className="relative" data-tenant-account>
+              <button
+                type="button"
+                onClick={() => { setAccountOpen((prev) => !prev); setOptionsOpen(false); setNotificationsOpen(false); }}
+                aria-label="Open tenant account menu"
+                aria-expanded={accountOpen}
+                className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-left"
+              >
+                <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-800 font-bold text-xs">
+                  {user.avatarUrl ? (
+                    <img src={user.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
+                  ) : (
+                    initials
+                  )}
+                  {unreadMessageCount > 0 ? (
+                    <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-blue-500 border-2 border-[#071326]" />
+                  ) : (
+                    <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-[#071326]" />
+                  )}
+                </div>
+                <div className="hidden sm:block min-w-0 max-w-[130px]">
+                  <p className="truncate text-xs font-semibold text-white leading-tight">
+                    {user.name || "Tenant"}
+                  </p>
+                  <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
+                    Tenant
+                  </p>
+                </div>
+                <ChevronDown className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+              </button>
+
+              <AnimatePresence>
+                {accountOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 mt-2 min-w-[220px] rounded-xl border border-slate-200 bg-white p-1.5 text-slate-700 shadow-xl z-50"
+                  >
+                    <div className="p-2 border-b border-slate-100">
+                      <p className="text-xs font-semibold text-slate-900 truncate">{user.name || "Tenant"}</p>
+                      <p className="text-[11px] text-slate-500 truncate mt-0.5">{user.email}</p>
+                    </div>
+
+                    <div className="py-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAccountOpen(false);
+                          window.dispatchEvent(new CustomEvent("renttrack-open-messages"));
+                        }}
+                        className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer text-left"
+                      >
+                        <MessageCircle className="h-4 w-4 text-slate-500" />
+                        <span className="flex-1">Messages</span>
+                        {unreadMessageCount > 0 && (
+                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                            {unreadMessageCount}
+                          </span>
+                        )}
+                      </button>
+
+                      <Link
+                        href="/dashboard/tenant/settings"
+                        onClick={() => setAccountOpen(false)}
+                        className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                      >
+                        <Settings className="h-4 w-4 text-slate-500" />
+                        <span>Account settings</span>
+                      </Link>
+
+                      <div className="my-1 border-t border-slate-100" />
+
+                      <button
+                        type="button"
+                        onClick={() => { setConfirmLogout(true); setAccountOpen(false); }}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors"
+                      >
+                        <LogOut className="h-4 w-4 text-rose-500" />
+                        <span>Sign out</span>
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
+          {/* Mobile Menu Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen((prev) => !prev)}
+            aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
+            className="md:hidden rounded-lg p-2 text-slate-300 hover:bg-white/10 hover:text-white"
+          >
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
+      </header>
+
+      {/* Mobile Drawer */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMobileOpen(false)}
+              className="fixed inset-0 z-40 bg-black/50 md:hidden"
+            />
+            <motion.aside
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ type: "tween", duration: 0.22 }}
+              className="fixed inset-y-0 left-0 z-50 w-72 bg-[#071326] p-4 text-white shadow-2xl md:hidden overflow-y-auto"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl overflow-hidden shadow-sm">
+                    <Image src="/images/landing/logo.png" alt="RentTrack" width={32} height={32} className="h-full w-full object-contain" />
+                  </span>
+                  <span className="font-bold text-white text-base">RentTrack</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileOpen(false)}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                {[
+                  { label: "Dashboard", href: "/dashboard/tenant", icon: Home },
+                  { label: "My Payments", href: "/dashboard/tenant/payments", icon: CreditCard },
+                  { label: "My Property", href: "/dashboard/tenant/properties-page", icon: Building2 },
+                  { label: "Support", href: "/dashboard/tenant/contact", icon: HelpCircle },
+                  { label: "Move-out Request", href: "/dashboard/tenant/move-out", icon: DoorOpen },
+                  { label: "Available Homes", href: "/dashboard/tenant/browse", icon: Search },
+                  { label: "Property Map", href: "/dashboard/tenant/map", icon: Map },
+                  { label: "Messages", href: "/dashboard/tenant/messages", icon: MessageCircle, isModal: true },
+                  { label: "Settings", href: "/dashboard/tenant/settings", icon: Settings },
+                ].map(({ label, href, icon: Icon, isModal }: any) =>
+                  isModal ? (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => {
+                        setMobileOpen(false);
+                        window.dispatchEvent(new CustomEvent("renttrack-open-messages"));
+                      }}
+                      className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer text-left"
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span>{label}</span>
+                      {unreadMessageCount > 0 && (
+                        <span className="ml-auto rounded-full bg-blue-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
+                          {unreadMessageCount > 99 ? "99+" : unreadMessageCount}
+                        </span>
+                      )}
+                    </button>
+                  ) : (
+                    <Link
+                      key={label}
+                      href={href}
+                      onClick={() => setMobileOpen(false)}
+                      className={cn(
+                        "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                        isActive(href)
+                          ? "bg-white/15 text-white"
+                          : "text-slate-300 hover:bg-white/5 hover:text-white"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span>{label}</span>
+                    </Link>
+                  )
                 )}
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">{logoutLoading ? "Logging out..." : "Log Out"}</h3>
-              <p className="text-sm text-gray-500 mb-6">{logoutLoading ? "Please wait while we securely log you out." : "Are you sure you want to log out of your account?"}</p>
-              <div className="flex w-full gap-3">
-                <Button variant="outline" className="flex-1" onClick={() => setShowLogoutConfirm(false)} disabled={logoutLoading}>Cancel</Button>
-                <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" disabled={logoutLoading} onClick={handleLogout}>
-                  {logoutLoading ? "Logging out..." : "Log Out"}
-                </Button>
+
+              <div className="mt-6 border-t border-white/10 pt-4">
+                <button
+                  type="button"
+                  onClick={() => { setConfirmLogout(true); setMobileOpen(false); }}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-rose-400 hover:bg-rose-500/10 transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Sign out</span>
+                </button>
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Notifications Popover */}
+      <AnimatePresence>
+        {notificationsOpen && user && (
+          <motion.section
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            aria-label="Notifications"
+            data-tenant-notifications
+            className="fixed right-4 top-18 z-50 w-80 sm:w-96 rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden text-slate-800"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">Notifications</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {unreadCount ? `${unreadCount} unread` : "You're all caught up"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!user) return;
+                      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+                      await markAllNotificationsRead(user.id).catch(() => {});
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Mark all read
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setNotificationsOpen(false)}
+                  aria-label="Close notifications"
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
             </div>
+
+            {notifications.length === 0 ? (
+              <div className="px-4 py-8 text-center">
+                <Check className="mx-auto mb-2 h-5 w-5 text-emerald-600" aria-hidden="true" />
+                <p className="text-sm font-medium text-slate-800">Nothing new</p>
+                <p className="mt-1 text-xs text-slate-500">New updates will show up here.</p>
+              </div>
+            ) : (
+              <div className="max-h-[min(24rem,65vh)] overflow-y-auto divide-y divide-slate-100">
+                {notifications.slice(0, 8).map((notification) => (
+                  <button
+                    type="button"
+                    key={notification.id}
+                    onClick={() => void openNotification(notification)}
+                    className="flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                  >
+                    <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", notification.read ? "bg-slate-200" : "bg-blue-600")} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-semibold text-slate-900">{notification.title}</span>
+                      <span className="mt-0.5 block line-clamp-2 text-xs leading-4 text-slate-500">{notification.message}</span>
+                      <span className="mt-1 block text-[10px] text-slate-400">{formatDate(notification.createdAt)}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </motion.section>
+        )}
+      </AnimatePresence>
+
+      {/* Logout Confirmation Modal */}
+      <AnimatePresence>
+        {confirmLogout && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            onMouseDown={(event) => { if (event.target === event.currentTarget && !logoutLoading) setConfirmLogout(false); }}
+          >
+            <motion.section
+              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.98 }}
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="tenant-logout-title"
+              className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-slate-900"
+            >
+              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-rose-50 text-rose-700">
+                <LogOut className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <h2 id="tenant-logout-title" className="text-lg font-bold text-slate-900">Sign out?</h2>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                You can sign back in whenever you need to manage your rental.
+              </p>
+              <div className="mt-6 flex gap-3">
+                <button
+                  type="button"
+                  disabled={logoutLoading}
+                  onClick={() => setConfirmLogout(false)}
+                  className="min-h-10 flex-1 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={logoutLoading}
+                  onClick={() => void handleLogout()}
+                  className="min-h-10 flex-1 rounded-xl bg-rose-600 px-4 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                >
+                  {logoutLoading ? "Signing out…" : "Sign out"}
+                </button>
+              </div>
+            </motion.section>
           </motion.div>
-        </div>,
-        document.body
-      )}
+        )}
+      </AnimatePresence>
     </nav>
   );
 }

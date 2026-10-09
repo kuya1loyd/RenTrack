@@ -1,16 +1,15 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Calendar, ChevronLeft, ChevronRight, Plus, X, Clock, MapPin, Users, Bell, CreditCard,
+  Calendar, ChevronLeft, ChevronRight, Plus, X, Clock, MapPin,
 } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 
 type ViewMode = "today" | "day" | "month" | "year";
@@ -29,12 +28,10 @@ interface CalendarEvent {
 }
 
 const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
-const now = new Date();
 const defaultStart = `${todayStr}T09:00`;
 const defaultEnd = `${todayStr}T10:00`;
 
 export default function TenantCalendarPage() {
-  const { user } = useAuth();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>("today");
   const [showEventModal, setShowEventModal] = useState(false);
@@ -158,7 +155,7 @@ export default function TenantCalendarPage() {
   return (
     <div className="min-h-screen">
       {/* Hero */}
-      <div className="relative bg-gradient-to-r from-blue-600 to-blue-700 text-white overflow-hidden">
+      <div className="relative bg-linear-to-r from-blue-600 to-blue-700 text-white overflow-hidden">
         <motion.div
           animate={{ x: [0, 30, 0], y: [0, -20, 0] }}
           transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
@@ -193,7 +190,7 @@ export default function TenantCalendarPage() {
             <Button variant="outline" size="sm" onClick={goToPrevious} className="gap-2">
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <h2 className="text-2xl font-bold text-gray-900 min-w-[200px] text-center">
+            <h2 className="text-2xl font-bold text-gray-900 min-w-50 text-center">
               {viewMode === "year" ? currentDate.getFullYear() : viewMode === "month" ? `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}` : viewMode === "today" ? "Today" : currentDate.toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })}
             </h2>
             <Button variant="outline" size="sm" onClick={goToNext} className="gap-2">
@@ -324,7 +321,7 @@ export default function TenantCalendarPage() {
                               key={idx}
                               onClick={() => date && handleDateClick(date)}
                               className={cn(
-                                "min-h-[120px] border-r border-b border-gray-100 last:border-r-0 p-2 cursor-pointer transition-all hover:bg-blue-50/50 relative group",
+                                "min-h-30 border-r border-b border-gray-100 last:border-r-0 p-2 cursor-pointer transition-all hover:bg-blue-50/50 relative group",
                                 !isCurrentMonth && "bg-gray-50/30"
                               )}
                             >
@@ -500,7 +497,7 @@ export default function TenantCalendarPage() {
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Reminder Date</label>
                   <Input type="datetime-local" value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} className="h-11 rounded-xl border-gray-200 text-sm" />
-                  <p className="text-xs text-gray-500 mt-1.5">You'll receive an email reminder at this date and time.</p>
+                  <p className="text-xs text-gray-500 mt-1.5">You&apos;ll receive an email reminder at this date and time.</p>
                 </div>
 
                 <div>

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllUsers } from "@/lib/db";
+import { getAllUsers, initDatabase } from "@/lib/db";
 import { withSecurityHeaders, withCorsHeaders } from "@/lib/api-security";
 
 export async function GET(request: NextRequest) {
   try {
+    await initDatabase();
     // This endpoint is used by the public landing-page contact/chat forms.
     // Return only the fields a visitor needs; never expose account secrets.
     const users = await Promise.race([
@@ -12,27 +13,26 @@ export async function GET(request: NextRequest) {
         setTimeout(() => reject(new Error("Agent lookup timed out")), 1500);
       }),
     ]);
-    const agents = users.filter((u: any) => u.role === "agent");
+    const ownerIds = new Set(users.filter((u: any) => u.role === "owner").map((u: any) => u.id));
+    const agents = users.filter((u: any) => u.role === "agent" && u.createdBy && ownerIds.has(u.createdBy));
+    const publicLocations = new Set(["Cebu", "Manila", "Davao", "Butuan"]);
     const safeAgents = agents.map((u: any) => ({
       id: u.id,
       name: u.name,
+      role: "agent",
       email: u.email,
       phone: u.phone || "",
-      role: u.role,
-      idVerificationStatus: u.idVerificationStatus || "pending",
-      idVerificationUrl: u.idVerificationUrl || null,
-      lastLoginAt: u.lastLoginAt || u.last_login_at || null,
-      lastSeenAt: u.lastSeenAt || u.last_seen_at || null,
-      isOnline: Boolean(u.isOnline ?? u.is_online ?? false),
-      createdAt: u.createdAt || u.created_at || null,
+      experience: u.experience || "",
+      avatarUrl: typeof u.avatarUrl === "string" ? u.avatarUrl : null,
+      location: publicLocations.has(u.address) ? u.address : "",
+      createdAt: typeof (u.createdAt || u.created_at) === "string" ? (u.createdAt || u.created_at) : null,
     }));
     const response = NextResponse.json({ success: true, users: safeAgents });
     return withSecurityHeaders(withCorsHeaders(request, response));
   } catch (error) {
     console.warn("Agents unavailable:", error instanceof Error ? error.message : error);
-    // Agent contact data is optional on the public landing page. Keep the page usable
-    // when the upstream database is temporarily unavailable.
-    const response = NextResponse.json({ success: true, users: [], degraded: true });
+    // Distinguish an unavailable directory from a successfully loaded empty one.
+    const response = NextResponse.json({ success: false, users: [], degraded: true }, { status: 503 });
     return withSecurityHeaders(withCorsHeaders(request, response));
   }
 }

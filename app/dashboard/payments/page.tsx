@@ -3,14 +3,13 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
-  CreditCard, Search, Filter, CheckCircle2, XCircle, Download, DollarSign, TrendingUp, AlertCircle, Wallet, X
+  CreditCard, Search, CheckCircle2, XCircle, Download, DollarSign, TrendingUp, AlertCircle, Wallet
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Avatar } from "@/components/ui/avatar";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -19,7 +18,6 @@ import { getPayments, getTenants, getUnits, verifyPayment, addNotification, noti
 import { toast } from "sonner";
 import ReceiptModal from "@/components/receipt-modal";
 
-const staggerContainer = { hidden: {}, visible: { transition: { staggerChildren: 0.05, delayChildren: 0.1 } } };
 const fadeInUp = { hidden: { opacity: 0, y: 15 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } };
 
 const statusStyles: Record<string, string> = {
@@ -40,6 +38,7 @@ export default function PaymentsPage() {
   const [paymentType, setPaymentType] = useState<"all" | "regular" | "advance">("all");
   const [referenceDate, setReferenceDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [units, setUnits] = useState<Unit[]>([]);
+  const [viewingReceipt, setViewingReceipt] = useState<Payment | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -87,8 +86,6 @@ export default function PaymentsPage() {
   const totalOverdue = filteredPayments.filter((p) => p.status === "overdue").reduce((s, p) => s + Number(p.balance || 0), 0);
   const totalAdvance = filteredPayments.filter(isAdvance).reduce((s, p) => s + Math.max(0, Number(p.amountPaid) - Number(p.amountDue)), 0);
   const totalReceivable = units.filter((unit) => unit.status === "occupied").reduce((sum, unit) => sum + Number(unit.rentAmount || 0), 0);
-
-  const [viewingReceipt, setViewingReceipt] = useState<Payment | null>(null);
 
   const handleVerify = async (payment: Payment, status: "paid" | "rejected") => {
     const result = await verifyPayment(payment, user?.id || "", status);

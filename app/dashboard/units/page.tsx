@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import { Home, Plus, Search, Edit, Check, Trash2, Image as ImageIcon, X } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,11 +12,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Modal } from "@/components/ui/modal";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { getUnits, getProperties, addUnit, updateUnit, deleteUnit, Unit, Property, notifyAdmins } from "@/lib/data";
+import { getUnits, getProperties, addUnit, updateUnit, deleteUnit, safeParseJson, Unit, Property, notifyAdmins } from "@/lib/data";
 import { toast } from "sonner";
 import UnitImageCarousel from "@/components/unit-image-carousel";
 
-const staggerContainer = { hidden: {}, visible: { transition: { staggerChildren: 0.04, delayChildren: 0.1 } } };
 const fadeInUp = { hidden: { opacity: 0, y: 15 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } };
 
 const statusColors: Record<string, string> = {
@@ -29,7 +29,7 @@ export default function UnitsPage() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
@@ -37,8 +37,6 @@ export default function UnitsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [showImageModal, setShowImageModal] = useState<string | null>(null);
   const [formData, setFormData] = useState({ propertyId: "", unitNumber: "", floor: 0, rentAmount: 0, imageUrl: "", imageUrls: [] as string[] });
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const canManage = user && (user.role === "admin" || user.role === "owner");
 
@@ -67,16 +65,6 @@ export default function UnitsPage() {
     return matchesSearch && matchesTab;
   });
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      const reader = new FileReader();
-      reader.onload = (ev) => setImagePreview(ev.target?.result as string);
-      reader.readAsDataURL(file);
-    }
-  };
-
   const handleAdd = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!formData.unitNumber || !formData.propertyId) {
@@ -84,14 +72,12 @@ export default function UnitsPage() {
       return;
     }
     try {
-      const dataToSend = { ...formData, status: "vacant" as const, imageUrl: formData.imageUrls[0] || imagePreview || formData.imageUrl || undefined, imageUrls: formData.imageUrls };
+      const dataToSend = { ...formData, status: "vacant" as const, imageUrl: formData.imageUrls[0] || formData.imageUrl || undefined, imageUrls: formData.imageUrls };
       const createdUnit = await addUnit(dataToSend);
       setUnits((current) => [createdUnit, ...current]);
       setProperties((current) => current.map((property) => property.id === formData.propertyId ? { ...property, units: property.units + 1 } : property));
       setShowAddModal(false);
       setFormData({ propertyId: "", unitNumber: "", floor: 0, rentAmount: 0, imageUrl: "", imageUrls: [] });
-      setSelectedFile(null);
-      setImagePreview(null);
       notifyAdmins({ title: "New Unit Added", message: `Unit ${formData.unitNumber} was added by ${user?.name}`, type: "property", read: false });
       toast.success("Unit added successfully");
     } catch (err) {
@@ -148,7 +134,7 @@ export default function UnitsPage() {
       body.append("file", file);
       body.append("type", "unit");
       const response = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body });
-      const result = await response.json();
+      const result = await safeParseJson(response);
       if (!result.success) throw new Error(result.error || "Failed to upload image");
       return result.url as string;
     }));
@@ -183,39 +169,62 @@ export default function UnitsPage() {
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-6">
-      <div className="relative overflow-hidden rounded-3xl bg-linear-to-br from-sky-500 via-blue-500 to-indigo-600 p-8 sm:p-10">
-        <div className="absolute -top-6 -right-6 w-48 h-48 bg-white/10 rounded-full blur-2xl" />
-        <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-medium mb-3">
-              <Home className="h-3 w-3" />
-              Unit Management
-            </div>
-            <h2 className="text-3xl font-bold text-white tracking-tight">Units</h2>
-            <p className="text-white/70 text-sm mt-1.5">Manage all rental units across your properties</p>
-          </div>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} className="space-y-4">
+      <section className="flex min-h-[112px] items-center justify-between gap-4 overflow-hidden rounded-xl border border-[#dce8f5] bg-[#eaf3ff] px-4 py-4 sm:min-h-[126px] sm:px-6">
+        <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Property operations</p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-950">Units</h2>
+            <p className="mt-1 text-xs text-slate-600 sm:text-sm">Manage availability and inventory across your properties.</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          {(() => {
+            const featuredProperty = properties.find((property) => property.imageUrls?.length || property.imageUrl);
+            return featuredProperty ? (
+              <UnitImageCarousel
+                images={featuredProperty.imageUrls || (featuredProperty.imageUrl ? [featuredProperty.imageUrl] : [])}
+                alt={`${featuredProperty.name} property photo`}
+                className="hidden h-20 w-32 rounded-lg border border-white/70 shadow-sm sm:block"
+                imageClassName="group-hover:scale-100"
+              />
+            ) : null;
+          })()}
           {canManage && (
-            <Button onClick={() => { setFormData({ propertyId: properties[0]?.id || "", unitNumber: "", floor: 0, rentAmount: 0, imageUrl: "", imageUrls: [] }); setSelectedFile(null); setImagePreview(null); setShowAddModal(true); }}
-              className="bg-white text-blue-700 hover:bg-blue-50 shadow-lg"><Plus className="h-4 w-4 mr-1.5" />Add Unit</Button>
+            <Button onClick={() => { setFormData({ propertyId: properties[0]?.id || "", unitNumber: "", floor: 0, rentAmount: 0, imageUrl: "", imageUrls: [] }); setShowAddModal(true); }}
+              className="h-9 border border-blue-700 bg-blue-700 text-white hover:bg-blue-800"><Plus className="h-4 w-4 mr-1.5" />Add Unit</Button>
           )}
+        </div>
+      </section>
+
+      <div className="rounded-xl border border-[#dce8f5] bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList>
+              <TabsTrigger value="all">All ({units.length})</TabsTrigger>
+              <TabsTrigger value="occupied">Occupied ({units.filter((u) => u.status === "occupied").length})</TabsTrigger>
+              <TabsTrigger value="vacant">Vacant ({units.filter((u) => u.status === "vacant").length})</TabsTrigger>
+              <TabsTrigger value="maintenance">Maintenance ({units.filter((u) => u.status === "maintenance").length})</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <label className="relative w-full lg:max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input placeholder="Search units or tenants..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="h-9 rounded-lg border-slate-200 pl-9" aria-label="Search units or tenants" />
+          </label>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
-            <TabsTrigger value="all">All ({units.length})</TabsTrigger>
-            <TabsTrigger value="occupied">Occupied ({units.filter((u) => u.status === "occupied").length})</TabsTrigger>
-            <TabsTrigger value="vacant">Vacant ({units.filter((u) => u.status === "vacant").length})</TabsTrigger>
-            <TabsTrigger value="maintenance">Maintenance ({units.filter((u) => u.status === "maintenance").length})</TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
-          <Input placeholder="Search units..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 h-9" />
-        </div>
-      </div>
+      <section aria-label="Unit portfolio metrics" className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+        {[
+          { label: "Total units", value: units.length, tone: "text-blue-700 bg-blue-50" },
+          { label: "Available", value: units.filter((unit) => unit.status === "vacant").length, tone: "text-emerald-700 bg-emerald-50" },
+          { label: "Occupied", value: units.filter((unit) => unit.status === "occupied").length, tone: "text-slate-700 bg-slate-100" },
+          { label: "Maintenance", value: units.filter((unit) => unit.status === "maintenance").length, tone: "text-amber-700 bg-amber-50" },
+        ].map((metric) => (
+          <div key={metric.label} className="rounded-lg border border-[#dce8f5] bg-white px-3 py-2.5 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:px-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{metric.label}</p>
+            <p className={cn("mt-1 inline-flex min-w-8 items-center justify-center rounded-md px-2 py-0.5 text-lg font-bold tabular-nums", metric.tone)}>{metric.value}</p>
+          </div>
+        ))}
+      </section>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredUnits.length === 0 ? (
@@ -230,9 +239,15 @@ export default function UnitsPage() {
             return (
               <motion.div key={unit.id} variants={fadeInUp} custom={i}>
                 <motion.div whileHover={{ y: -2, transition: { duration: 0.2 } }}>
-                  <Card className="overflow-hidden hover:shadow-lg transition-all duration-300">
+                  <Card className="overflow-hidden border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition-shadow hover:shadow-md">
                     <CardContent className="p-0">
                       <div className={cn("h-1.5 w-full", unit.status === "occupied" && "bg-green-500", unit.status === "vacant" && "bg-gray-300", unit.status === "maintenance" && "bg-amber-500")} />
+                      <UnitImageCarousel
+                        images={unit.imageUrls?.length ? unit.imageUrls : unit.imageUrl ? [unit.imageUrl] : property?.imageUrls?.length ? property.imageUrls : property?.imageUrl ? [property.imageUrl] : []}
+                        alt={`Unit ${unit.unitNumber}${property ? ` at ${property.name}` : ""}`}
+                        className="h-40 w-full border-b border-slate-200 sm:h-44"
+                        imageClassName="group-hover:scale-100"
+                      />
                       <div className="p-5">
                         <div className="flex items-start justify-between gap-3 mb-5">
                           <div className="min-w-0">
@@ -250,7 +265,6 @@ export default function UnitsPage() {
                             <Button type="button" size="sm" variant="destructive" onClick={() => handleDelete(unit)} className="flex-1"><Trash2 className="mr-1.5 h-3.5 w-3.5" />Delete</Button>
                           </div>
                         )}
-                        {unit.imageUrls?.length || unit.imageUrl ? <UnitImageCarousel images={unit.imageUrls || (unit.imageUrl ? [unit.imageUrl] : [])} alt={`Unit ${unit.unitNumber}`} className="mb-4 h-40 w-full rounded-xl" /> : null}
                         <div className="space-y-2 text-sm">
                           <div className="flex items-center justify-between">
                             <span className="text-text-secondary">Rent Amount</span>
@@ -291,7 +305,7 @@ export default function UnitsPage() {
       <Modal isOpen={!!showImageModal} onClose={() => setShowImageModal(null)} title="Unit Photo" description="">
         {showImageModal && (
           <div className="flex justify-center">
-            <img src={showImageModal} alt="Unit" className="max-w-full max-h-[70vh] rounded-xl object-contain" />
+            <Image src={showImageModal} alt="Unit" width={1200} height={900} unoptimized className="max-w-full max-h-[70vh] rounded-xl object-contain" />
           </div>
         )}
       </Modal>
@@ -336,7 +350,7 @@ export default function UnitsPage() {
                 event.target.value = "";
               }
             }} />
-            {formData.imageUrls.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{formData.imageUrls.map((url, index) => <div key={`${url}-${index}`} className="relative"><img src={url} alt={`Unit preview ${index + 1}`} className="h-16 w-16 rounded-lg border object-cover" /><button type="button" onClick={() => void removeUnitImage(url, false)} className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white" aria-label={`Remove image ${index + 1}`}><X className="h-3 w-3" /></button></div>)}</div>}
+            {formData.imageUrls.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{formData.imageUrls.map((url, index) => <div key={`${url}-${index}`} className="relative"><Image src={url} alt={`Unit preview ${index + 1}`} width={64} height={64} unoptimized className="h-16 w-16 rounded-lg border object-cover" /><button type="button" onClick={() => void removeUnitImage(url, false)} className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white" aria-label={`Remove image ${index + 1}`}><X className="h-3 w-3" /></button></div>)}</div>}
           </div>
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="outline" onClick={() => setShowAddModal(false)} className="h-9">Cancel</Button>
@@ -376,7 +390,7 @@ export default function UnitsPage() {
                 event.target.value = "";
               }
             }} />
-            {editForm.imageUrls.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{editForm.imageUrls.map((url, index) => <div key={`${url}-${index}`} className="relative"><img src={url} alt={`Unit preview ${index + 1}`} className="h-16 w-16 rounded-lg border object-cover" /><button type="button" onClick={() => void removeUnitImage(url, true)} className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white" aria-label={`Remove image ${index + 1}`}><X className="h-3 w-3" /></button></div>)}</div>}
+            {editForm.imageUrls.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{editForm.imageUrls.map((url, index) => <div key={`${url}-${index}`} className="relative"><Image src={url} alt={`Unit preview ${index + 1}`} width={64} height={64} unoptimized className="h-16 w-16 rounded-lg border object-cover" /><button type="button" onClick={() => void removeUnitImage(url, true)} className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white" aria-label={`Remove image ${index + 1}`}><X className="h-3 w-3" /></button></div>)}</div>}
           </div>
           <div className="flex justify-end gap-2 pt-2"><Button type="button" variant="outline" onClick={() => setEditingUnit(null)}>Cancel</Button><Button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save Changes"}</Button></div>
         </form>
