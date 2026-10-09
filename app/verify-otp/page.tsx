@@ -84,7 +84,7 @@ function VerifyOtpContent() {
       const result = await safeParseJson(res);
 
       if (result.success) {
-        toast.success("Verification code sent! Please check your email.");
+        toast.success(result.devOtp ? `Verification code: ${result.devOtp}` : "Verification code sent! Please check your email.");
         setResendCooldown(60);
         setHasRequestedCode(true);
       } else {
@@ -324,9 +324,9 @@ function VerifyOtpContent() {
                 >
                   <CheckCircle2 className="h-16 w-16 text-green-600 mx-auto mb-4" />
                 </motion.div>
-                <h2 className="text-2xl font-bold text-text-primary mb-2 text-center">Email Verified!</h2>
+                <h2 className="text-2xl font-bold text-text-primary mb-2 text-center">Account Verified!</h2>
                 <p className="text-sm text-text-secondary mb-6 text-center">{message}</p>
-                <Link href="/login?mode=signin">
+                <Link href={`/login?email=${encodeURIComponent(email)}&verified=true`}>
                   <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">
                     Continue to Login
                   </Button>

@@ -130,7 +130,7 @@ export default function TenantsPage() {
       const result = await safeParseJson(res);
       if (result.success) {
         if (result.emailSent) {
-          toast.success(`Account created. Login details were emailed to ${createForm.email}.`);
+          toast.success(`Account created. Login details and verification code were emailed to ${createForm.email}.`);
         } else {
           toast.error(result.emailStatus === "not_configured"
             ? "Account created, but no login email was sent because SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS."

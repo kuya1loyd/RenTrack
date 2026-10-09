@@ -90,7 +90,7 @@ export default function AccountRequestReviewModal({ request, onClose, onCreated 
         }),
       ]);
       toast.success(result.emailSent
-        ? `Tenant account created and credentials emailed to ${details.email}`
+        ? `Tenant account created. Login details and verification code were emailed to ${details.email}`
         : `Tenant account created, but the credentials email could not be sent`);
       setPassword("");
       onCreated();

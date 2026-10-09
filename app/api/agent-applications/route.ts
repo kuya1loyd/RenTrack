@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAgentApplication, getAgentApplications, initDatabase, getAdminSupabase, createNotification, reviewAgentApplication, reopenAgentApplication, removeRejectedAgentApplication, createUser, deleteUser, findUserByEmail } from "@/lib/db";
+import { createAgentApplication, getAgentApplications, initDatabase, getAdminSupabase, createNotification, reviewAgentApplication, reopenAgentApplication, removeRejectedAgentApplication, createUser, createLoginOtp, deleteUser, findUserByEmail } from "@/lib/db";
 import { requireRole } from "@/lib/api-security";
-import { createRentTrackEmailTemplate, getSiteUrl, sendEmail } from "@/lib/mail";
+import { createRentTrackEmailTemplate, createVerificationOtpEmailHtml, getSiteUrl, sendEmail } from "@/lib/mail";
 import { randomBytes } from "crypto";
 
 const LOCATIONS = ["Cebu", "Manila", "Davao", "Butuan"];
@@ -124,6 +124,7 @@ export async function PATCH(request: NextRequest) {
       }
 
       const temporaryPassword = "NewPassword123";
+      // Approved agent account requires verification code to log in
       const agent = await createUser(
         application.name,
         application.email,
@@ -132,9 +133,10 @@ export async function PATCH(request: NextRequest) {
         application.phone || undefined,
         undefined,
         application.address,
-        true,
+        false,
         auth.user?.role === "owner" ? auth.userId : undefined
       );
+      const otp = await createLoginOtp(agent.id, 15);
 
       let reviewedApplication;
       try {
@@ -145,19 +147,27 @@ export async function PATCH(request: NextRequest) {
       }
 
       let emailSent = false;
+      const origin = getSiteUrl(request.nextUrl.origin);
+      const verifyUrl = `${origin}/verify-otp?email=${encodeURIComponent(application.email)}`;
+      const loginUrl = `${origin}/login?email=${encodeURIComponent(application.email)}`;
+      const devShowOtp = process.env.DEV_SHOW_OTP === "true";
+
       try {
-        const loginUrl = `${getSiteUrl(request.nextUrl.origin)}/login`;
         await sendEmail({
           to: application.email,
-          subject: "Your RentTrack agent account is ready",
-          text: `Hello ${application.name},\n\nYour agent application has been approved.\n\nUsername: ${application.email}\nTemporary password: ${temporaryPassword}\n\nSign in at: ${loginUrl}\n\nBefore your first sign-in, request a verification code from the verification page. Please change your password after signing in.`,
-          html: createRentTrackEmailTemplate({
-            title: "Your agent account is ready",
-            body: `Hello ${application.name},\n\nYour agent application has been approved. Sign in using the temporary credentials below.`,
-            messageBlock: `Username: ${application.email}\nTemporary password: ${temporaryPassword}`,
-            ctaLabel: "Sign in to RentTrack",
-            ctaUrl: loginUrl,
-            footerNote: "Request a verification code before your first sign-in, then change your password. Keep this email private.",
+          subject: "Your RentTrack agent account is ready - Verify Your Account",
+          text: `Hello ${application.name},\n\nYour agent application has been approved.\n\nUsername: ${application.email}\nTemporary password: ${temporaryPassword}\n\nYour 6-Digit Verification Code: ${otp}\n\nPlease verify your account before logging in:\n${verifyUrl}\n\nOr sign in at: ${loginUrl}\n(You will be prompted to enter your verification code.)\n\nPlease change your password after signing in.`,
+          html: createVerificationOtpEmailHtml({
+            title: "Your Agent Account is Ready",
+            name: application.name,
+            code: otp,
+            verifyUrl,
+            loginUrl,
+            credentials: {
+              email: application.email,
+              password: temporaryPassword,
+              role: "agent",
+            },
           }),
         });
         emailSent = true;
@@ -170,7 +180,15 @@ export async function PATCH(request: NextRequest) {
       } catch (notificationError) {
         console.warn("Agent review notification failed:", notificationError);
       }
-      return NextResponse.json({ success: true, application: reviewedApplication, agent, emailSent, ...(!emailSent ? { temporaryPassword } : {}) });
+      return NextResponse.json({
+        success: true,
+        application: reviewedApplication,
+        agent,
+        emailSent,
+        ...(!emailSent ? { temporaryPassword } : {}),
+        needsOtp: true,
+        ...(devShowOtp ? { devOtp: otp } : {}),
+      });
     }
 
     const application = await reviewAgentApplication(id, status, auth.userId, rejectionReason);

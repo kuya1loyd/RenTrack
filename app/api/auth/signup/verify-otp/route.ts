@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     clearVerifyRateLimit(rateLimitKey);
 
     try {
-      await logAudit(resolvedUserId, "email_verified", { email: user.email }, ip, request.headers.get("user-agent") || "unknown");
+      await logAudit(resolvedUserId, "email_verified", { email: user.email, role: user.role }, ip, request.headers.get("user-agent") || "unknown");
     } catch {}
 
     if (user.role === "agent") {
@@ -79,11 +79,29 @@ export async function POST(request: NextRequest) {
       } catch (notificationError) {
         console.error("Verified agent notification failed:", notificationError);
       }
+    } else if (user.role === "tenant") {
+      try {
+        const recipients = (await getAllUsers()).filter((candidate: any) => ["owner", "admin"].includes(candidate.role));
+        await Promise.allSettled(recipients.map((recipient: any) => createNotification({
+          userId: recipient.id,
+          title: "Tenant account verified",
+          message: `Tenant ${user.name} has verified their account and can now log in.`,
+          type: "system",
+          read: false,
+        })));
+      } catch (notificationError) {
+        console.error("Verified tenant notification failed:", notificationError);
+      }
     }
 
     const safeUser = { ...updatedUser };
     delete safeUser.password;
-    const response = NextResponse.json({ success: true, verified: true, user: safeUser, message: "Email verified successfully! You can now log in." });
+    const response = NextResponse.json({
+      success: true,
+      verified: true,
+      user: safeUser,
+      message: "Account verified successfully! You can now log in.",
+    });
     return withSecurityHeaders(withCorsHeaders(request, response));
   } catch (error) {
     console.error("Verify signup OTP error:", error);

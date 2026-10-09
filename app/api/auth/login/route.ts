@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findUserByEmail, logAudit, updateUserPresence, initDatabase, ensureBuiltInAccount } from "@/lib/db";
+import { findUserByEmail, logAudit, updateUserPresence, initDatabase, ensureBuiltInAccount, createLoginOtp } from "@/lib/db";
 import { regenerateSession } from "@/lib/security";
 import { checkRateLimit, recordFailedAttempt, clearRateLimit } from "@/lib/auth-security";
 import { validateApiRequest, withRateLimit } from "@/lib/api-security";
 import bcrypt from "bcryptjs";
 import { withSecurityHeaders, withCorsHeaders, getClientIp, sanitizeString } from "@/lib/security-headers";
+import { createVerificationOtpEmailHtml, getSiteUrl, sendEmail } from "@/lib/mail";
 
 export async function POST(request: NextRequest) {
   try {
@@ -76,7 +77,37 @@ export async function POST(request: NextRequest) {
     }
 
     if (!user.emailVerified) {
-      const response = NextResponse.json({ success: false, error: "Please verify your email address before logging in. Check your inbox for the verification code.", needsVerification: true, email: user.email, userId: user.id }, { status: 403 });
+      let devOtp: string | undefined;
+      const devShowOtp = process.env.DEV_SHOW_OTP === "true";
+      try {
+        const otp = await createLoginOtp(user.id, 15);
+        if (devShowOtp) devOtp = otp;
+        const origin = getSiteUrl(request.nextUrl.origin);
+        const verifyUrl = `${origin}/verify-otp?email=${encodeURIComponent(user.email)}`;
+        await sendEmail({
+          to: user.email,
+          subject: "Your RentTrack Verification Code",
+          text: `Hello ${user.name},\n\nA sign-in attempt requires account verification.\n\nYour 6-Digit Verification Code: ${otp}\n\nPlease verify your account here:\n${verifyUrl}\n\nThis code will expire in 15 minutes.`,
+          html: createVerificationOtpEmailHtml({
+            title: "Verify Your Account",
+            name: user.name,
+            code: otp,
+            verifyUrl,
+            isReminder: true,
+          }),
+        });
+      } catch (otpErr) {
+        console.error("Failed to generate or send login OTP:", otpErr);
+      }
+
+      const response = NextResponse.json({
+        success: false,
+        error: "Please verify your account before logging in. A verification code has been sent to your email.",
+        needsVerification: true,
+        email: user.email,
+        userId: user.id,
+        ...(devOtp ? { devOtp } : {}),
+      }, { status: 403 });
       return withSecurityHeaders(withCorsHeaders(request, response));
     }
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createUser, findUserByEmail, initDatabase, findOrCreateAdmin, createLoginOtp, logAudit } from "@/lib/db";
-import { sendEmail, getSiteUrl } from "@/lib/mail";
+import { sendEmail, getSiteUrl, createVerificationOtpEmailHtml } from "@/lib/mail";
 import { validatePasswordStrength } from "@/lib/auth-security";
 import {
   validateApiRequest, withRateLimit, withSecurityHeaders, withCorsHeaders,
@@ -66,54 +66,17 @@ export async function POST(request: NextRequest) {
       await sendEmail({
         to: user.email,
         subject: "Verify your RentTrack account",
-        html: `
-          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 640px; margin: 0 auto; padding: 0; background: #f3f4f6; color: #1f2937;">
-            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #f3f4f6; padding: 40px 0;">
-              <tr>
-                <td align="center">
-                  <table width="100%" style="max-width: 560px; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
-                    <tr>
-                      <td style="background: linear-gradient(135deg, #2563eb, #1d4ed8); padding: 40px; text-align: center;">
-                        <img src="${origin}/images/landing/logo.png" alt="RentTrack" style="height: 56px; width: auto; margin-bottom: 16px;" />
-                        <h1 style="color: #ffffff; margin: 0; font-size: 26px; font-weight: 700;">RentTrack</h1>
-                        <p style="color: rgba(255,255,255,0.85); margin: 6px 0 0; font-size: 14px;">HedgeHomes Realty and Brokerage</p>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="padding: 40px 40px 30px;">
-                        <h2 style="color: #111827; margin: 0 0 16px; font-size: 22px; font-weight: 700;">Welcome to RentTrack!</h2>
-                        <p style="color: #4b5563; line-height: 1.7; margin: 0 0 8px; font-size: 15px;">Hello <strong>${sanitizedData.name}</strong>,</p>
-                        <p style="color: #4b5563; line-height: 1.7; margin: 0 0 24px; font-size: 15px;">Thank you for creating an account. Please use the verification code below to complete your registration:</p>
-                        <table cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 28px; width: 100%;">
-                          <tr>
-                            <td align="center">
-                              <div style="display: inline-block; padding: 18px 48px; background: #eff6ff; border: 2px dashed #2563eb; border-radius: 12px; font-weight: 800; font-size: 32px; letter-spacing: 12px; color: #1d4ed8;">${otp}</div>
-                            </td>
-                          </tr>
-                        </table>
-                        <p style="color: #4b5563; line-height: 1.7; margin: 0 0 24px; font-size: 14px;">This code will expire in 15 minutes. If you did not create an account, please ignore this email.</p>
-                        <table cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 28px; width: 100%;">
-                          <tr>
-                            <td align="center">
-                              <a href="${origin}/verify-otp?email=${encodeURIComponent(user.email)}" style="display: inline-block; padding: 12px 32px; background: #2563eb; color: #ffffff; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 14px;">Verify Email</a>
-                            </td>
-                          </tr>
-                        </table>
-                        <p style="color: #6b7280; line-height: 1.7; margin: 0; font-size: 13px;">Or copy this link into your browser:<br/>${origin}/verify-otp?email=${encodeURIComponent(user.email)}</p>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="background: #f9fafb; padding: 24px 40px; text-align: center; border-top: 1px solid #e5e7eb;">
-                        <p style="color: #9ca3af; margin: 0; font-size: 12px;">© ${new Date().getFullYear()} RentTrack. All rights reserved.</p>
-                        <p style="color: #9ca3af; margin: 6px 0 0; font-size: 12px;">HedgeHomes Realty and Brokerage</p>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </div>
-        `,
+        text: `Hello ${sanitizedData.name},\n\nThank you for creating an account on RentTrack.\n\nYour 6-Digit Verification Code: ${otp}\n\nPlease verify your account here:\n${origin}/verify-otp?email=${encodeURIComponent(user.email)}\n\nThis code will expire in 15 minutes.`,
+        html: createVerificationOtpEmailHtml({
+          title: "Welcome to RentTrack",
+          name: sanitizedData.name,
+          code: otp,
+          verifyUrl: `${origin}/verify-otp?email=${encodeURIComponent(user.email)}`,
+          credentials: {
+            email: user.email,
+            role: sanitizedData.role,
+          },
+        }),
       });
     } catch (err) {
       console.error("Failed to send verification email:", err);

@@ -282,7 +282,7 @@ export default function OwnerDashboard() {
         const tenantResult = await safeParseJson(tenantResponse);
         if (!tenantResult.success) throw new Error(tenantResult.error || "Unable to create tenant record");
         if (data.emailSent) {
-          toast.success(`Tenant account created. Login details were emailed to ${formData.email}.`);
+          toast.success(`Tenant account created. Login details and verification code were emailed to ${formData.email}.`);
         } else {
           toast.error(data.emailStatus === "not_configured"
             ? "Tenant account created, but no login email was sent because SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS."

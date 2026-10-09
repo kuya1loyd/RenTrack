@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllUsers, findUserById, findUserByEmail, deleteUser, createUser, initDatabase } from "@/lib/db";
+import { getAllUsers, findUserById, findUserByEmail, deleteUser, createUser, createLoginOtp, initDatabase } from "@/lib/db";
 import {
   requireRole, sanitizeResponse,
 } from "@/lib/api-security";
 import { logAudit } from "@/lib/db";
-import { createRentTrackEmailTemplate, getSiteUrl, isSmtpConfigured, sendEmail } from "@/lib/mail";
+import { createRentTrackEmailTemplate, createVerificationOtpEmailHtml, getSiteUrl, isSmtpConfigured, sendEmail } from "@/lib/mail";
 
 export async function GET(request: NextRequest) {
   try {
@@ -57,7 +57,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Name, email, and password are required" }, { status: 400 });
     }
 
-    if (!["tenant", "agent", "owner"].includes(role)) {
+    const allowedRoles = auth.user?.role === "admin"
+      ? ["admin", "owner", "agent", "tenant"]
+      : ["agent", "tenant"];
+
+    if (!allowedRoles.includes(role)) {
       return NextResponse.json({ success: false, error: "Invalid role" }, { status: 400 });
     }
 
@@ -66,25 +70,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Email already exists" }, { status: 409 });
     }
 
-    const createdBy = role === "agent" && auth.user?.role === "owner" ? auth.userId : undefined;
-    const user = await createUser(name, email, password, role, phone || undefined, undefined, address || undefined, true, createdBy);
-    await logAudit(auth.userId, "user_created", { createdUserId: user.id, name: user.name, role: user.role }, (request as any).ip, (request as any).headers?.get("user-agent"));
+    const createdBy = (role === "agent" && auth.user?.role === "owner") ? auth.userId : (auth.userId || undefined);
+    // Newly created accounts require email/OTP verification to log in
+    const user = await createUser(name, email, password, role, phone || undefined, undefined, address || undefined, false, createdBy);
+    const otp = await createLoginOtp(user.id, 15);
+    await logAudit(auth.userId, "user_created", { createdUserId: user.id, name: user.name, role: user.role, emailVerified: false }, (request as any).ip, (request as any).headers?.get("user-agent"));
 
     let emailSent = false;
     let emailStatus: "sent" | "not_configured" | "failed" = "not_configured";
+    const origin = getSiteUrl(request.nextUrl.origin);
+    const verifyUrl = `${origin}/verify-otp?email=${encodeURIComponent(user.email)}`;
+    const loginUrl = `${origin}/login?email=${encodeURIComponent(user.email)}`;
+    const devShowOtp = process.env.DEV_SHOW_OTP === "true";
+
     try {
-      const loginUrl = `${getSiteUrl(request.nextUrl.origin)}/login`;
       await sendEmail({
         to: user.email,
-        subject: role === "agent" ? "Your RentTrack agent account is ready" : "Your RentTrack account has been created",
-        text: `Hello ${user.name},\n\nYour RentTrack account has been created.\n\nUsername: ${user.email}\nPassword: ${password}\nRole: ${user.role}\n\nSign in at: ${loginUrl}\n\nPlease change your password after signing in.`,
-        html: createRentTrackEmailTemplate({
-          title: role === "agent" ? "Your agent account is ready" : "Your account is ready",
-          body: `Hello ${user.name},\n\nYour RentTrack account has been created by an owner or administrator.`,
-          messageBlock: `Username: ${user.email}\nPassword: ${password}\nRole: ${user.role}`,
-          ctaLabel: "Sign in to RentTrack",
-          ctaUrl: loginUrl,
-          footerNote: "Please change your password after signing in. Keep this email private.",
+        subject: role === "agent"
+          ? "Your RentTrack agent account is ready - Verify Your Account"
+          : `Your RentTrack ${role} account has been created - Verify Your Account`,
+        text: `Hello ${user.name},\n\nYour RentTrack account has been created.\n\nUsername: ${user.email}\nPassword: ${password}\nRole: ${user.role}\n\nYour 6-Digit Verification Code: ${otp}\n\nPlease verify your account before logging in:\n${verifyUrl}\n\nOr sign in at: ${loginUrl}\n(You will be prompted to enter your verification code.)\n\nPlease change your password after signing in.`,
+        html: createVerificationOtpEmailHtml({
+          title: role === "agent" ? "Your Agent Account is Ready" : `Your ${role.charAt(0).toUpperCase() + role.slice(1)} Account is Ready`,
+          name: user.name,
+          code: otp,
+          verifyUrl,
+          loginUrl,
+          credentials: {
+            email: user.email,
+            password,
+            role: user.role,
+          },
         }),
       });
       emailSent = true;
@@ -94,7 +110,14 @@ export async function POST(request: NextRequest) {
       emailStatus = isSmtpConfigured() ? "failed" : "not_configured";
     }
 
-    return NextResponse.json({ success: true, user: sanitizeResponse(user), emailSent, emailStatus });
+    return NextResponse.json({
+      success: true,
+      user: sanitizeResponse(user),
+      emailSent,
+      emailStatus,
+      needsOtp: true,
+      ...(devShowOtp ? { devOtp: otp } : {}),
+    });
   } catch (error) {
     console.error("Create user error:", error);
     return NextResponse.json({ success: false, error: "Failed to create user" }, { status: 500 });

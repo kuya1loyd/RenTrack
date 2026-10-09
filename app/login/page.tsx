@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, FormEvent, Suspense } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import {
@@ -13,14 +13,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
 import { safeParseJson } from "@/lib/data";
 
 const FormCard = ({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) => (
   <div className="w-full max-w-md px-2">
-      <div className="mb-6 text-center">
+    <div className="mb-6 text-center">
       <Link href="/" className="inline-block hover:scale-105 transition-transform">
         <Image src="/images/landing/logo.png" alt="RentTrack" width={64} height={64} className="h-16 w-16 rounded-full object-contain" />
       </Link>
@@ -35,7 +35,7 @@ const FormCard = ({ title, subtitle, children }: { title: string; subtitle?: str
       <h2 className="text-2xl font-bold text-text-primary tracking-tight text-center">{title}</h2>
       {subtitle && <p className="mt-1.5 text-sm text-text-secondary leading-relaxed text-center">{subtitle}</p>}
 
-        <div className="mt-4">{children}</div>
+      <div className="mt-4">{children}</div>
     </motion.div>
 
     <p className="mt-5 text-center text-xs text-text-tertiary">
@@ -44,8 +44,11 @@ const FormCard = ({ title, subtitle, children }: { title: string; subtitle?: str
   </div>
 );
 
-export default function LoginPage() {
-  const [email, setEmail] = useState("");
+function LoginContent() {
+  const searchParams = useSearchParams();
+  const prefilledEmail = searchParams.get("email") || "";
+  const isVerified = searchParams.get("verified") === "true";
+  const [email, setEmail] = useState(prefilledEmail);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,7 +56,13 @@ export default function LoginPage() {
 
   useEffect(() => {
     setMounted(true);
-  }, []);
+    if (prefilledEmail) {
+      setEmail(prefilledEmail);
+    }
+    if (isVerified) {
+      toast.success("Account verified successfully! Please enter your password to sign in.");
+    }
+  }, [prefilledEmail, isVerified]);
 
   const { setUser } = useAuth();
   const router = useRouter();
@@ -84,6 +93,7 @@ export default function LoginPage() {
         }
       } else {
         if (data.needsVerification) {
+          toast.info(data.error || "Please verify your account before logging in. A verification code has been sent to your email.");
           router.push(`/verify-otp?email=${encodeURIComponent(data.email || email)}`);
           return;
         }
@@ -209,33 +219,42 @@ export default function LoginPage() {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-secondary transition-colors"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-secondary transition-colors cursor-pointer"
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
                 </div>
 
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-text-secondary">
-                      Forgot password?{" "}
-                      <motion.button
-                        type="button"
-                        onClick={() => router.push("/reset-password")}
-                        className="text-primary-600 font-semibold"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        Reset here
-                      </motion.button>
-                    </p>
-                  </div>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-text-secondary">
+                    Forgot password?{" "}
+                    <motion.button
+                      type="button"
+                      onClick={() => router.push("/reset-password")}
+                      className="text-primary-600 font-semibold cursor-pointer"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      Reset here
+                    </motion.button>
+                  </p>
+                  <p className="text-xs text-text-secondary">
+                    Need verification?{" "}
+                    <Link
+                      href={`/verify-otp${email ? `?email=${encodeURIComponent(email)}` : ""}`}
+                      className="text-primary-600 font-semibold hover:underline"
+                    >
+                      Verify here
+                    </Link>
+                  </p>
+                </div>
 
                 <Button
                   type="submit"
                   variant="gradient"
                   size="default"
-                  className="w-full h-10"
+                  className="w-full h-10 cursor-pointer"
                   disabled={isSubmitting}
                 >
                   {isSubmitting ? (
@@ -256,5 +275,19 @@ export default function LoginPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-surface">
+          <div className="h-6 w-6 border-2 border-text-tertiary border-t-primary-600 rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }
