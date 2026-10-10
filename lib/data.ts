@@ -58,6 +58,7 @@ export interface TenantRecord {
   status: "active" | "inactive";
   assignmentStatus?: "pending" | "confirmed" | "rejected";
   createdBy?: string;
+  assignedAgentId?: string;
   isAssisted?: boolean;
   assistReason?: string;
   createdAt: string;
@@ -308,7 +309,7 @@ export async function addTenant(data: Omit<TenantRecord, "id" | "createdAt" | "c
 export async function updateTenantAssignment(tenantId: string, data: {
   unitId?: string; propertyName?: string; unitNumber?: string;
   contractStart?: string; contractEnd?: string; rentAmount?: number;
-  assignmentStatus?: string;
+  assignmentStatus?: string; assignedAgentId?: string;
 }): Promise<TenantRecord | null> {
   const result = await apiPatch("/api/data/tenants", { tenantId, ...data });
   return result.tenant || null;
@@ -467,6 +468,7 @@ export async function markAllMessagesRead(otherUserId: string): Promise<void> {
   await apiPatch(`/api/messages/${encodeURIComponent(otherUserId)}`, { action: "markAllRead" });
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("renttrack-notifications-updated"));
+    window.dispatchEvent(new CustomEvent("renttrack-messages-read", { detail: { otherUserId } }));
   }
 }
 
@@ -493,11 +495,46 @@ export async function getAgents(): Promise<UserRecord[]> {
 }
 
 export async function getOwnerAgents(): Promise<UserRecord[]> {
-  const result = await apiGet("/api/auth/users?role=agent");
-  if (!result.success || !Array.isArray(result.users)) {
-    throw new Error(result.error || "Failed to load owner agents");
+  try {
+    const result = await apiGet("/api/auth/users?role=agent");
+    if (!result.success || !Array.isArray(result.users)) {
+      return [];
+    }
+    return result.users;
+  } catch {
+    return [];
   }
-  return result.users;
+}
+
+export interface AssistedTenantInfo {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  propertyName?: string;
+  unitNumber?: string;
+  status: string;
+  assignmentStatus?: string;
+  rentAmount?: number;
+  contractStart?: string;
+  contractEnd?: string;
+  assistReason: string;
+  createdAt?: string;
+  avatarUrl?: string | null;
+}
+
+export async function getAgentsAssistedTenants(
+  agentId?: string
+): Promise<Record<string, { totalAssisted: number; tenants: AssistedTenantInfo[] }>> {
+  try {
+    const url = agentId
+      ? `/api/data/agents/assisted-tenants?agentId=${encodeURIComponent(agentId)}`
+      : "/api/data/agents/assisted-tenants";
+    const result = await apiGet(url);
+    return result.success && result.data ? result.data : {};
+  } catch {
+    return {};
+  }
 }
 
 export async function registerAgent(data: {
@@ -867,7 +904,7 @@ export async function getAgentStats(userId: string): Promise<{ properties: numbe
 
   const tenantIdsForAgent = new Set(
     tenants
-      .filter((t) => propertyUnitIds.has(t.unitId || ""))
+      .filter((t) => t.assignedAgentId === userId || t.createdBy === userId || propertyUnitIds.has(t.unitId || ""))
       .map((t) => t.id)
   );
 

@@ -5,7 +5,7 @@ import {
   requireAuth, validateApiRequest,
 } from "@/lib/api-security";
 
-const ALLOWED_UPDATE_FIELDS = ["name", "email", "phone", "gender", "birthdate", "address", "avatarUrl", "avatar_url"];
+const ALLOWED_UPDATE_FIELDS = ["name", "email", "phone", "gender", "birthdate", "address", "avatarUrl", "avatar_url", "idVerificationUrl", "id_verification_url"];
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -62,6 +62,9 @@ export async function PATCH(request: NextRequest) {
 
       if (key === "avatarUrl" || key === "avatar_url") {
         updateData["avatar_url"] = String(val);
+      } else if (key === "idVerificationUrl" || key === "id_verification_url") {
+        updateData["id_verification_url"] = String(val);
+        updateData["id_verification_status"] = "pending";
       } else if (key === "email") {
         const sanitized = String(val).toLowerCase().trim().replace(/[^a-zA-Z0-9@._+-]/g, "");
         if (!sanitized.includes("@")) {

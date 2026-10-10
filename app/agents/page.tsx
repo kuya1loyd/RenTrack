@@ -261,13 +261,12 @@ export default function AgentsPage() {
             </div>
           ) : (
             <div className={agentCardStyles.directoryGrid}>
-              {filteredAgents.map((agent, index) => (
+              {filteredAgents.map((agent) => (
                 <PublicAgentCard
                   key={agent.id}
                   agent={agent}
                   headingLevel={2}
                   variant="compact"
-                  landscape={index > 0}
                 />
               ))}
             </div>

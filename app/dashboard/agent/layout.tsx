@@ -12,13 +12,15 @@ import Link from "next/link";
 import { Avatar } from "@/components/ui/avatar";
 import {
   LayoutDashboard, Home, MapPinned, CreditCard, Send, LogOut, ChevronRight, Menu, X, Award,
-  Loader2, ChevronDown, ChevronLeft, Bell, Mail, User, FileText,
+  Loader2, ChevronDown, ChevronLeft, Bell, Mail, User, FileText, ShieldAlert, Lock,
 } from "lucide-react";
-import { getNotifications, getUnreadMessageCount, getUnreadInquiryCount, markNotificationRead, markAllNotificationsRead, Notification } from "@/lib/data";
+import { getNotifications, getUnreadMessageCount, getUnreadInquiryCount, markNotificationRead, markAllNotificationsRead, markAllMessagesRead, Notification } from "@/lib/data";
 import { getProperties, Property } from "@/lib/data";
 import MessagingPanel from "@/components/messaging-panel";
 import MessagingModal from "@/components/messaging-modal";
 import { getNotificationDashboardHref } from "@/lib/notification-routing";
+import { AgentVerificationGate } from "@/components/agent-verification-gate";
+import { toast } from "sonner";
 
 const navItems = [
   { label: "Dashboard", tab: "overview", href: "/dashboard/agent#overview", icon: LayoutDashboard },
@@ -65,6 +67,8 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
   const [agentProperties, setAgentProperties] = useState<Property[]>([]);
   const reduceMotion = useReducedMotion();
 
+  const isAgentVerified = user?.role !== "agent" || user?.idVerificationStatus === "approved" || (user as any)?.idVerified === true;
+
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.push("/");
@@ -86,6 +90,8 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
     const handleOpen = (event: Event) => {
       const customEvent = event as CustomEvent<{ otherUser?: any }>;
       if (customEvent.detail?.otherUser) {
+        setUnreadMessageCount((prev) => Math.max(0, prev - 1));
+        void markAllMessagesRead(customEvent.detail.otherUser.id);
         setSelectedConversation({
           otherUser: customEvent.detail.otherUser,
           userId: customEvent.detail.otherUser.id,
@@ -182,13 +188,18 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") void refreshCounts();
     }, 30_000);
+    const handleMessagesRead = () => {
+      void refreshCounts();
+    };
     window.addEventListener("renttrack-notifications-updated", handleUpdated);
+    window.addEventListener("renttrack-messages-read", handleMessagesRead);
     window.addEventListener("renttrack-profile-updated", handleProfileUpdated);
     window.addEventListener("focus", refreshWhenVisible);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("renttrack-notifications-updated", handleUpdated);
+      window.removeEventListener("renttrack-messages-read", handleMessagesRead);
       window.removeEventListener("renttrack-profile-updated", handleProfileUpdated);
       window.removeEventListener("focus", refreshWhenVisible);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
@@ -314,10 +325,27 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                     <p className="text-xs text-text-secondary truncate">{user.email}</p>
                   </div>
                   <div className="p-1.5">
-                    <button onClick={() => { setShowUserMenu(false); setShowMessages(true); }} className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-text-secondary hover:bg-surface-secondary hover:text-foreground w-full transition-colors cursor-pointer">
+                    <button
+                      onClick={() => {
+                        if (!isAgentVerified) {
+                          toast.error("ID Verification Required: Direct messaging is locked until your ID is approved by the owner.");
+                          return;
+                        }
+                        setShowUserMenu(false);
+                        setShowMessages(true);
+                      }}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer w-full",
+                        !isAgentVerified ? "text-text-secondary/60 opacity-60" : "text-text-secondary hover:bg-surface-secondary hover:text-foreground"
+                      )}
+                    >
                       <Send className="h-4 w-4" />
                       <span className="flex-1 text-left">Messages</span>
-                      {unreadMessageCount > 0 && <span className="min-w-5 h-5 px-1 flex items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white shadow-xs">{unreadMessageCount}</span>}
+                      {!isAgentVerified ? (
+                        <Lock className="h-3.5 w-3.5 text-text-secondary/60" />
+                      ) : unreadMessageCount > 0 ? (
+                        <span className="min-w-5 h-5 px-1 flex items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white shadow-xs">{unreadMessageCount}</span>
+                      ) : null}
                     </button>
                     <button onClick={() => { setShowUserMenu(false); openAgentTab("profile"); }} className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-text-secondary hover:bg-surface-secondary hover:text-foreground w-full transition-colors">
                       <User className="h-4 w-4" /> My Profile
@@ -399,32 +427,61 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
             </Link>
           </div>
           <nav aria-label="Agent navigation" className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
+            {!isAgentVerified && (
+              <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-200">
+                <div className="flex items-center gap-2 font-semibold">
+                  <ShieldAlert className="h-4 w-4 text-amber-400 shrink-0" />
+                  {sidebarOpen && <span>ID Verification Required</span>}
+                </div>
+                {sidebarOpen && (
+                  <p className="mt-1 text-[11px] text-amber-300/80 leading-snug">
+                    {user?.idVerificationStatus === "pending"
+                      ? "Awaiting owner approval"
+                      : user?.idVerificationStatus === "rejected"
+                      ? "Verification rejected by owner"
+                      : "Upload your ID to activate"}
+                  </p>
+                )}
+              </div>
+            )}
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isActive = activeTab === item.tab;
+              const isActive = activeTab === item.tab && isAgentVerified;
               return (
                 <button
                   key={item.tab}
                   id={`sidebar-${item.tab}`}
+                  disabled={!isAgentVerified}
                   onClick={() => {
+                    if (!isAgentVerified) {
+                      toast.error(`Access locked: You must be verified by the owner to access ${item.label}.`);
+                      return;
+                    }
                     setActiveTab(item.tab);
                     window.location.hash = item.tab;
                   }}
                   className={cn(
                     "w-full flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 motion-reduce:transition-none motion-reduce:hover:translate-x-0",
-                    isActive
+                    !isAgentVerified
+                      ? "opacity-45 cursor-not-allowed text-slate-500 hover:bg-transparent"
+                      : isActive
                       ? "bg-blue-600 text-white shadow-[0_4px_12px_rgba(37,99,235,0.22)]"
                       : "text-slate-400 hover:translate-x-0.5 hover:bg-white/[0.06] hover:text-white"
                   )}
+                  title={!isAgentVerified ? `Locked: Owner ID verification required to access ${item.label}` : undefined}
                 >
-                  <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-white" : "text-slate-500")} />
+                  <Icon className={cn("h-4 w-4 shrink-0", !isAgentVerified ? "text-slate-600" : isActive ? "text-white" : "text-slate-500")} />
                   {sidebarOpen && <span className="truncate">{item.label}</span>}
-                  {item.tab === "inquiries" && unreadInquiryCount > 0 && (
+                  {!isAgentVerified ? (
+                    sidebarOpen && <Lock className="ml-auto h-3.5 w-3.5 text-slate-500 shrink-0" />
+                  ) : item.tab === "inquiries" && unreadInquiryCount > 0 ? (
                     <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
                       {unreadInquiryCount}
                     </span>
+                  ) : null}
+                  {isActive && sidebarOpen && isAgentVerified && (
+                    <span aria-hidden="true" className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.4)]" />
                   )}
-                  {isActive && sidebarOpen && <span aria-hidden="true" className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.4)]" />}
                 </button>
               );
             })}
@@ -471,32 +528,56 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                   </button>
                 </div>
                 <nav aria-label="Agent navigation" className="flex-1 space-y-1 overflow-y-auto p-3">
+                  {!isAgentVerified && (
+                    <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <ShieldAlert className="h-4 w-4 text-amber-400 shrink-0" />
+                        <span>ID Verification Required</span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-amber-300/80 leading-snug">
+                        {user?.idVerificationStatus === "pending"
+                          ? "Awaiting owner approval"
+                          : user?.idVerificationStatus === "rejected"
+                          ? "Verification rejected by owner"
+                          : "Upload your ID to activate"}
+                      </p>
+                    </div>
+                  )}
                   {navItems.map((item) => {
                     const Icon = item.icon;
-                    const isActive = activeTab === item.tab;
+                    const isActive = activeTab === item.tab && isAgentVerified;
                     return (
                       <button
                         key={item.tab}
                         id={`sidebar-${item.tab}`}
+                        disabled={!isAgentVerified}
                         onClick={() => {
+                          if (!isAgentVerified) {
+                            toast.error(`Access locked: You must be verified by the owner to access ${item.label}.`);
+                            return;
+                          }
                           setActiveTab(item.tab);
                           window.location.hash = item.tab;
                           setMobileSidebarOpen(false);
                         }}
                         className={cn(
                           "w-full flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 motion-reduce:transition-none motion-reduce:hover:translate-x-0",
-                          isActive
+                          !isAgentVerified
+                            ? "opacity-45 cursor-not-allowed text-slate-500 hover:bg-transparent"
+                            : isActive
                             ? "bg-blue-600 text-white shadow-[0_4px_12px_rgba(37,99,235,0.22)]"
                             : "text-slate-400 hover:translate-x-0.5 hover:bg-white/[0.06] hover:text-white"
                         )}
                       >
-                        <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-white" : "text-slate-500")} />
+                        <Icon className={cn("h-4 w-4 shrink-0", !isAgentVerified ? "text-slate-600" : isActive ? "text-white" : "text-slate-500")} />
                         <span className="truncate">{item.label}</span>
-                        {item.tab === "inquiries" && unreadInquiryCount > 0 && (
+                        {!isAgentVerified ? (
+                          <Lock className="ml-auto h-3.5 w-3.5 text-slate-500 shrink-0" />
+                        ) : item.tab === "inquiries" && unreadInquiryCount > 0 ? (
                           <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
                             {unreadInquiryCount}
                           </span>
-                        )}
+                        ) : null}
                       </button>
                     );
                   })}
@@ -618,12 +699,26 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                       </div>
                       <div className="p-1.5">
                         <button
-                          onClick={() => { setShowUserMenu(false); setShowMessages(true); }}
-                          className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-text-secondary hover:bg-surface-secondary hover:text-foreground w-full transition-colors cursor-pointer"
+                          onClick={() => {
+                            if (!isAgentVerified) {
+                              toast.error("ID Verification Required: Direct messaging is locked until your ID is approved by the owner.");
+                              return;
+                            }
+                            setShowUserMenu(false);
+                            setShowMessages(true);
+                          }}
+                          className={cn(
+                            "flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer w-full",
+                            !isAgentVerified ? "text-text-secondary/60 opacity-60" : "text-text-secondary hover:bg-surface-secondary hover:text-foreground"
+                          )}
                         >
                           <Send className="h-4 w-4" />
                           <span className="flex-1 text-left">Messages</span>
-                          {unreadMessageCount > 0 && <span className="min-w-5 h-5 px-1 flex items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">{unreadMessageCount}</span>}
+                          {!isAgentVerified ? (
+                            <Lock className="h-3.5 w-3.5 text-text-secondary/60" />
+                          ) : unreadMessageCount > 0 ? (
+                            <span className="min-w-5 h-5 px-1 flex items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">{unreadMessageCount}</span>
+                          ) : null}
                         </button>
                         <button
                           onClick={() => { setShowUserMenu(false); openAgentTab("profile"); }}
@@ -643,8 +738,14 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
           {/* Main Content */}
           <main className="flex-1 overflow-y-auto bg-[#f3f7fc]">
             <div className="w-full p-4 sm:p-6">
-              {globalSearchNoResults && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">No results found for “{globalSearchNoResults}” in transactions, contracts, inquiries, or units.</p>}
-              {children}
+              {!isAgentVerified ? (
+                <AgentVerificationGate user={user} refreshUser={refreshUser} />
+              ) : (
+                <>
+                  {globalSearchNoResults && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">No results found for “{globalSearchNoResults}” in transactions, contracts, inquiries, or units.</p>}
+                  {children}
+                </>
+              )}
             </div>
           </main>
         </div>
@@ -652,8 +753,14 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
         {/* Mobile main content */}
         <main className="lg:hidden flex-1 overflow-y-auto bg-[#f3f7fc]">
           <div className="w-full p-4">
-            {globalSearchNoResults && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">No results found for “{globalSearchNoResults}” in transactions, contracts, inquiries, or units.</p>}
-            {children}
+            {!isAgentVerified ? (
+              <AgentVerificationGate user={user} refreshUser={refreshUser} />
+            ) : (
+              <>
+                {globalSearchNoResults && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">No results found for “{globalSearchNoResults}” in transactions, contracts, inquiries, or units.</p>}
+                {children}
+              </>
+            )}
           </div>
         </main>
 
@@ -687,6 +794,8 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
               isOpen={showMessages}
               onClose={() => setShowMessages(false)}
               onSelectConversation={(conv) => {
+                setUnreadMessageCount((prev) => Math.max(0, prev - (conv.unreadCount || 1)));
+                void markAllMessagesRead(conv.userId);
                 setSelectedConversation(conv);
                 setIsMessagingOpen(true);
                 setShowMessages(false);

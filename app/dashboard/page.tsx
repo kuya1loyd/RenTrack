@@ -150,7 +150,7 @@ export default function DashboardOverview() {
               { label: "Add Property", icon: Building2, href: "/dashboard/properties", color: "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400" },
               { label: "Register Tenant", icon: UserPlus, href: "/dashboard/tenants", color: "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400" },
               { label: "Record Payment", icon: CreditCard, href: "/dashboard/payments", color: "bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400" },
-              { label: "View Reports", icon: TrendingUp, href: "/dashboard/reports", color: "bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400" },
+              { label: "Manage Units", icon: Home, href: "/dashboard/units", color: "bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400" },
             ].map((action, i) => (
               <motion.div key={i}>
                 <Link href={action.href} className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 hover:border-slate-400 dark:hover:border-slate-500 transition-all group">

@@ -110,47 +110,61 @@ export default function AccountRequestReviewModal({ request, onClose, onCreated 
         dragListener={false}
         dragMomentum={false}
         dragElastic={0.05}
-        className="pointer-events-auto w-full max-w-lg overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+        className="pointer-events-auto flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
       >
         <div
-          className="flex cursor-move select-none touch-none items-center justify-between border-b border-gray-200 px-5 py-4"
+          className="flex cursor-move select-none touch-none items-center justify-between border-b border-gray-200 px-4 py-3"
           onPointerDown={(event) => {
             if (!(event.target as HTMLElement).closest("button")) dragControls.start(event);
           }}
         >
           <div>
-            <h2 className="text-base font-semibold text-gray-900">Account Creation Request</h2>
-            <p className="mt-1 text-xs text-gray-500">Review the agent&apos;s tenant details before creating access.</p>
+            <h2 className="text-sm font-semibold text-gray-900">Account Creation Request</h2>
+            <p className="mt-0.5 text-[11px] text-gray-500">Review the agent&apos;s tenant details before creating access.</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700" aria-label="Close request">
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700" aria-label="Close request">
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
-          <Detail icon={<UserPlus className="h-4 w-4" />} label="Full name" value={details.name} />
-          <Detail icon={<Mail className="h-4 w-4" />} label="Email" value={details.email} />
-          <Detail icon={<Phone className="h-4 w-4" />} label="Phone" value={details.phone} />
-          <Detail icon={<MapPin className="h-4 w-4" />} label="Address" value={details.address} />
-          <Detail icon={<Home className="h-4 w-4" />} label="Property name" value={details.propertyName} />
-          <Detail icon={<Home className="h-4 w-4" />} label="Unit number" value={details.unitNumber} />
-          <Detail icon={<PhilippinePeso className="h-4 w-4" />} label="Monthly rent" value={details.monthlyRent} />
-          <Detail icon={<CalendarDays className="h-4 w-4" />} label="Contract start" value={details.contractStart} />
-          <Detail icon={<CalendarDays className="h-4 w-4" />} label="Contract end" value={details.contractEnd} />
+        <div className="grid grid-cols-1 gap-2.5 overflow-y-auto p-4 sm:grid-cols-2 max-h-[calc(85vh-120px)]">
+          <Detail icon={<UserPlus className="h-3.5 w-3.5" />} label="Full name" value={details.name} />
+          <Detail icon={<Mail className="h-3.5 w-3.5" />} label="Email" value={details.email} />
+          {details.phone && details.phone !== "N/A" && (
+            <Detail icon={<Phone className="h-3.5 w-3.5" />} label="Phone" value={details.phone} />
+          )}
+          {details.address && details.address !== "N/A" && (
+            <Detail icon={<MapPin className="h-3.5 w-3.5" />} label="Address" value={details.address} />
+          )}
+          {details.propertyName && details.propertyName !== "N/A" && (
+            <Detail icon={<Home className="h-3.5 w-3.5" />} label="Property name" value={details.propertyName} />
+          )}
+          {details.unitNumber && details.unitNumber !== "N/A" && (
+            <Detail icon={<Home className="h-3.5 w-3.5" />} label="Unit number" value={details.unitNumber} />
+          )}
+          {details.monthlyRent && details.monthlyRent !== "N/A" && (
+            <Detail icon={<PhilippinePeso className="h-3.5 w-3.5" />} label="Monthly rent" value={details.monthlyRent} />
+          )}
+          {details.contractStart && details.contractStart !== "N/A" && (
+            <Detail icon={<CalendarDays className="h-3.5 w-3.5" />} label="Contract start" value={details.contractStart} />
+          )}
+          {details.contractEnd && details.contractEnd !== "N/A" && (
+            <Detail icon={<CalendarDays className="h-3.5 w-3.5" />} label="Contract end" value={details.contractEnd} />
+          )}
           <div className="sm:col-span-2">
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Reason / notes</p>
-            <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700">{details.reason}</p>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">Reason / notes</p>
+            <p className="rounded-lg bg-gray-50 p-2.5 text-xs text-gray-700">{details.reason}</p>
           </div>
           <div className="sm:col-span-2">
-            <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-700" htmlFor="request-password">
+            <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-gray-700" htmlFor="request-password">
               <KeyRound className="h-3.5 w-3.5" /> Temporary password
             </label>
-            <input id="request-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Set a password for the tenant" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" autoComplete="new-password" />
-            <p className="mt-1 text-[11px] text-gray-500">Give this password to the tenant securely. They can change it after signing in.</p>
+            <input id="request-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Set a password for the tenant" className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" autoComplete="new-password" />
+            <p className="mt-1 text-[10px] text-gray-500">Give this password to the tenant securely. They can change it after signing in.</p>
           </div>
         </div>
-        <div className="flex gap-2 border-t border-gray-200 px-5 py-4">
-          <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
-          <Button type="button" onClick={handleCreate} disabled={creating} className="flex-1 bg-blue-600 text-white hover:bg-blue-700">{creating ? "Creating..." : "Approve & Create Account"}</Button>
+        <div className="flex gap-2 border-t border-gray-200 px-4 py-3">
+          <Button type="button" variant="outline" onClick={onClose} className="flex-1 h-9 text-xs">Cancel</Button>
+          <Button type="button" onClick={handleCreate} disabled={creating} className="flex-1 h-9 text-xs bg-blue-600 text-white hover:bg-blue-700">{creating ? "Creating..." : "Approve & Create Account"}</Button>
         </div>
       </motion.div>
     </div>

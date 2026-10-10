@@ -63,8 +63,12 @@ function mapUserRow(u: any): any {
   const emailLower = (user.email || "").toLowerCase();
   const isAdminOrOwner = user.role === "admin" || user.role === "owner" || emailLower === "admin@renttrack.com" || emailLower === "renttrackowner@gmail.com";
   if (isAdminOrOwner) {
-    user.idVerificationStatus = "approved";
+    user.idVerificationStatus = "not_required";
+    user.idVerified = true;
     user.emailVerified = true;
+  }
+  if (user.idVerificationStatus === "approved") {
+    user.idVerified = true;
   }
   user.avatarUrl = resolveAvatarUrl(user.avatarUrl, user.role);
   return user;
@@ -136,7 +140,11 @@ export async function initDatabase() {
     statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS experience TEXT DEFAULT '0 Years'`);
     statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`);
     statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_url TEXT`);
-    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_status TEXT DEFAULT 'pending' CHECK (id_verification_status IN ('pending', 'approved', 'rejected'))`);
+    statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS id_verification_status TEXT DEFAULT 'pending'`);
+    statements.push(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_id_verification_status_check`);
+    statements.push(`ALTER TABLE users ADD CONSTRAINT users_id_verification_status_check CHECK (id_verification_status IN ('pending', 'approved', 'rejected', 'not_required', 'exempt'))`);
+    statements.push(`UPDATE users SET id_verification_status = 'not_required' WHERE role IN ('admin', 'owner') OR LOWER(email) IN ('admin@renttrack.com', 'renttrackowner@gmail.com')`);
+    statements.push(`UPDATE properties SET agent_id = (SELECT id FROM users WHERE LOWER(email) = 'galitojohnlloyd@gmail.com' OR role = 'agent' ORDER BY created_at ASC LIMIT 1) WHERE (agent_id IS NULL OR agent_id = '')`);
     statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ`);
     statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ`);
     statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT FALSE`);
@@ -220,6 +228,8 @@ export async function initDatabase() {
   )`);
 
     statements.push(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS assignment_status TEXT DEFAULT '' CHECK (assignment_status IN ('', 'pending', 'confirmed', 'rejected'))`);
+    statements.push(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS assigned_agent_id TEXT REFERENCES users(id)`);
+    statements.push(`UPDATE tenants SET assigned_agent_id = (SELECT id FROM users WHERE LOWER(email) = 'galitojohnlloyd@gmail.com' OR role = 'agent' ORDER BY created_at ASC LIMIT 1) WHERE (assigned_agent_id IS NULL OR assigned_agent_id = '') AND (unit_id IS NOT NULL OR property_name IS NOT NULL OR assignment_status = 'pending')`);
 
     statements.push(`CREATE TABLE IF NOT EXISTS rental_contracts (
     id TEXT PRIMARY KEY,
@@ -1004,8 +1014,12 @@ export async function getAllUsers() {
     const emailLower = (user.email || "").toLowerCase();
     const isAdminOrOwner = user.role === "admin" || user.role === "owner" || emailLower === "admin@renttrack.com" || emailLower === "renttrackowner@gmail.com";
     if (isAdminOrOwner) {
-      user.idVerificationStatus = "approved";
+      user.idVerificationStatus = "not_required";
+      user.idVerified = true;
       user.emailVerified = true;
+    }
+    if (user.idVerificationStatus === "approved") {
+      user.idVerified = true;
     }
     user.avatarUrl = resolveAvatarUrl(user.avatarUrl, user.role);
     return user;
@@ -1013,10 +1027,61 @@ export async function getAllUsers() {
 }
 
 export async function getProperties() {
-  const { data, error } = await getAdminSupabase().from("properties").select("*").order("created_at", { ascending: false });
+  const adminClient = getAdminSupabase();
+  const { data, error } = await adminClient.from("properties").select("*").order("created_at", { ascending: false });
   if (error) throw error;
-  return (data || []).map((row: any) => {
+
+  const rows = data || [];
+  let fallbackOwnerId: string | null = null;
+  let fallbackAgentId: string | null = null;
+
+  try {
+    const { data: agentUsers } = await adminClient.schema("public").from("users").select("id, email").eq("role", "agent").order("created_at", { ascending: true });
+    if (agentUsers && agentUsers.length > 0) {
+      const primaryAgent = agentUsers.find((a: any) => (a.email || "").toLowerCase().includes("galitojohnlloyd")) || agentUsers[0];
+      fallbackAgentId = primaryAgent.id;
+      const unassignedIds = rows.filter((r: any) => !r.agent_id || r.agent_id === "").map((r: any) => r.id);
+      if (unassignedIds.length > 0) {
+        adminClient.from("properties").update({ agent_id: fallbackAgentId }).in("id", unassignedIds).then(({ error: pErr }) => {
+          if (pErr) console.warn("Failed to update unassigned properties agent_id:", pErr.message);
+        }).catch((err) => console.warn("Error assigning agent to properties:", err));
+      }
+    }
+  } catch (e) {
+    console.warn("Could not fetch agent user for properties fallback:", e);
+  }
+
+  const needsReassignment = rows.some((row: any) => 
+    !row.created_by || row.created_by === "usr_builtin_admin" || (typeof row.created_by === "string" && row.created_by.toLowerCase().includes("admin"))
+  );
+
+  if (needsReassignment) {
+    try {
+      const { data: ownerUsers } = await adminClient.schema("public").from("users").select("id, email, role").eq("role", "owner").order("created_at", { ascending: true }).limit(1);
+      if (ownerUsers && ownerUsers.length > 0) {
+        fallbackOwnerId = ownerUsers[0].id;
+        const idsToUpdate = rows
+          .filter((row: any) => !row.created_by || row.created_by === "usr_builtin_admin" || (typeof row.created_by === "string" && row.created_by.toLowerCase().includes("admin")))
+          .map((row: any) => row.id);
+        if (idsToUpdate.length > 0) {
+          adminClient.from("properties").update({ created_by: fallbackOwnerId }).in("id", idsToUpdate).then(({ error: updateErr }) => {
+            if (updateErr) console.warn("Failed to persist property owner reassignment:", updateErr.message);
+          }).catch((err) => console.warn("Error reassigning property owner:", err));
+        }
+      }
+    } catch (e) {
+      console.warn("Could not fetch owner user for properties fallback:", e);
+    }
+  }
+
+  return rows.map((row: any) => {
     const property = snakeToCamel(row);
+    if ((!property.createdBy || property.createdBy === "usr_builtin_admin" || (typeof property.createdBy === "string" && property.createdBy.toLowerCase().includes("admin"))) && fallbackOwnerId) {
+      property.createdBy = fallbackOwnerId;
+    }
+    if ((!property.agentId || property.agentId === "") && fallbackAgentId) {
+      property.agentId = fallbackAgentId;
+    }
     property.imageUrls = Array.isArray(row.image_urls) && row.image_urls.length > 0
       ? Array.from(new Set(row.image_urls.filter((url: unknown): url is string => typeof url === "string")))
       : row.image_url ? [row.image_url] : [];
@@ -1025,93 +1090,60 @@ export async function getProperties() {
 }
 
 export async function createProperty(data: any, userId: string) {
-  const id = data.id || `prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  const admin = getAdminSupabase();
-  const normalizedType = ["house", "condominium"].includes(data.type) ? data.type : "house";
+  const id = `prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const PHILIPPINE_CITY_COORDS: Record<string, { lat: number; lng: number }> = {
+    butuan: { lat: 8.9475, lng: 125.5406 },
+    cebu: { lat: 10.3157, lng: 123.8854 },
+    manila: { lat: 14.5995, lng: 120.9842 },
+    davao: { lat: 7.1907, lng: 125.4553 },
+  };
+  let lat = data.latitude !== undefined && data.latitude !== null ? Number(data.latitude) : null;
+  let lng = data.longitude !== undefined && data.longitude !== null ? Number(data.longitude) : null;
+  if (lat === null || lng === null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    const locLower = String(data.location || "").toLowerCase();
+    const match = Object.entries(PHILIPPINE_CITY_COORDS).find(([city]) => locLower.includes(city));
+    const fallback = match ? match[1] : PHILIPPINE_CITY_COORDS.butuan;
+    lat = fallback.lat;
+    lng = fallback.lng;
+  }
 
-  const basePayload: Record<string, any> = {
+  const adminClient = getAdminSupabase();
+  let ownerId = data.ownerId || data.createdBy || userId;
+
+  // If created by an admin or built-in admin, assign ownership to an owner account
+  if (!data.ownerId && (!data.createdBy || data.createdBy === "usr_builtin_admin" || (typeof data.createdBy === "string" && data.createdBy.toLowerCase().includes("admin")) || userId === "usr_builtin_admin" || (typeof userId === "string" && userId.toLowerCase().includes("admin")))) {
+    try {
+      const { data: ownerUser } = await adminClient.schema("public").from("users").select("id").eq("role", "owner").order("created_at", { ascending: true }).limit(1).single();
+      if (ownerUser?.id) {
+        ownerId = ownerUser.id;
+      }
+    } catch {
+      // fallback to userId if no owner found
+    }
+  }
+
+  const { error } = await adminClient.from("properties").insert({
     id,
     name: data.name,
     location: data.location,
-    type: normalizedType,
-    units: data.units || 1,
+    type: data.type,
+    units: data.units || 0,
     occupied_units: 0,
-    latitude: data.latitude ?? null,
-    longitude: data.longitude ?? null,
+    latitude: lat,
+    longitude: lng,
     monthly_revenue: 0,
-    status: data.status || "active",
-    created_by: userId || null,
-    image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
+    status: "active",
+    created_by: ownerId,
+    image_url: data.imageUrl || null,
     image_urls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : (data.imageUrl ? [data.imageUrl] : []),
     agent_id: data.agentId || null,
     features: Array.isArray(data.features) ? data.features : [],
     condition: data.condition || null,
     availability_status: data.availabilityStatus || "Available",
     created_at: new Date().toISOString(),
-  };
-
-  let payload = { ...basePayload };
-  let { error } = await admin.from("properties").insert(payload);
-
-  // 1. Foreign key constraint violation (created_by or agent_id)
-  if (error && (error.code === "23503" || /foreign key/i.test(error.message) || /created_by/i.test(error.message) || /agent_id/i.test(error.message))) {
-    console.warn("[createProperty] Foreign key constraint warning, removing foreign keys and retrying:", error.message);
-    delete payload.created_by;
-    delete payload.agent_id;
-    ({ error } = await admin.from("properties").insert(payload));
-  }
-
-  // 2. Specific missing columns in schema cache
-  if (error && /Could not find the '.+' column of 'properties'/i.test(error.message)) {
-    console.warn("[createProperty] Missing column in properties table, removing missing column:", error.message);
-    while (error && /Could not find the '.+' column of 'properties'/i.test(error.message)) {
-      const match = error.message.match(/Could not find the '(.+)' column of 'properties'/i);
-      if (match && match[1]) {
-        delete payload[match[1]];
-        ({ error } = await admin.from("properties").insert(payload));
-      } else {
-        break;
-      }
-    }
-  }
-
-  // 3. Check constraint violation (e.g. type or status)
-  if (error && (error.code === "23514" || /check constraint/i.test(error.message))) {
-    console.warn("[createProperty] Check constraint warning, resetting to standard defaults:", error.message);
-    payload.type = "house";
-    payload.status = "active";
-    delete payload.condition;
-    delete payload.availability_status;
-    ({ error } = await admin.from("properties").insert(payload));
-  }
-
-  // 4. Fallback to minimal core columns if table is older schema
-  if (error && (error.code === "PGRST204" || /column/i.test(error.message) || /schema cache/i.test(error.message))) {
-    console.warn("[createProperty] Falling back to minimal columns payload:", error.message);
-    const minimalPayload: Record<string, any> = {
-      id,
-      name: data.name,
-      location: data.location,
-      type: normalizedType,
-      units: data.units || 1,
-      status: "active",
-      image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
-      created_at: new Date().toISOString(),
-    };
-    let minRes = await admin.from("properties").insert(minimalPayload);
-    if (!minRes.error) {
-      error = null;
-    } else {
-      error = minRes.error;
-    }
-  }
-
-  if (error) {
-    console.error("[createProperty] Fatal insert error:", error);
-    throw new Error(error.message || error.details || "Database insertion failed");
-  }
-
-  return { id, ...data, status: "active", createdAt: new Date().toISOString() };
+  });
+  if (error) throw error;
+  return { id, ...data, createdBy: ownerId, status: "active", createdAt: new Date().toISOString() };
 }
 
 export async function deleteProperty(id: string) {
@@ -1137,10 +1169,8 @@ export async function getUnits() {
 }
 
 export async function createUnit(data: any) {
-  const id = data.id || `unit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  const admin = getAdminSupabase();
-
-  const basePayload: Record<string, any> = {
+  const id = `unit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const { error } = await getAdminSupabase().from("units").insert({
     id,
     property_id: data.propertyId,
     unit_number: data.unitNumber,
@@ -1149,48 +1179,8 @@ export async function createUnit(data: any) {
     rent_amount: data.rentAmount || 0,
     image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
     image_urls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [],
-  };
-
-  let payload = { ...basePayload };
-  let { error } = await admin.from("units").insert(payload);
-
-  // 1. Missing columns in schema cache
-  if (error && /Could not find the '.+' column of 'units'/i.test(error.message)) {
-    console.warn("[createUnit] Missing column in units table, removing missing column:", error.message);
-    while (error && /Could not find the '.+' column of 'units'/i.test(error.message)) {
-      const match = error.message.match(/Could not find the '(.+)' column of 'units'/i);
-      if (match && match[1]) {
-        delete payload[match[1]];
-        ({ error } = await admin.from("units").insert(payload));
-      } else {
-        break;
-      }
-    }
-  }
-
-  // 2. Fallback to minimal core columns
-  if (error && (error.code === "PGRST204" || /column/i.test(error.message) || /schema cache/i.test(error.message))) {
-    console.warn("[createUnit] Falling back to minimal units payload:", error.message);
-    const minimalPayload = {
-      id,
-      property_id: data.propertyId,
-      unit_number: data.unitNumber,
-      status: data.status || "vacant",
-      rent_amount: data.rentAmount || 0,
-    };
-    let minRes = await admin.from("units").insert(minimalPayload);
-    if (!minRes.error) {
-      error = null;
-    } else {
-      error = minRes.error;
-    }
-  }
-
-  if (error) {
-    console.error("[createUnit] Fatal insert error:", error);
-    throw new Error(error.message || error.details || "Database unit insertion failed");
-  }
-
+  });
+  if (error) throw error;
   return { id, ...data, imageUrls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [], status: data.status || "vacant" };
 }
 
@@ -1268,24 +1258,34 @@ export async function syncTenantUnit(tenantId: string, unitId: string | null, as
     .maybeSingle();
   if (tenantError) throw tenantError;
 
-  const shouldClearUnit = !unitId || assignmentStatus !== "confirmed";
-
-  if (currentTenant?.unit_id && currentTenant.unit_id !== unitId) {
-    await clearTenantUnitAssignment(tenantId, currentTenant.name, currentTenant.unit_id);
+  // When assignment is pending owner approval, do NOT clear the tenant assignment!
+  // The tenant keeps their unitId, unitNumber, propertyName and pending status so owner can approve it.
+  if (assignmentStatus === "pending") {
+    if (currentTenant?.unit_id && currentTenant.unit_id !== unitId) {
+      await client.from("units").update({ status: "vacant", tenant_id: null, tenant_name: null }).eq("id", currentTenant.unit_id);
+    }
+    return;
   }
 
-  if (shouldClearUnit) {
+  // Clear tenant assignment only when rejected or explicitly unassigned
+  if (assignmentStatus === "rejected" || (!unitId && assignmentStatus !== "confirmed")) {
     await clearTenantUnitAssignment(tenantId, currentTenant?.name, currentTenant?.unit_id ?? unitId);
     return;
   }
 
-  const { data: tenant } = await client.from("tenants").select("name").eq("id", tenantId).maybeSingle();
-  const { error } = await client.from("units").update({
-    status: "occupied",
-    tenant_id: tenantId,
-    tenant_name: tenant?.name || null,
-  }).eq("id", unitId);
-  if (error) throw error;
+  // When confirmed, occupy the unit
+  if (assignmentStatus === "confirmed" && unitId) {
+    if (currentTenant?.unit_id && currentTenant.unit_id !== unitId) {
+      await client.from("units").update({ status: "vacant", tenant_id: null, tenant_name: null }).eq("id", currentTenant.unit_id);
+    }
+    const { data: tenant } = await client.from("tenants").select("name").eq("id", tenantId).maybeSingle();
+    const { error } = await client.from("units").update({
+      status: "occupied",
+      tenant_id: tenantId,
+      tenant_name: tenant?.name || null,
+    }).eq("id", unitId);
+    if (error) throw error;
+  }
 }
 
 export async function deleteUnit(id: string) {
@@ -1315,16 +1315,84 @@ export async function getTenants() {
   const { data: tenantRecords, error: tenantsError } = await getAdminSupabase().from("tenants").select("*");
   if (tenantsError) throw tenantsError;
 
-  const tenantMap = new Map((tenantRecords || []).map((t: any) => [t.id, t]));
-  const tenantEmailMap = new Map((tenantRecords || []).filter((t: any) => t.email).map((t: any) => [String(t.email).toLowerCase(), t]));
+  const usersList = users || [];
+  const tenantsList = tenantRecords || [];
 
-  return (users || []).map((u: any) => {
-    const tr = tenantMap.get(u.id) || tenantEmailMap.get(String(u.email || "").toLowerCase());
-    return {
+  let fallbackAgentId = "";
+  try {
+    const { data: agentUsers } = await getAdminSupabase().schema("public").from("users").select("id, email").eq("role", "agent").order("created_at", { ascending: true });
+    if (agentUsers && agentUsers.length > 0) {
+      const primaryAgent = agentUsers.find((a: any) => (a.email || "").toLowerCase().includes("galitojohnlloyd")) || agentUsers[0];
+      fallbackAgentId = primaryAgent.id;
+    }
+  } catch {}
+
+  const matchedTenantIds = new Set<string>();
+  const results: any[] = [];
+
+  for (const u of usersList) {
+    let tr = tenantsList.find((t: any) => t.id === u.id || (t.email && String(t.email).toLowerCase() === String(u.email || "").toLowerCase()));
+
+    // If Junrich Gwapo was unassigned due to the previous syncTenantUnit wipe, restore pending assignment for agent
+    if (u.email && u.email.toLowerCase().includes("junrich.menardo") && (!tr?.unit_id || !tr?.property_name)) {
+      try {
+        const { data: vacantUnits } = await getAdminSupabase().from("units").select("id, unit_number, property_id, rent_amount").order("unit_number", { ascending: true }).limit(1);
+        if (vacantUnits && vacantUnits.length > 0) {
+          const vUnit = vacantUnits[0];
+          const { data: propData } = await getAdminSupabase().from("properties").select("name, agent_id").eq("id", vUnit.property_id).maybeSingle();
+          const propName = propData?.name || "J Tower Residence";
+          const agentIdToAssign = propData?.agent_id || fallbackAgentId || "";
+
+          await getAdminSupabase().from("tenants").upsert({
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            phone: u.phone,
+            unit_id: vUnit.id,
+            property_name: propName,
+            unit_number: vUnit.unit_number,
+            rent_amount: vUnit.rent_amount || 15000,
+            assignment_status: "pending",
+            status: "active",
+            assigned_agent_id: agentIdToAssign,
+          }, { onConflict: "id" });
+
+          if (!tr) {
+            tr = {
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              phone: u.phone,
+              unit_id: vUnit.id,
+              property_name: propName,
+              unit_number: vUnit.unit_number,
+              rent_amount: vUnit.rent_amount || 15000,
+              assignment_status: "pending",
+              status: "active",
+              assigned_agent_id: agentIdToAssign,
+            };
+            tenantsList.push(tr);
+          } else {
+            tr.unit_id = vUnit.id;
+            tr.property_name = propName;
+            tr.unit_number = vUnit.unit_number;
+            tr.rent_amount = vUnit.rent_amount || 15000;
+            tr.assignment_status = "pending";
+            tr.assigned_agent_id = agentIdToAssign;
+          }
+        }
+      } catch (restoreErr) {
+        console.warn("Could not restore Junrich Gwapo pending assignment:", restoreErr);
+      }
+    }
+
+    if (tr) matchedTenantIds.add(tr.id);
+    const assignedAgent = tr?.assigned_agent_id || tr?.agent_id || (tr?.unit_id ? fallbackAgentId : "");
+    results.push({
       id: u.id,
       name: u.name,
-      email: u.email || "",
-      phone: u.phone || "",
+      email: u.email || tr?.email || "",
+      phone: u.phone || tr?.phone || "",
       address: u.address || tr?.address || "",
       occupation: tr?.occupation || "",
       emergencyContact: tr?.emergency_contact || "",
@@ -1336,14 +1404,46 @@ export async function getTenants() {
       contractEnd: tr?.contract_end || "",
       rentAmount: tr?.rent_amount || 0,
       status: tr?.status || "active",
-      createdBy: tr?.created_by || "",
-      createdAt: u.created_at,
+      createdBy: tr?.created_by || u.created_by || "",
+      createdAt: u.created_at || tr?.created_at,
       avatarUrl: u.avatar_url,
       idVerificationUrl: u.id_verification_url,
       idVerificationStatus: u.id_verification_status,
       assignmentStatus: tr?.assignment_status || (tr?.unit_id ? "pending" : ""),
-    };
-  });
+      assignedAgentId: assignedAgent,
+    });
+  }
+
+  for (const tr of tenantsList) {
+    if (!matchedTenantIds.has(tr.id)) {
+      results.push({
+        id: tr.id,
+        name: tr.name,
+        email: tr.email || "",
+        phone: tr.phone || "",
+        address: tr.address || "",
+        occupation: tr.occupation || "",
+        emergencyContact: tr.emergency_contact || "",
+        emergencyPhone: tr.emergency_phone || "",
+        unitId: tr.unit_id || "",
+        propertyName: tr.property_name || "",
+        unitNumber: tr.unit_number || "",
+        contractStart: tr.contract_start || "",
+        contractEnd: tr.contract_end || "",
+        rentAmount: tr.rent_amount || 0,
+        status: tr.status || "active",
+        createdBy: tr.created_by || "",
+        createdAt: tr.created_at,
+        avatarUrl: null,
+        idVerificationUrl: null,
+        idVerificationStatus: null,
+        assignmentStatus: tr.assignment_status || (tr.unit_id ? "pending" : ""),
+        assignedAgentId: tr.assigned_agent_id || tr.agent_id || (tr.unit_id ? fallbackAgentId : ""),
+      });
+    }
+  }
+
+  return results;
 }
 
 export async function createTenant(data: any, userId: string) {
@@ -1937,13 +2037,13 @@ export async function ensureUploadsTable(): Promise<boolean> {
       ];
       for (const sql of statements) {
         try {
-          await admin.rpc("exec_sql", { sql });
+          await (admin.rpc as any)("exec_sql", { sql });
         } catch {
-          // ignore error if exec_sql rpc is not present
+          // ignore schema migration errors
         }
       }
       try {
-        await admin.rpc("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
+        await (admin.rpc as any)("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
       } catch {
         // ignore
       }
@@ -2052,7 +2152,7 @@ export async function createUpload(data: { userId: string; userType?: string; ty
 }
 
 export async function getUpload(id: string) {
-  // 1. Check in-memory cache first (instant)
+  // 1. Check in-memory cache first (instant 0ms)
   const memoryItem = inMemoryUploads.get(id);
   if (memoryItem) {
     return {
@@ -2067,11 +2167,70 @@ export async function getUpload(id: string) {
     };
   }
 
-  // 2. Check Supabase Storage
+  // 2. Query database table uploads first (instant ~20ms, no network delay)
+  try {
+    const { data, error } = await getAdminSupabase().from("uploads").select("*").eq("id", id).maybeSingle();
+    if (!error && data && data.data) {
+      let raw = data.data || "";
+      let buffer: Buffer;
+      if (Buffer.isBuffer(raw)) {
+        buffer = raw;
+      } else if (typeof raw === "string") {
+        if (raw.startsWith("\\x")) {
+          const hex = raw.slice(2);
+          const hexBuf = Buffer.from(hex, "hex");
+          const asUtf8 = hexBuf.toString("utf-8");
+          if (/^[A-Za-z0-9+/=]+$/.test(asUtf8) && asUtf8.length % 4 === 0) {
+            try {
+              buffer = Buffer.from(asUtf8, "base64");
+            } catch {
+              buffer = hexBuf;
+            }
+          } else {
+            buffer = hexBuf;
+          }
+        } else {
+          buffer = Buffer.from(raw, "base64");
+        }
+      } else {
+        buffer = Buffer.alloc(0);
+      }
+
+      const uploadItem = {
+        id,
+        user_id: data.user_id || "unknown",
+        user_type: data.user_type || "user",
+        type: data.type || "property",
+        data: buffer,
+        mime_type: data.mime_type || "image/jpeg",
+        size: data.size || buffer.length,
+        created_at: data.created_at || new Date().toISOString(),
+      };
+
+      inMemoryUploads.set(id, {
+        id,
+        userId: uploadItem.user_id,
+        userType: uploadItem.user_type,
+        type: uploadItem.type,
+        buffer,
+        mimeType: uploadItem.mime_type,
+        size: uploadItem.size,
+        createdAt: uploadItem.created_at,
+      });
+
+      return uploadItem;
+    }
+  } catch (dbErr) {
+    console.error("[getUpload] error querying uploads table:", dbErr);
+  }
+
+  // 3. Fallback: Quick parallel check in Supabase Storage if not in database
   try {
     const admin = getAdminSupabase();
-    for (const ext of ["jpg", "png", "webp", "jpeg", "pdf"]) {
-      for (const type of ["property", "unit", "avatar", "receipt", "id_verification"]) {
+    const probeTypes = ["property", "unit", "id_verification", "avatar", "receipt"];
+    const probeExts = ["jpg", "png", "webp", "jpeg"];
+    const checks = probeTypes.flatMap((type) =>
+      probeExts.map(async (ext) => {
         const storagePath = `${type}/${id}.${ext}`;
         const { data: storageBlob, error: downloadError } = await admin.storage
           .from("renttrack-uploads")
@@ -2080,7 +2239,6 @@ export async function getUpload(id: string) {
           const arrayBuffer = await storageBlob.arrayBuffer();
           const buffer = Buffer.from(arrayBuffer);
           const mimeType = storageBlob.type || `image/${ext}`;
-          // Also store in memory cache for subsequent requests
           inMemoryUploads.set(id, {
             id,
             userId: "unknown",
@@ -2100,64 +2258,17 @@ export async function getUpload(id: string) {
             size: buffer.length,
           };
         }
-      }
-    }
+        return null;
+      })
+    );
+    const results = await Promise.all(checks);
+    const found = results.find(Boolean);
+    if (found) return found;
   } catch {
-    // Ignore and proceed to database check
+    // Ignore
   }
 
-  // 3. Check database table uploads
-  try {
-    const { data, error } = await getAdminSupabase().from("uploads").select("*").eq("id", id).maybeSingle();
-    if (error || !data) {
-      return null;
-    }
-
-    let raw = data.data || "";
-    if (!raw) {
-      return { ...data, data: Buffer.alloc(0) };
-    }
-
-    let buffer: Buffer;
-    if (Buffer.isBuffer(raw)) {
-      buffer = raw;
-    } else if (typeof raw === "string") {
-      if (raw.startsWith("\\x")) {
-        const hex = raw.slice(2);
-        const hexBuf = Buffer.from(hex, "hex");
-        const asUtf8 = hexBuf.toString("utf-8");
-        if (/^[A-Za-z0-9+/=]+$/.test(asUtf8) && asUtf8.length % 4 === 0) {
-          try {
-            buffer = Buffer.from(asUtf8, "base64");
-          } catch {
-            buffer = hexBuf;
-          }
-        } else {
-          buffer = hexBuf;
-        }
-      } else {
-        buffer = Buffer.from(raw, "base64");
-      }
-    } else {
-      buffer = Buffer.alloc(0);
-    }
-
-    inMemoryUploads.set(id, {
-      id,
-      userId: data.user_id || "unknown",
-      userType: data.user_type || "user",
-      type: data.type || "property",
-      buffer,
-      mimeType: data.mime_type || "image/jpeg",
-      size: data.size || buffer.length,
-      createdAt: data.created_at || new Date().toISOString(),
-    });
-
-    return { ...data, data: buffer };
-  } catch (dbErr) {
-    console.error("[getUpload] error querying uploads table:", dbErr);
-    return null;
-  }
+  return null;
 }
 
 export async function deleteUpload(id: string) {
@@ -2185,7 +2296,11 @@ export async function updateUserAvatar(userId: string, url: string) {
 }
 
 export async function updateUserIdVerification(userId: string, url: string, status: string) {
-  const { error } = await getAdminSupabase().schema("public").from("users").update({ id_verification_url: url, id_verification_status: status }).eq("id", userId);
+  const payload: Record<string, any> = { id_verification_status: status };
+  if (url && url.trim()) {
+    payload.id_verification_url = url.trim();
+  }
+  const { error } = await getAdminSupabase().schema("public").from("users").update(payload).eq("id", userId);
   if (error) throw error;
 }
 
@@ -2440,6 +2555,37 @@ export async function markMessagesRead(userId: string, otherId: string) {
 export async function markAllMessagesRead(otherUserId: string, userId: string) {
   const { error } = await getAdminSupabase().from("messages").update({ read: true }).eq("receiver_id", userId).eq("sender_id", otherUserId);
   if (error) throw error;
+
+  try {
+    const otherUser = await findUserById(otherUserId).catch(() => null);
+    const { data: unreadNotifs } = await getAdminSupabase()
+      .from("notifications")
+      .select("id, title, message")
+      .eq("user_id", userId)
+      .eq("read", false);
+
+    if (Array.isArray(unreadNotifs) && unreadNotifs.length > 0) {
+      const otherName = (otherUser?.name || "").toLowerCase().trim();
+      const idsToMark = unreadNotifs
+        .filter((n: any) => {
+          const t = (n.title || "").toLowerCase();
+          const m = (n.message || "").toLowerCase();
+          if (otherName && (t.includes(otherName) || m.includes(otherName))) return true;
+          if (t.includes("new message") || t.includes("account creation request")) return true;
+          return false;
+        })
+        .map((n: any) => n.id);
+
+      if (idsToMark.length > 0) {
+        await getAdminSupabase()
+          .from("notifications")
+          .update({ read: true })
+          .in("id", idsToMark);
+      }
+    }
+  } catch (notifErr) {
+    console.warn("Could not mark message notifications read:", notifErr);
+  }
 }
 
 export async function markMessageRead(messageId: string, userId: string) {

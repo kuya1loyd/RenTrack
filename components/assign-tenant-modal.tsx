@@ -12,6 +12,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { TenantRecord, Unit, Property, updateTenantAssignment, notifyAdmins } from "@/lib/data";
 import { cn, formatCurrency, getInitials } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 
 interface AssignTenantModalProps {
@@ -37,6 +38,7 @@ export default function AssignTenantModal({
   onSuccess,
   onRequestTenantAccount,
 }: AssignTenantModalProps) {
+  const { user } = useAuth();
   const [selectedTenant, setSelectedTenant] = useState<TenantRecord | null>(initialTenant);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(initialUnit);
   const [tenantSearch, setTenantSearch] = useState("");
@@ -116,16 +118,25 @@ export default function AssignTenantModal({
         rentAmount: assignForm.rentAmount || selectedUnit.rentAmount,
         contractStart: assignForm.contractStart || undefined,
         assignmentStatus: "pending",
+        assignedAgentId: user?.role === "agent" ? user.id : undefined,
       });
 
       if (updated) {
         toast.success("Assignment submitted for owner confirmation!");
+        const agentName = user?.name || "Alexander Liles";
         notifyAdmins({
           title: "New Assignment Pending",
-          message: `${selectedTenant.name} has been assigned to ${propName} Unit ${unitNum}. Please review and confirm.`,
+          message: `${selectedTenant.name} has been assigned to ${propName} Unit ${unitNum} by agent ${agentName}. Please review and confirm.`,
           type: "tenant",
           read: false,
-        }).catch(() => {});
+          recipientRole: "both",
+          targetUserId: property?.createdBy,
+        } as any).catch(() => {});
+
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("renttrack-notifications-updated"));
+          window.dispatchEvent(new Event("owner-data-changed"));
+        }
 
         await onSuccess();
         onClose();

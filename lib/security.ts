@@ -5,8 +5,7 @@ const SESSION_COOKIE_NAME = "renttrack_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
 
 function isSecureCookieEnvironment(): boolean {
-  if (process.env.NODE_ENV === "production") return true;
-  return !!process.env.NEXT_PUBLIC_APP_URL && /^https:\/\//i.test(process.env.NEXT_PUBLIC_APP_URL);
+  return process.env.NODE_ENV === "production";
 }
 
 function getSessionCookieOptions(maxAge = SESSION_TTL_SECONDS) {

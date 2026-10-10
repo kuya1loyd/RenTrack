@@ -16,6 +16,7 @@ import { cn, formatCurrency } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { getProperties, getUnits, addProperty, deleteProperty, safeParseJson, Property, Unit, notifyAdmins } from "@/lib/data";
 import { toast } from "sonner";
+import UnitImageCarousel from "@/components/unit-image-carousel";
 
 const fadeInUp = { hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } };
 const PROPERTY_FEATURES = ["1 Bedroom", "2 Bedrooms", "3 Bedrooms", "4+ Bedrooms", "1 Bathroom", "2 Bathrooms", "3+ Bathrooms", "Parking Space", "Furnished", "Air Conditioning", "Wi-Fi", "Laundry Area", "Kitchen", "Outdoor Area", "Gated Property"];
@@ -224,14 +225,13 @@ export default function PropertiesPage() {
               <motion.div key={property.id} variants={fadeInUp} custom={i}>
                 <motion.div whileHover={{ y: -2, transition: { duration: 0.2 } }}>
                   <Card className="overflow-hidden hover:shadow-lg transition-all duration-300">
-                    <div className="h-40 relative bg-gray-100">
-                      {property.imageUrl ? (
-                        <Image src={property.imageUrl} alt={property.name} width={640} height={320} unoptimized className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                      ) : (
-                        <div className="h-full bg-gradient-to-br from-primary-500/10 to-primary-600/5 flex items-center justify-center">
-                          <Building2 className="h-12 w-12 text-gray-300" />
-                        </div>
-                      )}
+                    <div className="h-44 relative bg-gray-100 overflow-hidden">
+                      <UnitImageCarousel
+                        images={property.imageUrls?.length ? property.imageUrls : property.imageUrl ? [property.imageUrl] : []}
+                        alt={property.name}
+                        className="h-full w-full"
+                        imageClassName="object-cover"
+                      />
                       <div className="absolute top-4 right-4">
                         <Badge variant="outline" className={cn(
                           "bg-white/90 backdrop-blur-sm",

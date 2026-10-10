@@ -13,7 +13,7 @@ import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { cn, getInitials } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { getNotifications, getAgentApplications, markNotificationRead, getUnreadCount, getPendingPaymentsCount, getConversations, getProperties, getUnits, Notification, Conversation, Property, Unit } from "@/lib/data";
+import { getNotifications, getAgentApplications, markNotificationRead, markAllMessagesRead, getUnreadCount, getPendingPaymentsCount, getConversations, getProperties, getUnits, Notification, Conversation, Property, Unit } from "@/lib/data";
 import { getTenants } from "@/lib/data";
 import Link from "next/link";
 import MessagingPanel from "@/components/messaging-panel";
@@ -42,7 +42,7 @@ const navItems: OwnerNavLink[] = [
 ];
 
 function getTabFromHash(hash: string) {
-  if (hash === "payments" || hash === "reports") return "financial";
+  if (hash === "payments") return "financial";
   if (hash === "move-out") return "move-out-requests";
   return navItems.find((item) => item.href.endsWith(`#${hash}`))?.tab || "";
 }
@@ -207,13 +207,30 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
       }).catch(() => { });
       getPendingPaymentsCount().then(setPendingPaymentsCount).catch(() => { });
       getConversations().then((convs) => {
+        setConversations(convs);
         const requests = convs.filter((c) => c.lastMessage?.subject === "Account Creation Request");
         setAccountRequests(requests);
       }).catch(() => { });
     };
 
+    const handleMessagesRead = (e: Event) => {
+      const customEvent = e as CustomEvent<{ otherUserId?: string }>;
+      const otherId = customEvent.detail?.otherUserId;
+      if (otherId) {
+        setConversations((prev) => prev.map((c) => c.userId === otherId ? { ...c, unreadCount: 0 } : c));
+      }
+      getConversations().then((convs) => {
+        setConversations(convs);
+        setAccountRequests(convs.filter((c) => c.lastMessage?.subject === "Account Creation Request"));
+      }).catch(() => {});
+    };
+
     window.addEventListener("renttrack-notifications-updated", handleRefresh);
-    return () => window.removeEventListener("renttrack-notifications-updated", handleRefresh);
+    window.addEventListener("renttrack-messages-read", handleMessagesRead);
+    return () => {
+      window.removeEventListener("renttrack-notifications-updated", handleRefresh);
+      window.removeEventListener("renttrack-messages-read", handleMessagesRead);
+    };
   }, [user, refreshNotificationsCount]);
 
   useEffect(() => {
@@ -644,6 +661,8 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                               key={conv.userId}
                               onClick={() => {
                                 setShowUserMenu(false);
+                                setConversations((prev) => prev.map((c) => c.userId === conv.userId ? { ...c, unreadCount: 0 } : c));
+                                void markAllMessagesRead(conv.userId);
                                 if (conv.lastMessage?.subject === "Account Creation Request") {
                                   setSelectedAccountRequest(conv);
                                 } else {
@@ -686,6 +705,8 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
               isOpen={showMessages}
               onClose={() => setShowMessages(false)}
               onSelectConversation={(conv) => {
+                setConversations((prev) => prev.map((c) => c.userId === conv.userId ? { ...c, unreadCount: 0 } : c));
+                void markAllMessagesRead(conv.userId);
                 setSelectedConversation(conv);
                 setShowMessages(false);
               }}

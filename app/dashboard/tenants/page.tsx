@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import {
-  Users, Search, CheckCircle2, XCircle, Trash2, Shield, Eye, X, MoreHorizontal
+  Users, Search, CheckCircle2, XCircle, Trash2, Shield, Eye, X, MoreHorizontal,
+  Copy, MapPin, Building2, Phone, Mail, Clock
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -196,13 +197,13 @@ export default function TenantsPage() {
         ))}
       </div>
 
-      <div className="space-y-4">
-        <Card className="overflow-hidden border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+      <div className="space-y-4 w-full max-w-full min-w-0">
+        <Card hover={false} className="w-full max-w-full min-w-0 overflow-hidden border-[#dce8f5] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
           <div className="border-b border-slate-100 bg-[#f6f9fd] px-4 py-3">
             <h3 className="text-sm font-semibold text-slate-900">Tenant directory</h3>
             <p className="mt-1 text-xs text-slate-500">{filteredTenants.length} tenant{filteredTenants.length === 1 ? "" : "s"} match your filters</p>
           </div>
-          <div className="overflow-x-auto">
+          <div className="table-scroll-box w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[680px]">
             {loading ? (
               <div role="status" className="px-4 py-10 text-center text-sm text-slate-500">
                 <div className="mx-auto mb-3 h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
@@ -215,26 +216,165 @@ export default function TenantsPage() {
               </div>
             ) : (
               <>
-                <table className="hidden w-full min-w-[760px] border-collapse text-left sm:table">
-                  <thead className="bg-white text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    <tr><th className="px-4 py-3">Tenant</th><th className="px-4 py-3">Property / unit</th><th className="px-4 py-3">Contract dates</th><th className="px-4 py-3">Monthly rent</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Action</th></tr>
+                <table className="hidden w-full min-w-[1400px] border-collapse text-left sm:table">
+                  <thead className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur-xs text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 whitespace-nowrap shadow-2xs">
+                    <tr>
+                      <th className="px-4 py-3">Tenant</th>
+                      <th className="px-3 py-3">User ID</th>
+                      <th className="px-3 py-3">Email</th>
+                      <th className="px-3 py-3">Phone</th>
+                      <th className="px-3 py-3">Role</th>
+                      <th className="px-3 py-3">Property</th>
+                      <th className="px-3 py-3">Unit</th>
+                      <th className="px-3 py-3">Address</th>
+                      <th className="px-3 py-3">Rent</th>
+                      <th className="px-3 py-3">Contract Start</th>
+                      <th className="px-3 py-3">Contract End</th>
+                      <th className="px-3 py-3">Verification</th>
+                      <th className="px-3 py-3">Status</th>
+                      <th className="px-4 py-3 text-right">Action</th>
+                    </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredTenants.map((tenant) => (
-                      <tr key={tenant.id} className={cn("text-xs transition-colors hover:bg-blue-50/40", selectedTenant?.id === tenant.id && "bg-blue-50/70")}>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2.5">
-                            <Avatar src={tenant.avatarUrl} fallback={getInitials(tenant.name)} size="sm" />
-                            <div className="min-w-0"><p className="truncate font-semibold text-slate-900">{tenant.name}</p><p className="mt-0.5 truncate text-[10px] text-slate-500">{tenant.email}</p></div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3"><p className="font-medium text-slate-800">{tenant.propertyName || "—"}</p><p className="mt-0.5 text-[10px] text-slate-500">{tenant.unitNumber ? `Unit ${tenant.unitNumber}` : "—"}</p></td>
-                        <td className="px-4 py-3 text-[10px] text-slate-600"><p>Start: {tenant.contractStart ? formatDate(tenant.contractStart) : "—"}</p><p className="mt-0.5">End: {tenant.contractEnd ? formatDate(tenant.contractEnd) : "—"}</p></td>
-                        <td className="whitespace-nowrap px-4 py-3 font-semibold tabular-nums text-slate-900">{tenant.rentAmount != null ? `${formatCurrency(tenant.rentAmount)}/mo` : "—"}</td>
-                        <td className="px-4 py-3"><Badge variant={tenant.status === "active" ? "success" : "outline"} className="text-[10px] capitalize">{tenant.status}</Badge></td>
-                        <td className="px-4 py-3 text-right"><Button type="button" size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => setSelectedTenant(tenant)}><Eye className="mr-1 h-3 w-3" />Details</Button></td>
-                      </tr>
-                    ))}
+                    {filteredTenants.map((tenant) => {
+                      const isVerified = Boolean(
+                        tenant.idVerificationStatus === "approved" ||
+                        (tenant as any).id_verification_status === "approved" ||
+                        (tenant as any).idVerified ||
+                        (tenant as any).verified
+                      );
+
+                      return (
+                        <tr key={tenant.id} className={cn("text-xs transition-colors hover:bg-blue-50/40", selectedTenant?.id === tenant.id && "bg-blue-50/70")}>
+                          {/* Tenant */}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-2.5">
+                              <Avatar src={tenant.avatarUrl} fallback={getInitials(tenant.name)} size="sm" />
+                              <span className="truncate font-semibold text-slate-900">{tenant.name}</span>
+                            </div>
+                          </td>
+
+                          {/* User ID */}
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(tenant.id);
+                                toast.success("Tenant ID copied");
+                              }}
+                              className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 hover:text-blue-600 transition-colors bg-slate-50 px-2 py-0.5 rounded border border-slate-200"
+                              title="Click to copy User ID"
+                            >
+                              <span>#{tenant.id.slice(0, 8)}</span>
+                              <Copy className="h-2.5 w-2.5 text-slate-400" />
+                            </button>
+                          </td>
+
+                          {/* Email */}
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            <a href={`mailto:${tenant.email}`} className="inline-flex items-center gap-1.5 text-blue-600 hover:underline truncate max-w-[160px]" title={tenant.email}>
+                              <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+                              <span className="truncate">{tenant.email}</span>
+                            </a>
+                          </td>
+
+                          {/* Phone */}
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            <div className="inline-flex items-center gap-1.5 text-slate-600">
+                              <Phone className="h-3 w-3 text-slate-400 shrink-0" />
+                              {tenant.phone ? (
+                                <a href={`tel:${tenant.phone}`} className="hover:text-blue-600 transition-colors">
+                                  {tenant.phone}
+                                </a>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Role */}
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200">
+                              Tenant
+                            </span>
+                          </td>
+
+                          {/* Property */}
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                              <span className="font-medium text-slate-800 truncate max-w-[140px]">
+                                {tenant.propertyName || "—"}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Unit */}
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            {tenant.unitNumber ? (
+                              <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 border border-slate-200">
+                                Unit {tenant.unitNumber}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+
+                          {/* Address */}
+                          <td className="px-3 py-3 whitespace-nowrap max-w-[150px]">
+                            <div className="inline-flex items-center gap-1.5 text-slate-600 truncate">
+                              <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
+                              <span className="truncate">{tenant.address || "—"}</span>
+                            </div>
+                          </td>
+
+                          {/* Rent */}
+                          <td className="whitespace-nowrap px-3 py-3 font-semibold tabular-nums text-slate-900">
+                            {tenant.rentAmount != null ? `${formatCurrency(tenant.rentAmount)}/mo` : "—"}
+                          </td>
+
+                          {/* Contract Start */}
+                          <td className="whitespace-nowrap px-3 py-3 text-slate-600">
+                            {tenant.contractStart ? formatDate(tenant.contractStart) : "—"}
+                          </td>
+
+                          {/* Contract End */}
+                          <td className="whitespace-nowrap px-3 py-3 text-slate-600">
+                            {tenant.contractEnd ? formatDate(tenant.contractEnd) : "—"}
+                          </td>
+
+                          {/* Verification */}
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            {isVerified ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700">
+                                <CheckCircle2 className="h-3 w-3" />
+                                Verified ID
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                                <Clock className="h-3 w-3" />
+                                {tenant.idVerificationStatus === "rejected" ? "Rejected" : "Pending"}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Status */}
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            <Badge variant={tenant.status === "active" ? "success" : "outline"} className="text-[10px] capitalize">
+                              {tenant.status}
+                            </Badge>
+                          </td>
+
+                          {/* Action */}
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
+                            <Button type="button" size="sm" variant="outline" className="h-7 px-2.5 text-[10px]" onClick={() => setSelectedTenant(tenant)}>
+                              <Eye className="mr-1 h-3 w-3" />Details
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 <div className="divide-y divide-slate-100 sm:hidden">

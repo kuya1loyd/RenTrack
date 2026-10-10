@@ -14,6 +14,7 @@ import {
   DoorOpen,
   HelpCircle,
   Home,
+  Layers,
   LogOut,
   Map,
   Menu,
@@ -40,9 +41,12 @@ export default function TenantNavbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [propertyOpen, setPropertyOpen] = useState(false);
+  const [mobilePropertyOpen, setMobilePropertyOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
@@ -81,6 +85,7 @@ export default function TenantNavbar() {
         setMobileOpen(false);
         setAccountOpen(false);
         setOptionsOpen(false);
+        setPropertyOpen(false);
         setNotificationsOpen(false);
         setConfirmLogout(false);
       }
@@ -95,6 +100,7 @@ export default function TenantNavbar() {
       if (!(target instanceof Element)) return;
       if (!target.closest("[data-tenant-account]")) setAccountOpen(false);
       if (!target.closest("[data-tenant-options]")) setOptionsOpen(false);
+      if (!target.closest("[data-tenant-property]")) setPropertyOpen(false);
       if (!target.closest("[data-tenant-notifications]")) setNotificationsOpen(false);
     };
     document.addEventListener("mousedown", closeMenus);
@@ -115,6 +121,7 @@ export default function TenantNavbar() {
     setNotificationsOpen((open) => !open);
     setAccountOpen(false);
     setOptionsOpen(false);
+    setPropertyOpen(false);
     setMobileOpen(false);
   };
 
@@ -145,7 +152,7 @@ export default function TenantNavbar() {
           <Link
             href="/dashboard/tenant"
             className="flex items-center gap-3"
-            onClick={() => { setMobileOpen(false); setAccountOpen(false); setOptionsOpen(false); }}
+            onClick={() => { setMobileOpen(false); setAccountOpen(false); setOptionsOpen(false); setPropertyOpen(false); }}
             aria-label="RentTrack dashboard"
           >
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl overflow-hidden shadow-sm">
@@ -182,18 +189,74 @@ export default function TenantNavbar() {
               <span>My Payments</span>
             </Link>
 
-            <Link
-              href="/dashboard/tenant/properties-page"
-              className={cn(
-                "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                isActive("/dashboard/tenant/properties-page")
-                  ? "bg-white/10 text-white shadow-sm"
-                  : "text-slate-300 hover:bg-white/5 hover:text-white"
-              )}
+            {/* My Property Dropdown */}
+            <div
+              className="relative"
+              data-tenant-property
+              onMouseEnter={() => setPropertyOpen(true)}
+              onMouseLeave={() => setPropertyOpen(false)}
             >
-              <Building2 className="h-4 w-4" />
-              <span>My Property</span>
-            </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  setPropertyOpen((prev) => !prev);
+                  setOptionsOpen(false);
+                  setAccountOpen(false);
+                  setNotificationsOpen(false);
+                }}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                  isActive("/dashboard/tenant/properties-page") || isActive("/dashboard/tenant/units") || propertyOpen
+                    ? "bg-white/10 text-white shadow-sm"
+                    : "text-slate-300 hover:bg-white/5 hover:text-white"
+                )}
+                aria-expanded={propertyOpen}
+                aria-haspopup="true"
+              >
+                <Building2 className="h-4 w-4" />
+                <span>My Property</span>
+                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", propertyOpen && "rotate-180")} />
+              </button>
+
+              <AnimatePresence>
+                {propertyOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute left-0 mt-2 min-w-[190px] rounded-xl border border-slate-200 bg-white p-1.5 text-slate-700 shadow-xl z-50"
+                  >
+                    <Link
+                      href="/dashboard/tenant/properties-page"
+                      onClick={() => setPropertyOpen(false)}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors",
+                        isActive("/dashboard/tenant/properties-page")
+                          ? "bg-blue-50 text-blue-700 font-semibold"
+                          : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                      )}
+                    >
+                      <Building2 className="h-4 w-4 text-blue-600" />
+                      <span>My Property</span>
+                    </Link>
+                    <Link
+                      href="/dashboard/tenant/units"
+                      onClick={() => setPropertyOpen(false)}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors",
+                        isActive("/dashboard/tenant/units")
+                          ? "bg-blue-50 text-blue-700 font-semibold"
+                          : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                      )}
+                    >
+                      <Layers className="h-4 w-4 text-blue-600" />
+                      <span>My Units</span>
+                    </Link>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             <Link
               href="/dashboard/tenant/contact"
@@ -209,10 +272,15 @@ export default function TenantNavbar() {
             </Link>
 
             {/* Options Dropdown */}
-            <div className="relative" data-tenant-options>
+            <div
+              className="relative"
+              data-tenant-options
+              onMouseEnter={() => setOptionsOpen(true)}
+              onMouseLeave={() => setOptionsOpen(false)}
+            >
               <button
                 type="button"
-                onClick={() => { setOptionsOpen((prev) => !prev); setAccountOpen(false); setNotificationsOpen(false); }}
+                onClick={() => { setOptionsOpen((prev) => !prev); setPropertyOpen(false); setAccountOpen(false); setNotificationsOpen(false); }}
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
                   optionsOpen
@@ -244,14 +312,6 @@ export default function TenantNavbar() {
                       <span>Move-out Request</span>
                     </Link>
                     <div className="my-1 border-t border-slate-100" />
-                    <Link
-                      href="/dashboard/tenant/browse"
-                      onClick={() => setOptionsOpen(false)}
-                      className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
-                    >
-                      <Search className="h-4 w-4 text-slate-500" />
-                      <span>Available Homes</span>
-                    </Link>
                     <Link
                       href="/dashboard/tenant/map"
                       onClick={() => setOptionsOpen(false)}
@@ -291,14 +351,19 @@ export default function TenantNavbar() {
             <div className="relative" data-tenant-account>
               <button
                 type="button"
-                onClick={() => { setAccountOpen((prev) => !prev); setOptionsOpen(false); setNotificationsOpen(false); }}
+                onClick={() => { setAccountOpen((prev) => !prev); setPropertyOpen(false); setOptionsOpen(false); setNotificationsOpen(false); }}
                 aria-label="Open tenant account menu"
                 aria-expanded={accountOpen}
                 className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-left"
               >
                 <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-800 font-bold text-xs">
-                  {user.avatarUrl ? (
-                    <img src={user.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
+                  {user.avatarUrl && !avatarError ? (
+                    <img
+                      src={user.avatarUrl}
+                      alt=""
+                      className="h-full w-full rounded-full object-cover"
+                      onError={() => setAvatarError(true)}
+                    />
                   ) : (
                     initials
                   )}
@@ -424,13 +489,87 @@ export default function TenantNavbar() {
               </div>
 
               <div className="space-y-1">
+                <Link
+                  href="/dashboard/tenant"
+                  onClick={() => setMobileOpen(false)}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                    isActive("/dashboard/tenant")
+                      ? "bg-white/15 text-white"
+                      : "text-slate-300 hover:bg-white/5 hover:text-white"
+                  )}
+                >
+                  <Home className="h-4 w-4" />
+                  <span>Dashboard</span>
+                </Link>
+
+                <Link
+                  href="/dashboard/tenant/payments"
+                  onClick={() => setMobileOpen(false)}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                    isActive("/dashboard/tenant/payments")
+                      ? "bg-white/15 text-white"
+                      : "text-slate-300 hover:bg-white/5 hover:text-white"
+                  )}
+                >
+                  <CreditCard className="h-4 w-4" />
+                  <span>My Payments</span>
+                </Link>
+
+                {/* My Property Dropdown in Mobile */}
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setMobilePropertyOpen((prev) => !prev)}
+                    className={cn(
+                      "w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition-colors cursor-pointer text-left",
+                      isActive("/dashboard/tenant/properties-page") || isActive("/dashboard/tenant/units") || mobilePropertyOpen
+                        ? "bg-white/15 text-white"
+                        : "text-slate-300 hover:bg-white/5 hover:text-white"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Building2 className="h-4 w-4" />
+                      <span>My Property</span>
+                    </div>
+                    <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", mobilePropertyOpen && "rotate-180")} />
+                  </button>
+                  {mobilePropertyOpen && (
+                    <div className="ml-7 mt-1 space-y-1 border-l border-white/10 pl-3">
+                      <Link
+                        href="/dashboard/tenant/properties-page"
+                        onClick={() => setMobileOpen(false)}
+                        className={cn(
+                          "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors",
+                          isActive("/dashboard/tenant/properties-page")
+                            ? "bg-white/15 text-white font-semibold"
+                            : "text-slate-300 hover:bg-white/5 hover:text-white"
+                        )}
+                      >
+                        <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                        <span>My Property</span>
+                      </Link>
+                      <Link
+                        href="/dashboard/tenant/units"
+                        onClick={() => setMobileOpen(false)}
+                        className={cn(
+                          "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors",
+                          isActive("/dashboard/tenant/units")
+                            ? "bg-white/15 text-white font-semibold"
+                            : "text-slate-300 hover:bg-white/5 hover:text-white"
+                        )}
+                      >
+                        <Layers className="h-3.5 w-3.5 text-slate-400" />
+                        <span>My Units</span>
+                      </Link>
+                    </div>
+                  )}
+                </div>
+
                 {[
-                  { label: "Dashboard", href: "/dashboard/tenant", icon: Home },
-                  { label: "My Payments", href: "/dashboard/tenant/payments", icon: CreditCard },
-                  { label: "My Property", href: "/dashboard/tenant/properties-page", icon: Building2 },
                   { label: "Support", href: "/dashboard/tenant/contact", icon: HelpCircle },
                   { label: "Move-out Request", href: "/dashboard/tenant/move-out", icon: DoorOpen },
-                  { label: "Available Homes", href: "/dashboard/tenant/browse", icon: Search },
                   { label: "Property Map", href: "/dashboard/tenant/map", icon: Map },
                   { label: "Messages", href: "/dashboard/tenant/messages", icon: MessageCircle, isModal: true },
                   { label: "Settings", href: "/dashboard/tenant/settings", icon: Settings },

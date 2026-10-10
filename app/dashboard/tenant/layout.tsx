@@ -104,6 +104,10 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
         </motion.div>
       </main>
 
+      <footer className="w-full py-5 text-center text-xs text-slate-500 border-t border-slate-200/80 bg-white/70 backdrop-blur-xs mt-auto">
+        © 2026 RentTrack. All rights reserved.
+      </footer>
+
       {/* Global Tenant Messaging Panel Modal */}
       <AnimatePresence>
         {showMessages && (

@@ -56,7 +56,6 @@ const flowSteps: { key: Step; label: string; icon: LucideIcon }[] = [
   { key: "occupancy", label: "Occupancy", icon: Home },
   { key: "payments", label: "Payments", icon: CreditCard },
   { key: "receivables", label: "Receivables", icon: CreditCard },
-  { key: "reports", label: "Receipts & Reports", icon: BarChart3 },
   { key: "financial", label: "Financial Transactions", icon: CreditCard },
   { key: "move-out-requests", label: "Move-Out Requests", icon: LogOut },
   { key: "profile", label: "My Profile", icon: User },
@@ -121,7 +120,7 @@ export default function OwnerDashboard() {
   const [showAddUnit, setShowAddUnit] = useState(false);
   const [newUnitForm, setNewUnitForm] = useState({ propertyId: "", unitNumber: "", floor: "", status: "vacant" as Unit["status"], rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
   const [createStep, setCreateStep] = useState(1);
-  const [propertyForm, setPropertyForm] = useState({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", type: "house" as "house" | "condominium", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[] });
+  const [propertyForm, setPropertyForm] = useState({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", type: "house" as "house" | "condominium", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
   const [unitsForm, setUnitsForm] = useState({ unitNumber: "", floor: "", status: "vacant" as "vacant" | "occupied" | "maintenance", rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
   const [isUploadingPropertyImage, setIsUploadingPropertyImage] = useState(false);
   const [isUploadingUnitImage, setIsUploadingUnitImage] = useState(false);
@@ -133,7 +132,7 @@ export default function OwnerDashboard() {
   const [viewingReport, setViewingReport] = useState<"rental" | "property" | null>(null);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
-  const [editPropertyForm, setEditPropertyForm] = useState({ name: "", location: "", latitude: "", longitude: "", type: "house" as "house" | "condominium", status: "active" as "active" | "inactive", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[] });
+  const [editPropertyForm, setEditPropertyForm] = useState({ name: "", location: "", latitude: "", longitude: "", type: "house" as "house" | "condominium", status: "active" as "active" | "inactive", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
   const [editUnitPropertyId, setEditUnitPropertyId] = useState<string | null>(null);
   const [editUnitForm, setEditUnitForm] = useState({ unitNumber: "", floor: "", status: "vacant" as "vacant" | "occupied" | "maintenance", rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
   const [isUploadingEditPropertyImage, setIsUploadingEditPropertyImage] = useState(false);
@@ -163,27 +162,69 @@ export default function OwnerDashboard() {
   const [financialSort, setFinancialSort] = useState("date-desc");
   const [financialPage, setFinancialPage] = useState(1);
 
+  useEffect(() => {
+    const handleTabSwitch = (e?: Event) => {
+      const customDetail = (e as CustomEvent)?.detail;
+      const hash = typeof window !== "undefined" ? window.location.hash.replace("#", "") : "";
+      const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      const tabParam = params?.get("tab") || hash || customDetail?.tab;
+
+      if (tabParam === "properties" || tabParam === "units") {
+        setActiveTab("units");
+        setUnitsView("properties");
+      } else if (tabParam === "occupancy") {
+        setActiveTab("units");
+        setUnitsView("occupancy");
+      } else if (tabParam && ["overview", "units", "tenants", "assignments", "financial", "contracts", "messages", "profile", "map", "move-out-requests"].includes(tabParam)) {
+        setActiveTab(tabParam as Step);
+      }
+    };
+
+    handleTabSwitch();
+    window.addEventListener("hashchange", handleTabSwitch);
+    window.addEventListener("renttrack-switch-tab", handleTabSwitch);
+    return () => {
+      window.removeEventListener("hashchange", handleTabSwitch);
+      window.removeEventListener("renttrack-switch-tab", handleTabSwitch);
+    };
+  }, []);
+
   const loadData = useCallback(async () => {
     setIsRefreshing(true);
     setLoadError(false);
     try {
-      const [props, unitsData, tenantsData, paymentsData, agentsData] = await Promise.all([
+      const [propsRes, unitsRes, tenantsRes, paymentsRes, agentsRes] = await Promise.allSettled([
         getProperties(user),
         getUnits(user),
         getTenants(user),
         getPayments(user),
         getOwnerAgents(),
       ]);
-      setProperties(props);
-      setUnits(unitsData);
-      setTenants(tenantsData);
-      setPayments(paymentsData);
-      setAgents(agentsData);
 
-      const moveOutRes = await fetch("/api/move-out");
-      const moveOutData = await safeParseJson(moveOutRes);
-      if (moveOutData.success) {
-        setMoveOutRequests(moveOutData.requests || []);
+      if (propsRes.status === "fulfilled" && Array.isArray(propsRes.value)) {
+        setProperties(propsRes.value);
+      }
+      if (unitsRes.status === "fulfilled" && Array.isArray(unitsRes.value)) {
+        setUnits(unitsRes.value);
+      }
+      if (tenantsRes.status === "fulfilled" && Array.isArray(tenantsRes.value)) {
+        setTenants(tenantsRes.value);
+      }
+      if (paymentsRes.status === "fulfilled" && Array.isArray(paymentsRes.value)) {
+        setPayments(paymentsRes.value);
+      }
+      if (agentsRes.status === "fulfilled" && Array.isArray(agentsRes.value)) {
+        setAgents(agentsRes.value);
+      }
+
+      try {
+        const moveOutRes = await fetch("/api/move-out");
+        const moveOutData = await safeParseJson(moveOutRes);
+        if (moveOutData.success) {
+          setMoveOutRequests(moveOutData.requests || []);
+        }
+      } catch (e) {
+        console.warn("Move out load error:", e);
       }
     } catch (err) {
       console.error("Owner dashboard load error:", err);
@@ -218,14 +259,9 @@ export default function OwnerDashboard() {
         toast.error("Provide a unit number and a valid rental rate");
         return;
       }
-      const location = [propertyForm.address, propertyForm.city, propertyForm.province]
-        .map((s) => (s || "").trim())
-        .filter(Boolean)
-        .join(", ") || propertyForm.address || "Main Address";
-
       const newProperty = await addProperty({
-        name: propertyForm.name.trim(),
-        location,
+        name: propertyForm.name,
+        location: `${propertyForm.address}, ${propertyForm.city}, ${propertyForm.province}`,
         type: propertyForm.type,
         latitude: propertyForm.latitude ? Number(propertyForm.latitude) : undefined,
         longitude: propertyForm.longitude ? Number(propertyForm.longitude) : undefined,
@@ -238,10 +274,11 @@ export default function OwnerDashboard() {
         features: propertyForm.features,
         condition: propertyForm.condition || undefined,
         availabilityStatus: propertyForm.availabilityStatus,
+        agentId: propertyForm.agentId || undefined,
       }, user?.id || "");
       await addUnit({
         propertyId: newProperty.id,
-        unitNumber: unitsForm.unitNumber.trim(),
+        unitNumber: unitsForm.unitNumber,
         floor: unitsForm.floor ? Number(unitsForm.floor) : undefined,
         status: unitsForm.status,
         rentAmount: Number(unitsForm.rentAmount),
@@ -251,12 +288,11 @@ export default function OwnerDashboard() {
       toast.success("Property created successfully!");
       setShowCreateProperty(false);
       setCreateStep(1);
-      setPropertyForm({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", type: "house", features: [], condition: "", availabilityStatus: "Available", imageUrl: "", imageUrls: [] });
+      setPropertyForm({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", type: "house", features: [], condition: "", availabilityStatus: "Available", imageUrl: "", imageUrls: [], agentId: "" });
       setUnitsForm({ unitNumber: "", floor: "", status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
       setTermsForm({ securityDeposit: "", advancePayment: "", duration: "12 months", paymentDueDate: "5th", rentalTerms: "" });
       await loadData();
     } catch (error) {
-      console.error("Create property error in owner dashboard:", error);
       toast.error(error instanceof Error ? error.message : "Failed to create property");
     } finally {
       setIsSubmitting(false);
@@ -501,6 +537,7 @@ export default function OwnerDashboard() {
       availabilityStatus: property.availabilityStatus || "Available",
       imageUrl: property.imageUrl || "",
       imageUrls: property.imageUrls || (property.imageUrl ? [property.imageUrl] : []),
+      agentId: property.agentId || "",
     });
   };
 
@@ -521,6 +558,7 @@ export default function OwnerDashboard() {
         availabilityStatus: property.availabilityStatus || "Available",
         imageUrl: property.imageUrl || "",
         imageUrls: property.imageUrls || (property.imageUrl ? [property.imageUrl] : []),
+        agentId: property.agentId || "",
       });
     }
     setEditUnitForm({
@@ -550,6 +588,7 @@ export default function OwnerDashboard() {
         availabilityStatus: editPropertyForm.availabilityStatus,
         imageUrl: editPropertyForm.imageUrl || undefined,
         imageUrls: editPropertyForm.imageUrls,
+        agentId: editPropertyForm.agentId || undefined,
       });
       if (!updatedProperty) throw new Error("Failed to update property");
       setProperties(properties.map(p => p.id === editingProperty.id ? {
@@ -557,6 +596,7 @@ export default function OwnerDashboard() {
         ...editPropertyForm,
         latitude: editPropertyForm.latitude ? Number(editPropertyForm.latitude) : undefined,
         longitude: editPropertyForm.longitude ? Number(editPropertyForm.longitude) : undefined,
+        agentId: editPropertyForm.agentId || undefined,
       } : p));
       toast.success("Property updated");
       setEditingProperty(null);
@@ -662,7 +702,7 @@ export default function OwnerDashboard() {
   useEffect(() => {
     const readHash = () => {
       const hash = window.location.hash.replace("#", "");
-      if (hash === "payments" || hash === "reports") {
+      if (hash === "payments") {
         setActiveTab("financial");
       } else if (hash && flowSteps.some((s) => s.key === hash)) {
         setActiveTab(hash as Step);
@@ -690,7 +730,7 @@ export default function OwnerDashboard() {
 
   const availableUnits = units.filter((u) => u.status === "vacant");
   const occupiedUnits = units.filter((u) => u.status === "occupied");
-  const pendingAssignments = tenants.filter((t) => t.assignmentStatus === "pending" && t.unitId);
+  const pendingAssignments = tenants.filter((t) => t.assignmentStatus === "pending" && (t.unitId || t.propertyName));
   const pendingPayments = payments.filter((p) => p.status === "pending");
   const overduePayments = payments.filter((p) => p.status === "overdue");
   const normalizedUnitSearch = unitSearch.trim().toLowerCase();
@@ -705,7 +745,11 @@ export default function OwnerDashboard() {
   const filteredProperties = properties.filter((property) => {
     const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
     const searchMatches = !normalizedUnitSearch || `${property.name} ${property.location} ${propertyUnits.map((unit) => `${unit.unitNumber} ${unit.tenantName || ""}`).join(" ")}`.toLowerCase().includes(normalizedUnitSearch);
-    const statusMatches = unitStatusFilter === "all" || propertyUnits.some((unit) => unit.status === unitStatusFilter);
+    const statusMatches = unitStatusFilter === "all"
+      || propertyUnits.some((unit) => unit.status === unitStatusFilter)
+      || (unitStatusFilter === "vacant" && (property.availabilityStatus === "Available" || property.status === "active"))
+      || (unitStatusFilter === "occupied" && property.availabilityStatus === "Occupied")
+      || (unitStatusFilter === "maintenance" && property.availabilityStatus === "Under Maintenance");
     return searchMatches && statusMatches && (unitTypeFilter === "all" || property.type === unitTypeFilter) && (unitPropertyFilter === "all" || property.id === unitPropertyFilter);
   });
   const filteredTenants = tenants.filter((tenant) =>
@@ -906,16 +950,20 @@ export default function OwnerDashboard() {
           />
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5 sm:gap-3">
             {[
-              { label: "Properties", value: properties.length, icon: Home, tone: "blue", tab: "properties" as const },
-              { label: "Available units", value: availableUnits.length, icon: Home, tone: "emerald", tab: "units" as const },
-              { label: "Occupied units", value: occupiedUnits.length, icon: ClipboardCheck, tone: "cyan", tab: "occupancy" as const },
+              { label: "Properties", value: properties.length, icon: Home, tone: "blue", tab: "units" as const, view: "properties" as const },
+              { label: "Available units", value: availableUnits.length, icon: Home, tone: "emerald", tab: "units" as const, view: "units" as const },
+              { label: "Occupied units", value: occupiedUnits.length, icon: ClipboardCheck, tone: "cyan", tab: "units" as const, view: "occupancy" as const },
               { label: "Pending approvals", value: pendingAssignments.length, icon: Clock, tone: "amber", tab: "assignments" as const },
               { label: "Pending payments", value: pendingPayments.length, icon: CreditCard, tone: "rose", tab: "financial" as const },
             ].map((stat) => (
               <button
                 key={stat.label}
                 type="button"
-                onClick={() => { setActiveTab(stat.tab); window.location.hash = stat.tab; }}
+                onClick={() => {
+                  setActiveTab(stat.tab);
+                  if ("view" in stat && stat.view) setUnitsView(stat.view);
+                  window.location.hash = stat.tab;
+                }}
                 className="rounded-lg border border-[#dce8f5] bg-white p-3 text-left shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:p-4"
               >
                 <span className="flex items-center justify-between gap-2">
@@ -943,8 +991,15 @@ export default function OwnerDashboard() {
                 {properties.slice(0, 5).map((property) => {
                   const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
                   return (
-                    <button key={property.id} type="button" onClick={() => { setActiveTab("properties"); window.location.hash = "properties"; }} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
-                      <UnitImageCarousel images={property.imageUrls || (property.imageUrl ? [property.imageUrl] : [])} alt={property.name} className="h-12 w-16 shrink-0 rounded-md border border-slate-200" imageClassName="group-hover:scale-100" />
+                    <button key={property.id} type="button" onClick={() => { setActiveTab("units"); setUnitsView("properties"); window.location.hash = "units"; }} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
+                      <UnitImageCarousel
+                        images={property.imageUrls || (property.imageUrl ? [property.imageUrl] : [])}
+                        alt={property.name}
+                        title={property.name}
+                        subtitle={`${property.location} • ${propertyUnits.length} units`}
+                        className="h-12 w-16 shrink-0 rounded-md border border-slate-200 cursor-pointer"
+                        imageClassName="group-hover:scale-100"
+                      />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-xs font-semibold text-slate-900">{property.name}</span>
                         <span className="mt-0.5 block truncate text-[10px] text-slate-500">{property.location}</span>
@@ -983,86 +1038,8 @@ export default function OwnerDashboard() {
         </motion.div>
       )}
 
-      {/* PROPERTIES */}
-      {activeTab === "properties" && (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-          <ManagementBanner
-            category="PROPERTY PORTFOLIO"
-            title="Properties"
-            description="Manage your real estate assets, buildings, and property portfolios."
-            icon={Building2}
-          />
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              onClick={() => setShowCreateProperty(true)}
-              className="h-9 gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 px-4 text-xs font-semibold text-white shadow-sm"
-            >
-              <Plus className="h-4 w-4" />
-              Create Property
-            </Button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {properties.map((property) => {
-              const propertyUnits = units.filter((u) => u.propertyId === property.id);
-              const vacant = propertyUnits.filter((u) => u.status === "vacant");
-              return (
-                <Card key={property.id} className="hover:shadow-lg transition-shadow">
-                  <CardContent className="p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <h3 className="text-lg font-semibold text-foreground">{property.name}</h3>
-                        <p className="text-sm text-text-secondary mt-1">{property.location}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize">{property.status}</Badge>
-                        <Button size="sm" variant="outline" onClick={() => handleEditProperty(property)}>
-                          <Eye className="h-4 w-4 mr-1" />
-                          Edit
-                        </Button>
-                        <Button size="sm" variant="destructive" onClick={() => handleDeleteProperty(property)}>
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-                    <UnitImageCarousel images={property.imageUrls || (property.imageUrl ? [property.imageUrl] : [])} alt={property.name} className="mb-4 h-40 w-full rounded-xl border border-border" />
-                    <div className="flex items-center gap-4 text-sm text-text-secondary mb-4">
-                      <span className="flex items-center gap-1.5"><Home className="h-4 w-4" />{property.units} units</span>
-                      <span className="flex items-center gap-1.5"><ClipboardCheck className="h-4 w-4" />{vacant.length} vacant</span>
-                    </div>
-                    <div className="space-y-2.5">
-                      <p className="text-sm font-medium text-text-secondary">Units:</p>
-                      {propertyUnits.length === 0 ? (
-                        <p className="text-sm text-text-tertiary">No units registered</p>
-                      ) : (
-                        propertyUnits.map((unit) => (
-                          <div key={unit.id} className="flex items-center justify-between p-3 rounded-lg bg-surface-secondary">
-                            <span className="text-sm font-medium">Unit Number: {unit.unitNumber}</span>
-                            <Badge variant={unit.status === "vacant" ? "success" : unit.status === "occupied" ? "outline" : "warning"} className="text-xs capitalize">{unit.status}</Badge>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-            {properties.length === 0 && (
-              <Card className="col-span-full">
-                <CardContent className="p-12 text-center">
-                  <Home className="h-12 w-12 text-text-tertiary mx-auto mb-3" />
-                  <p className="text-text-secondary font-medium">No properties yet</p>
-                  <p className="text-xs text-text-tertiary mt-1">Create your first property to get started</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </motion.div>
-      )}
-
-      {/* RENTAL UNITS */}
-      {activeTab === "units" && (
+      {/* RENTAL UNITS & PROPERTIES */}
+      {(activeTab === "units" || (activeTab as string) === "properties") && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={management.page}>
           <ManagementBanner />
           <div className={management.toolbar}>
@@ -1083,13 +1060,105 @@ export default function OwnerDashboard() {
               Add Properties &amp; Units
             </Button>
           </div>
-          {unitsView === "properties" && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredProperties.map((property) => {
-              const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
-              return <Card key={property.id} className="overflow-hidden"><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate text-lg font-semibold">{property.name}</h3><p className="mt-1 line-clamp-2 text-sm text-text-secondary">{property.location}</p></div><Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize">{property.status}</Badge></div><div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-surface-secondary p-3 text-center text-sm"><div><p className="font-bold">{propertyUnits.length}</p><p className="text-xs text-text-tertiary">Units</p></div><div><p className="font-bold text-blue-600">{propertyUnits.filter((unit) => unit.status === "occupied").length}</p><p className="text-xs text-text-tertiary">Occupied</p></div><div><p className="font-bold text-green-600">{propertyUnits.filter((unit) => unit.status === "vacant").length}</p><p className="text-xs text-text-tertiary">Vacant</p></div></div><div className="mt-4 flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => { setNewUnitForm((current) => ({ ...current, propertyId: property.id })); setShowAddUnit(true); }}><Plus className="mr-1 h-3.5 w-3.5" />Add Unit</Button><Button size="sm" variant="outline" onClick={() => handleEditProperty(property)}><Eye className="mr-1 h-3.5 w-3.5" />Edit</Button><Button size="sm" variant="destructive" onClick={() => handleDeleteProperty(property)}><Trash2 className="mr-1 h-3.5 w-3.5" />Delete</Button></div>{propertyUnits.length > 0 && <div className="mt-4 space-y-2 border-t border-border pt-3"><p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">Units</p>{propertyUnits.slice(0, 4).map((unit) => <div key={unit.id} className="flex items-center justify-between gap-3 text-sm"><span className="truncate">Unit {unit.unitNumber}</span><Badge variant={unit.status === "vacant" ? "success" : unit.status === "occupied" ? "outline" : "warning"} className="capitalize">{unit.status}</Badge></div>)}{propertyUnits.length > 4 && <p className="text-xs text-text-tertiary">and {propertyUnits.length - 4} more</p>}</div>}</CardContent></Card>;
-            })}
-            {filteredProperties.length === 0 && <Card className="col-span-full"><CardContent className="p-12 text-center"><Home className="mx-auto mb-3 h-10 w-10 text-text-tertiary" /><p className="font-medium text-text-secondary">No matching properties</p><p className="mt-1 text-sm text-text-tertiary">Try another search or filter.</p></CardContent></Card>}
-          </div>}
+          {unitsView === "properties" && (
+            initialLoad ? (
+              <div className={management.empty} role="status">Loading properties...</div>
+            ) : loadError ? (
+              <div className={management.empty} role="alert">
+                <strong>Unable to load your properties</strong>
+                <Button variant="outline" onClick={() => void loadData()}>Try again</Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {filteredProperties.map((property) => {
+                  const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
+                  const assignedAgent = agents.find((a) => a.id === property.agentId);
+                  const propImgs = property.imageUrls?.length ? property.imageUrls : property.imageUrl ? [property.imageUrl] : [];
+                  return (
+                    <Card key={property.id} className="overflow-hidden group hover:shadow-md transition-shadow">
+                      <div className="relative h-48 w-full bg-slate-100 overflow-hidden border-b border-border">
+                        <UnitImageCarousel
+                          images={propImgs}
+                          alt={property.name}
+                          title={property.name}
+                          subtitle={`${property.location} • ${propertyUnits.length} units`}
+                          className="h-full w-full rounded-none border-0"
+                          imageClassName="object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <div className="absolute top-3 right-3 z-10 pointer-events-none">
+                          <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize backdrop-blur-md bg-white/90 shadow-2xs">
+                            {property.status}
+                          </Badge>
+                        </div>
+                        <div className="absolute top-3 left-3 z-10 pointer-events-none">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-slate-900/75 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-xs">
+                            <Camera className="h-3 w-3" />
+                            {propImgs.length} photo{propImgs.length === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                      </div>
+                      <CardContent className="p-5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="truncate text-lg font-semibold">{property.name}</h3>
+                              {assignedAgent ? (
+                                <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
+                                  Agent: {assignedAgent.name}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-[10px] text-slate-500 border-slate-200">
+                                  All Agents
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="mt-1 line-clamp-2 text-sm text-text-secondary">{property.location}</p>
+                          </div>
+                          <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize">{property.status}</Badge>
+                        </div>
+                        <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-surface-secondary p-3 text-center text-sm">
+                          <div><p className="font-bold">{propertyUnits.length}</p><p className="text-xs text-text-tertiary">Units</p></div>
+                          <div><p className="font-bold text-blue-600">{propertyUnits.filter((unit) => unit.status === "occupied").length}</p><p className="text-xs text-text-tertiary">Occupied</p></div>
+                          <div><p className="font-bold text-green-600">{propertyUnits.filter((unit) => unit.status === "vacant").length}</p><p className="text-xs text-text-tertiary">Vacant</p></div>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" onClick={() => { setNewUnitForm((current) => ({ ...current, propertyId: property.id })); setShowAddUnit(true); }}><Plus className="mr-1 h-3.5 w-3.5" />Add Unit</Button>
+                          <Button size="sm" variant="outline" onClick={() => handleEditProperty(property)}><Eye className="mr-1 h-3.5 w-3.5" />Edit</Button>
+                          <Button size="sm" variant="destructive" onClick={() => handleDeleteProperty(property)}><Trash2 className="mr-1 h-3.5 w-3.5" />Delete</Button>
+                        </div>
+                        {propertyUnits.length > 0 && (
+                          <div className="mt-4 space-y-2 border-t border-border pt-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">Units</p>
+                            {propertyUnits.slice(0, 4).map((unit) => (
+                              <div key={unit.id} className="flex items-center justify-between gap-3 text-sm">
+                                <span className="truncate">Unit {unit.unitNumber}</span>
+                                <Badge variant={unit.status === "vacant" ? "success" : unit.status === "occupied" ? "outline" : "warning"} className="capitalize">{unit.status}</Badge>
+                              </div>
+                            ))}
+                            {propertyUnits.length > 4 && <p className="text-xs text-text-tertiary">and {propertyUnits.length - 4} more</p>}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+                {filteredProperties.length === 0 && (
+                  <Card className="col-span-full">
+                    <CardContent className="p-12 text-center">
+                      <Home className="mx-auto mb-3 h-10 w-10 text-text-tertiary" />
+                      <p className="font-medium text-text-secondary">{properties.length ? "No matching properties" : "No properties yet"}</p>
+                      <p className="mt-1 text-sm text-text-tertiary">{properties.length ? "Try another search or filter." : "Click below to register your first property."}</p>
+                      {properties.length === 0 && (
+                        <Button className="mt-4" onClick={openAddProperty}>
+                          <Plus className="mr-1 h-4 w-4" /> Add Property
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )
+          )}
           {unitsView === "units" && <section className={management.tablePanel} aria-label="Rental units">
             <div className={management.tableHeader}>
               <h2 className={management.tableTitle}>Units <span className={management.count}>{filteredUnits.length} units</span></h2>
@@ -1099,11 +1168,40 @@ export default function OwnerDashboard() {
               : loadError ? <div className={management.empty} role="alert"><strong>Unable to load your portfolio</strong><Button variant="outline" onClick={() => void loadData()}>Try again</Button></div>
                 : filteredUnits.length === 0 ? <div className={management.empty}><Home aria-hidden="true" /><strong>{units.length ? "No units match these filters" : "No units yet"}</strong><p>{units.length ? "Adjust your search or reset the filters to see your units." : "Add a property and its units to start managing your portfolio."}</p><Button variant="outline" onClick={openAddUnit}><Plus className="mr-1 h-4 w-4" />Add unit</Button></div>
                   : <><div className={management.tableScroll}><table className={management.table}>
-                    <thead><tr><th>Unit No.</th><th>Property</th><th>Property Type</th><th>Monthly Rent</th><th>Status</th><th>Tenant</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Unit Photo</th><th>Unit No.</th><th>Property</th><th>Property Type</th><th>Monthly Rent</th><th>Status</th><th>Tenant</th><th>Actions</th></tr></thead>
                     <tbody>{visibleUnits.map((unit) => {
                       const property = properties.find((item) => item.id === unit.propertyId);
                       const tenantName = unit.tenantName || tenants.find((tenant) => tenant.unitId === unit.id)?.name;
-                      return <tr key={unit.id}><td className="font-semibold">{unit.unitNumber}</td><td><span className={management.propertyCell}><Building2 aria-hidden="true" />{property?.name || "Unlinked property"}</span></td><td className="capitalize">{property?.type || "—"}</td><td className="whitespace-nowrap tabular-nums">{formatCurrency(unit.rentAmount)}</td><td><UnitStatus status={unit.status} /></td><td>{tenantName ? <span className={management.tenantCell}><User aria-hidden="true" />{tenantName}</span> : "—"}</td><td>
+                      const unitImgs = unit.imageUrls?.length ? unit.imageUrls : unit.imageUrl ? [unit.imageUrl] : property?.imageUrls?.length ? property.imageUrls : property?.imageUrl ? [property.imageUrl] : [];
+                      const propImgs = property?.imageUrls?.length ? property.imageUrls : property?.imageUrl ? [property.imageUrl] : [];
+                      return <tr key={unit.id}><td>
+                        <UnitImageCarousel
+                          images={unitImgs}
+                          alt={`Unit ${unit.unitNumber}`}
+                          title={`Unit ${unit.unitNumber} - ${property?.name || "Property"}`}
+                          subtitle={`${property?.location || ""} • Floor ${unit.floor ?? "—"} • ${formatCurrency(unit.rentAmount)}/mo`}
+                          className="h-10 w-14 shrink-0 rounded-md border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
+                          imageClassName="group-hover:scale-100"
+                        />
+                      </td><td className="font-semibold">{unit.unitNumber}</td><td>
+                        <div className="flex items-center gap-2.5">
+                          <UnitImageCarousel
+                            images={propImgs}
+                            alt={property?.name || "Property"}
+                            title={property?.name || "Property"}
+                            subtitle={property?.location || ""}
+                            className="h-9 w-12 shrink-0 rounded-md border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
+                            imageClassName="group-hover:scale-100"
+                          />
+                          <div className="min-w-0">
+                            <span className={management.propertyCell}>
+                              <Building2 aria-hidden="true" className="shrink-0" />
+                              <span className="truncate max-w-[130px]">{property?.name || "Unlinked property"}</span>
+                            </span>
+                            {property?.location && <span className="block text-[10px] text-slate-500 truncate max-w-[140px] pl-5">{property.location}</span>}
+                          </div>
+                        </div>
+                      </td><td className="capitalize">{property?.type || "—"}</td><td className="whitespace-nowrap tabular-nums">{formatCurrency(unit.rentAmount)}</td><td><UnitStatus status={unit.status} /></td><td>{tenantName ? <span className={management.tenantCell}><User aria-hidden="true" />{tenantName}</span> : "—"}</td><td>
                         <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon" variant="ghost" aria-label={`Actions for unit ${unit.unitNumber}`} className="h-8 w-8 text-blue-700"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => handleEditUnit(unit)} icon={<Eye className="h-4 w-4" />}>Edit unit and property</DropdownMenuItem><DropdownMenuItem onSelect={() => handleDeleteUnit(unit)} icon={<Trash2 className="h-4 w-4" />} className="text-red-600">Delete unit</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
                       </td></tr>;
                     })}</tbody>
@@ -1127,14 +1225,14 @@ export default function OwnerDashboard() {
           <Card>
             <CardContent className="p-6">
               <div className="space-y-3">
-                {tenants.filter(t => t.assignmentStatus === "pending" && t.unitId).length === 0 ? (
+                {pendingAssignments.length === 0 ? (
                   <div className="text-center py-12">
                     <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-3" />
                     <p className="text-text-secondary font-medium">All caught up!</p>
                     <p className="text-xs text-text-tertiary mt-1">No pending assignments to review</p>
                   </div>
                 ) : (
-                  tenants.filter(t => t.assignmentStatus === "pending" && t.unitId).map((tenant) => (
+                  pendingAssignments.map((tenant) => (
                     <div key={tenant.id} className="flex items-center justify-between p-4 rounded-xl border border-amber-200 bg-amber-50">
                       <div className="flex items-center gap-3">
                         <Avatar src={tenant.avatarUrl} fallback={getInitials(tenant.name)} />
@@ -1288,8 +1386,8 @@ export default function OwnerDashboard() {
                                 request.status === "approved"
                                   ? "success"
                                   : request.status === "rejected"
-                                  ? "destructive"
-                                  : "warning"
+                                    ? "destructive"
+                                    : "warning"
                               }
                               className="text-[10px] capitalize"
                             >
@@ -1401,8 +1499,8 @@ export default function OwnerDashboard() {
                         selectedMoveOut.status === "approved"
                           ? "success"
                           : selectedMoveOut.status === "rejected"
-                          ? "destructive"
-                          : "warning"
+                            ? "destructive"
+                            : "warning"
                       }
                       className="capitalize"
                     >
@@ -1738,7 +1836,7 @@ export default function OwnerDashboard() {
             </div>
             <FinancialMetrics collected={formatCurrency(filteredCollected)} pending={formatCurrency(filteredPayments.filter((payment) => payment.status === "pending").reduce((total, payment) => total + payment.amountPaid, 0))} outstanding={formatCurrency(filteredOutstanding)} transactions={filteredPayments.length} pendingCount={filteredPayments.filter((payment) => payment.status === "pending").length} openCount={filteredPayments.filter((payment) => payment.status !== "paid").length} />
             <div className={management.tabs} aria-label="Financial views">{([
-              ["payments", "Payments"], ["approvals", "Pending approvals"], ["reports", "Reports"],
+              ["payments", "Payments"], ["approvals", "Pending approvals"],
             ] as const).map(([view, label]) => <button key={view} type="button" aria-pressed={financialView === view} onClick={() => setFinancialView(view)}>{label}{view === "approvals" && pendingAssignments.length > 0 && <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-800">{pendingAssignments.length}</span>}</button>)}</div>
             {financialView === "payments" && <section className={management.tablePanel} aria-label="Financial transactions">
               <div className={management.tableHeader}>
@@ -1897,48 +1995,6 @@ export default function OwnerDashboard() {
         );
       })()}
 
-      {/* REPORTS */}
-      {activeTab === "reports" && (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-          <ManagementBanner
-            category="FINANCIAL REPORTS"
-            title="Receipts & Reports"
-            description="Review rental income, financial performance, and export transaction summaries."
-            icon={BarChart3}
-          />
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={downloadFinancialPdf} className="border-slate-300 bg-white shadow-sm text-slate-700 hover:bg-slate-50"><Download className="mr-2 h-4 w-4" />Download PDF</Button>
-            <Button onClick={downloadFinancialExport} className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"><Download className="mr-2 h-4 w-4" />Download Excel</Button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-secondary-500 to-secondary-600 text-white flex items-center justify-center">
-                    <BarChart3 className="h-5 w-5" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-foreground">Rental Income</h3>
-                </div>
-                <p className="text-sm text-text-secondary mb-4">Monthly and annual rental income reports</p>
-                <Button variant="outline" className="w-full" onClick={() => setViewingReport("rental")}>View Report</Button>
-              </CardContent>
-            </Card>
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center">
-                    <FileSpreadsheet className="h-5 w-5" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-foreground">Property Reports</h3>
-                </div>
-                <p className="text-sm text-text-secondary mb-4">Property performance and occupancy reports</p>
-                <Button variant="outline" className="w-full" onClick={() => setViewingReport("property")}>View Report</Button>
-              </CardContent>
-            </Card>
-          </div>
-        </motion.div>
-      )}
-
       {/* Messaging Modal */}
       {selectedConversation && (
         <MessagingModal
@@ -2043,6 +2099,24 @@ export default function OwnerDashboard() {
                         </select>
                       </div>
                     </div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-surface-secondary/40 p-4">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">Assigned Real Estate Agent</p>
+                    <select
+                      value={propertyForm.agentId || ""}
+                      onChange={(e) => setPropertyForm({ ...propertyForm, agentId: e.target.value })}
+                      className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"
+                    >
+                      <option value="">All / Unassigned (All agents can manage &amp; assign units)</option>
+                      {agents.map((agent) => (
+                        <option key={agent.id} value={agent.id}>
+                          {agent.name} ({agent.email})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1.5 text-xs text-text-secondary">
+                      Assign a specific agent or leave unassigned so any of your registered agents can manage units for this property.
+                    </p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1.5">Property Features</label>
@@ -2427,6 +2501,24 @@ export default function OwnerDashboard() {
                     {AVAILABILITY_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
                   </select>
                 </div>
+              </div>
+              <div className="rounded-xl border border-border bg-surface-secondary/40 p-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">Assigned Real Estate Agent</p>
+                <select
+                  value={editPropertyForm.agentId || ""}
+                  onChange={(e) => setEditPropertyForm({ ...editPropertyForm, agentId: e.target.value })}
+                  className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"
+                >
+                  <option value="">All / Unassigned (All agents can manage &amp; assign units)</option>
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name} ({agent.email})
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs text-text-secondary">
+                  Choose which agent manages this property and its units, or leave unassigned for all agents.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5">Number of Units</label>

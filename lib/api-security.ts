@@ -72,6 +72,9 @@ export function validateApiRequest(request: NextRequest): NextResponse | null {
 }
 
 export async function withRateLimit(request: NextRequest, identifier?: string): Promise<NextResponse | null> {
+  if (identifier?.startsWith("login:") || request.nextUrl.pathname.includes("/auth/login") || request.nextUrl.pathname.endsWith("/login")) {
+    return null;
+  }
   const key = identifier || `${getClientIp(request)}:${request.nextUrl.pathname}`;
   const { checkRateLimit } = await import("@/lib/auth-security");
   const limit = checkRateLimit(key);

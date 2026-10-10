@@ -3,9 +3,30 @@
 
 import { createClient } from "@supabase/supabase-js";
 import bcrypt from "bcryptjs";
+import fs from "fs";
+import path from "path";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://qddnqdhvwmkbsqmzcfnw.supabase.co";
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFkZG5xZGh2d21rYnNxbXpjZm53Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4OTQ2MDIwMiwiZXhwIjoyMTA1MDM2MjAyfQ.hHGt6wPA23eumX1P4DtsMDx8NXvnnfaZuMFjCnBaV04";
+try {
+  const envPath = path.resolve(process.cwd(), ".env.local");
+  if (fs.existsSync(envPath)) {
+    const lines = fs.readFileSync(envPath, "utf-8").split("\n");
+    for (const line of lines) {
+      const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+      if (match) {
+        const key = match[1];
+        let val = (match[2] || "").trim();
+        if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+        if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
+        process.env[key] = val;
+      }
+    }
+  }
+} catch (e) {
+  console.warn("Could not load .env.local", e);
+}
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://pwnqqkmtftipvdkbbjyo.supabase.co";
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3bnFxa210ZnRpcHZka2JianlvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDEyOTM4MCwiZXhwIjoyMTA1NzA1MzgwfQ.m-Ci9P-FgEkB_sQCar4dezO9xl55_RBiNF1bDcdm6N8";
 
 const email = process.argv[2];
 const newPassword = process.argv[3];

@@ -50,8 +50,8 @@ export function getNotificationDashboardHref(
   }
 
   if (type === "id_verification" || /verification|verify id|uploaded an id|id upload/.test(text)) {
-    if (isAdmin) return "/dashboard/tenants";
-    if (isOwner) return "/dashboard/tenants";
+    if (isOwner) return "/dashboard/owner?filter=pending#agents";
+    if (isAdmin) return "/dashboard/admin?tab=users";
     if (isAgent) return "/dashboard/agent#verifications";
     if (isTenant) return "/dashboard/tenant/settings";
   }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllUsers, findUserById, findUserByEmail, deleteUser, createUser, initDatabase } from "@/lib/db";
+import { getAllUsers, findUserById, findUserByEmail, deleteUser, createUser, initDatabase, getAdminSupabase } from "@/lib/db";
 import {
   requireRole, sanitizeResponse,
 } from "@/lib/api-security";
@@ -73,6 +73,24 @@ export async function POST(request: NextRequest) {
     const createdBy = (role === "agent" && auth.user?.role === "owner") ? auth.userId : (auth.userId || undefined);
     // Newly created accounts require email/OTP verification when logging in
     const user = await createUser(name, email, password, role, phone || undefined, undefined, address || undefined, false, createdBy);
+
+    if (role === "tenant") {
+      try {
+        const adminClient = getAdminSupabase();
+        await adminClient.from("tenants").upsert({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: phone || null,
+          address: address || null,
+          status: "active",
+          created_by: createdBy || null,
+        }, { onConflict: "id" });
+      } catch (err) {
+        console.error("Failed to sync tenant record on user creation:", err);
+      }
+    }
+
     await logAudit(auth.userId, "user_created", { createdUserId: user.id, name: user.name, role: user.role, emailVerified: false }, (request as any).ip, (request as any).headers?.get("user-agent"));
 
     let emailSent = false;

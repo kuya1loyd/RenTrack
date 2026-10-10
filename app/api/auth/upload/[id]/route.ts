@@ -16,8 +16,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const resolvedParams = await params;
     const upload = await getUpload(resolvedParams.id);
     if (!upload || !upload.data || upload.data.length === 0) {
-      const response = NextResponse.json({ success: false, error: "File not found" }, { status: 404 });
-      return withSecurityHeaders(withCorsHeaders(request, response));
+      return NextResponse.redirect(new URL("/images/landing/feature-property.jpg", request.url));
     }
 
     const isPublicUpload = ["property", "unit", "avatar"].includes(upload.type);
@@ -39,7 +38,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const response = new NextResponse(buffer, {
       headers: {
         "Content-Type": upload.mime_type || "application/octet-stream",
-        "Cache-Control": isPublicUpload ? "public, max-age=3600, immutable" : "private, max-age=3600",
+        "Cache-Control": isPublicUpload ? "public, max-age=86400, stale-while-revalidate=604800, immutable" : "private, max-age=3600",
         "X-Content-Type-Options": "nosniff",
         "Content-Disposition": `inline; filename="upload_${resolvedParams.id}"`,
       },

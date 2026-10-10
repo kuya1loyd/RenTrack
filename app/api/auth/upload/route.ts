@@ -50,17 +50,31 @@ export async function POST(request: NextRequest) {
       await updateUserIdVerification(userId, url, "pending").catch(() => null);
 
       try {
-        const uploaderUser = await getAdminSupabase().schema("public").from("users").select("name, email, role").eq("id", userId).single();
+        const uploaderUser = await getAdminSupabase().schema("public").from("users").select("name, email, role, created_by").eq("id", userId).single();
         const uploaderName = uploaderUser.data?.name || "A user";
         const uploaderRole = uploaderUser.data?.role || "user";
+        const creatorOwnerId = uploaderUser.data?.created_by;
 
-        const admins = await getAdminSupabase().schema("public").from("users").select("id").in("role", ["admin", "owner"]);
+        const recipientIds = new Set<string>();
+        const admins = await getAdminSupabase().schema("public").from("users").select("id").eq("role", "admin");
         for (const admin of admins.data || []) {
+          recipientIds.add(admin.id);
+        }
+        if (uploaderRole === "agent" && creatorOwnerId) {
+          recipientIds.add(creatorOwnerId);
+        } else if (uploaderRole !== "agent") {
+          const owners = await getAdminSupabase().schema("public").from("users").select("id").eq("role", "owner");
+          for (const owner of owners.data || []) {
+            recipientIds.add(owner.id);
+          }
+        }
+
+        for (const recipientId of recipientIds) {
           await createNotification({
-            userId: admin.id,
-            title: "ID Upload Pending Review",
+            userId: recipientId,
+            title: uploaderRole === "agent" ? "Agent ID Upload Pending Review" : "ID Upload Pending Review",
             message: `${uploaderName} (${uploaderRole}) has uploaded an ID for verification.`,
-            type: "system",
+            type: "id_verification",
           }).catch(() => null);
         }
       } catch (notifErr) {

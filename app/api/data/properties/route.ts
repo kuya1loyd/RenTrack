@@ -11,13 +11,7 @@ import { logAudit } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
-    const properties = await Promise.race([
-      getProperties(),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("Property lookup timed out")), 1500);
-      }),
-    ]);
-    console.log("Properties GET count:", properties.length);
+    const properties = await getProperties();
     return NextResponse.json({ success: true, properties: properties.map(p => sanitizeResponse(p)) });
   } catch (error) {
     console.warn("Properties unavailable:", error instanceof Error ? error.message : error);
@@ -74,7 +68,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, property: sanitizeResponse(property) });
   } catch (error) {
     console.error("Create property error:", error);
-    const message = (error as any)?.message || (error instanceof Error ? error.message : "Failed to create property");
+    const message = error instanceof Error ? error.message : "Failed to create property";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

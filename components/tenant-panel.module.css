@@ -4,14 +4,17 @@
   --tenant-blue: #1955ff;
   --tenant-border: #e1ecfa;
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   background: #f1f5f9;
   color: var(--tenant-ink);
 }
 
 .main {
-  min-height: 100vh;
+  flex: 1 0 auto;
+  min-height: 0;
   min-width: 0;
-  padding: 84px clamp(16px, 3.5vw, 48px) 40px;
+  padding: 84px clamp(16px, 3.5vw, 48px) 32px;
 }
 
 .content { width: 100%; max-width: 1660px; margin: 0 auto; }

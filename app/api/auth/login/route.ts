@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findUserByEmail, logAudit, updateUserPresence, initDatabase, ensureBuiltInAccount, createLoginOtp } from "@/lib/db";
 import { regenerateSession } from "@/lib/security";
-import { checkRateLimit, recordFailedAttempt, clearRateLimit } from "@/lib/auth-security";
-import { validateApiRequest, withRateLimit } from "@/lib/api-security";
+import { clearRateLimit } from "@/lib/auth-security";
+import { validateApiRequest } from "@/lib/api-security";
 import bcrypt from "bcryptjs";
 import { withSecurityHeaders, withCorsHeaders, getClientIp, sanitizeString } from "@/lib/security-headers";
 import { createVerificationOtpEmailHtml, getSiteUrl, sendEmail } from "@/lib/mail";
@@ -13,9 +13,6 @@ export async function POST(request: NextRequest) {
 
     const validation = validateApiRequest(request);
     if (validation) return validation;
-
-    const rateLimit = await withRateLimit(request, `login:${getClientIp(request)}`);
-    if (rateLimit) return rateLimit;
 
     const body = await request.json();
     const { email, password } = body;
@@ -31,19 +28,9 @@ export async function POST(request: NextRequest) {
       return withSecurityHeaders(withCorsHeaders(request, response));
     }
 
-    const rateLimitKey = `${getClientIp(request)}:${sanitizedEmail}`;
-    const rateLimitStatus = checkRateLimit(rateLimitKey);
-
-    if (!rateLimitStatus.allowed) {
-      const waitMinutes = rateLimitStatus.lockedUntil ? Math.ceil((rateLimitStatus.lockedUntil - Date.now()) / 60000) : 15;
-      const response = NextResponse.json({
-        success: false,
-        error: `Too many failed attempts. Please try again in ${waitMinutes} minutes.`,
-        locked: true,
-        retryAfter: rateLimitStatus.lockedUntil,
-      }, { status: 429 });
-      return withSecurityHeaders(withCorsHeaders(request, response));
-    }
+    const clientIp = getClientIp(request);
+    clearRateLimit(`login:${clientIp}`);
+    clearRateLimit(`${clientIp}:${sanitizedEmail}`);
 
     await ensureBuiltInAccount(sanitizedEmail);
 
@@ -60,7 +47,6 @@ export async function POST(request: NextRequest) {
       if (process.env.NODE_ENV !== "production") {
         console.log("[login] user not found for email:", sanitizedEmail);
       }
-      recordFailedAttempt(rateLimitKey);
       const response = NextResponse.json({ success: false, error: "Invalid email or password" }, { status: 401 });
       return withSecurityHeaders(withCorsHeaders(request, response));
     }
@@ -70,7 +56,6 @@ export async function POST(request: NextRequest) {
       console.log("[login] password compare result:", pwOk, "for email:", sanitizedEmail);
     }
     if (!pwOk) {
-      recordFailedAttempt(rateLimitKey);
       await logAudit(user.id, "login_failed", { email: user.email, reason: "invalid_password" }, getClientIp(request), request.headers.get("user-agent") || "unknown").catch(() => {});
       const response = NextResponse.json({ success: false, error: "Invalid email or password" }, { status: 401 });
       return withSecurityHeaders(withCorsHeaders(request, response));
@@ -110,9 +95,6 @@ export async function POST(request: NextRequest) {
       }, { status: 403 });
       return withSecurityHeaders(withCorsHeaders(request, response));
     }
-
-    clearRateLimit(rateLimitKey);
-
     void Promise.allSettled([
       updateUserPresence(user.id, { markLogin: true }),
       logAudit(user.id, "login_success", { email: user.email, role: user.role }, getClientIp(request), request.headers.get("user-agent") || "unknown"),

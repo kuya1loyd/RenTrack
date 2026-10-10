@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import {
   Building2,
+  Home,
   MapPin,
   Square,
   Search,
@@ -21,7 +22,8 @@ import {
   Share2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { getProperties, Property } from "@/lib/data";
+import { getProperties, getUnits, Property, Unit, safeParseJson } from "@/lib/data";
+import type { MoveOutTenancy } from "@/lib/move-out-policy";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -47,6 +49,8 @@ const SORT_LABELS: Record<SortOption, string> = {
 export default function TenantPropertiesPage() {
   const { user } = useAuth();
   const [properties, setProperties] = useState<Property[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [tenant, setTenant] = useState<MoveOutTenancy["tenant"]>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSort, setSelectedSort] = useState<SortOption>("price-asc");
@@ -54,18 +58,24 @@ export default function TenantPropertiesPage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [selectedUnitByProperty, setSelectedUnitByProperty] = useState<Record<string, string>>({});
 
   // Filters state
   const [filterType, setFilterType] = useState<string>("all");
+  const [selectedUnitFilter, setSelectedUnitFilter] = useState<string>("all");
   const [maxRent, setMaxRent] = useState<string>("");
 
   useEffect(() => {
     let isMounted = true;
     (async () => {
       try {
-        const props = await getProperties(user);
+        const [props, unts] = await Promise.all([
+          getProperties(user),
+          getUnits(user),
+        ]);
         if (isMounted) {
           setProperties(props);
+          setUnits(unts);
           if (user) {
             setFavoriteIds(getTenantPropertyIds(user.id, "favorites"));
           }
@@ -76,18 +86,61 @@ export default function TenantPropertiesPage() {
         if (isMounted) setLoading(false);
       }
     })();
+
+    fetch("/api/move-out", { credentials: "include", cache: "no-store" })
+      .then(async (res) => {
+        const data = await safeParseJson(res);
+        if (data.success && data.tenancy && isMounted) {
+          setTenant(data.tenancy.tenant);
+        }
+      })
+      .catch(() => {});
+
     return () => {
       isMounted = false;
     };
   }, [user]);
 
+  const isMyUnit = (unit: Unit) => {
+    if (!user) return false;
+    if (unit.tenantId === user.id) return true;
+    if (tenant?.id && unit.tenantId === tenant.id) return true;
+    if (tenant?.unitId && unit.id === tenant.unitId) return true;
+    if (tenant?.unitNumber && unit.unitNumber.toLowerCase() === tenant.unitNumber.toLowerCase()) return true;
+    return false;
+  };
+
+  const isAssignedProperty = (property: Property) => {
+    if (!tenant) return false;
+    if (tenant.propertyName && property.name.toLowerCase() === tenant.propertyName.toLowerCase()) return true;
+    if (tenant.propertyId && property.id === tenant.propertyId) return true;
+    return units.some((u) => u.propertyId === property.id && (u.tenantId === user?.id || (tenant.id && u.tenantId === tenant.id) || (tenant.unitId && u.id === tenant.unitId)));
+  };
+
+  const getPropertyRent = (property: Property) => {
+    const propertyUnits = units.filter((u) => u.propertyId === property.id);
+    const vacantUnits = propertyUnits.filter((u) => u.status === "vacant");
+    if (vacantUnits.length > 0) return Math.min(...vacantUnits.map((u) => u.rentAmount || 0));
+    if (propertyUnits.length > 0) return Math.min(...propertyUnits.map((u) => u.rentAmount || 0));
+    if (property.monthlyRevenue && property.monthlyRevenue > 0) return property.monthlyRevenue;
+    if (isAssignedProperty(property) && tenant?.rentAmount) return tenant.rentAmount;
+    return 10000;
+  };
+
+  const myAssignedUnit = useMemo(() => {
+    return units.find((u) => isMyUnit(u));
+  }, [units, user, tenant]);
+
   // Filtering & Sorting
   const filteredAndSortedProperties = useMemo(() => {
     let list = properties.filter((p) => {
+      const propertyUnits = units.filter((u) => u.propertyId === p.id);
+
       const matchesSearch =
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.description && p.description.toLowerCase().includes(searchTerm.toLowerCase()));
+        (p.description && p.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        propertyUnits.some((u) => u.unitNumber.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchesType =
         filterType === "all" ||
@@ -96,17 +149,21 @@ export default function TenantPropertiesPage() {
       const matchesMaxRent =
         !maxRent ||
         Number(maxRent) <= 0 ||
-        (p.monthlyRevenue || 0) <= Number(maxRent);
+        getPropertyRent(p) <= Number(maxRent);
 
-      return matchesSearch && matchesType && matchesMaxRent;
+      const matchesUnit =
+        selectedUnitFilter === "all" ||
+        propertyUnits.some((u) => u.id === selectedUnitFilter);
+
+      return matchesSearch && matchesType && matchesMaxRent && matchesUnit;
     });
 
     switch (selectedSort) {
       case "price-asc":
-        list.sort((a, b) => (a.monthlyRevenue || 0) - (b.monthlyRevenue || 0));
+        list.sort((a, b) => getPropertyRent(a) - getPropertyRent(b));
         break;
       case "price-desc":
-        list.sort((a, b) => (b.monthlyRevenue || 0) - (a.monthlyRevenue || 0));
+        list.sort((a, b) => getPropertyRent(b) - getPropertyRent(a));
         break;
       case "name-asc":
         list.sort((a, b) => a.name.localeCompare(b.name));
@@ -117,11 +174,12 @@ export default function TenantPropertiesPage() {
     }
 
     return list;
-  }, [properties, searchTerm, selectedSort, filterType, maxRent]);
+  }, [properties, units, tenant, user, searchTerm, selectedSort, filterType, selectedUnitFilter, maxRent]);
 
   const handleResetSearch = () => {
     setSearchTerm("");
     setFilterType("all");
+    setSelectedUnitFilter("all");
     setMaxRent("");
     setSelectedSort("price-asc");
   };
@@ -169,8 +227,45 @@ export default function TenantPropertiesPage() {
           )}
         </div>
 
-        {/* Right action buttons: Filter & Sort */}
-        <div className="flex items-center gap-2.5">
+        {/* Right action buttons: Unit Dropdown, Filter & Sort */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Unit Dropdown Selector */}
+          <div className="relative">
+            <select
+              value={selectedUnitFilter}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedUnitFilter(val);
+                if (val !== "all") {
+                  const targetUnit = units.find((u) => u.id === val);
+                  if (targetUnit) {
+                    setSelectedUnitByProperty((prev) => ({
+                      ...prev,
+                      [targetUnit.propertyId]: targetUnit.id,
+                    }));
+                  }
+                }
+              }}
+              aria-label="Filter by unit"
+              className="h-11 pl-3.5 pr-8 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-medium shadow-xs focus:outline-hidden focus:ring-2 focus:ring-blue-500 cursor-pointer appearance-none transition-colors"
+            >
+              <option value="all">All Units ({units.length})</option>
+              {myAssignedUnit && (
+                <option value={myAssignedUnit.id}>
+                  Unit {myAssignedUnit.unitNumber} • Your Home
+                </option>
+              )}
+              {units
+                .filter((u) => u.status === "vacant" && u.id !== myAssignedUnit?.id)
+                .map((u) => (
+                  <option key={u.id} value={u.id}>
+                    Unit {u.unitNumber} {u.floor ? `(Floor ${u.floor})` : ""} • Vacant
+                  </option>
+                ))}
+            </select>
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+          </div>
+
           {/* Filter button */}
           <button
             type="button"
@@ -274,6 +369,16 @@ export default function TenantPropertiesPage() {
         >
           {filteredAndSortedProperties.map((property) => {
             const isFav = favoriteIds.includes(property.id);
+            const propertyUnits = units.filter((u) => u.propertyId === property.id);
+            const defaultUnit =
+              propertyUnits.find(isMyUnit) ||
+              propertyUnits.find((u) => u.status === "vacant") ||
+              propertyUnits[0];
+            const selectedUnitId = selectedUnitByProperty[property.id] || defaultUnit?.id;
+            const currentUnit = propertyUnits.find((u) => u.id === selectedUnitId) || defaultUnit;
+            const isCurrentUnitAssigned = currentUnit ? isMyUnit(currentUnit) : isAssignedProperty(property);
+            const displayRent = currentUnit?.rentAmount ?? getPropertyRent(property);
+
             return (
               <div
                 key={property.id}
@@ -289,6 +394,10 @@ export default function TenantPropertiesPage() {
                         fill
                         unoptimized
                         className="object-cover group-hover:scale-105 transition-transform duration-300"
+                        onError={(e) => {
+                          const target = e.currentTarget as HTMLImageElement;
+                          target.src = "/images/landing/feature-property.jpg";
+                        }}
                       />
                     ) : (
                       <div className="flex flex-col items-center justify-center text-slate-400">
@@ -318,15 +427,22 @@ export default function TenantPropertiesPage() {
 
                     {/* Status Badge */}
                     <div className="absolute top-3 right-3">
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          property.status === "active"
-                            ? "bg-emerald-500 text-white"
-                            : "bg-slate-700 text-white"
-                        }`}
-                      >
-                        {property.status === "active" ? "Available" : "Occupied"}
-                      </span>
+                      {isCurrentUnitAssigned ? (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-600 text-white flex items-center gap-1 shadow-xs">
+                          <Check className="h-3 w-3" />
+                          Your Home {currentUnit ? `• Unit ${currentUnit.unitNumber}` : ""}
+                        </span>
+                      ) : (
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            currentUnit?.status === "vacant" || property.status === "active"
+                              ? "bg-emerald-500 text-white"
+                              : "bg-slate-700 text-white"
+                          }`}
+                        >
+                          {currentUnit?.status === "vacant" || property.status === "active" ? "Available" : "Occupied"}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -351,6 +467,46 @@ export default function TenantPropertiesPage() {
                         {property.units || 1} units
                       </span>
                     </div>
+
+                    {/* Unit Dropdown */}
+                    {propertyUnits.length > 0 && (
+                      <div className="mt-3.5 pt-3.5 border-t border-slate-100">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[11px] font-semibold text-slate-600 flex items-center gap-1">
+                            <Home className="h-3 w-3 text-slate-400" />
+                            Select Unit
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {propertyUnits.length} {propertyUnits.length === 1 ? "unit" : "units"}
+                          </span>
+                        </div>
+                        <div className="relative">
+                          <select
+                            value={selectedUnitId || ""}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setSelectedUnitByProperty((prev) => ({
+                                ...prev,
+                                [property.id]: e.target.value,
+                              }));
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full h-9 pl-3 pr-8 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 text-xs text-slate-800 font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500 cursor-pointer appearance-none transition-colors"
+                          >
+                            {propertyUnits.map((u) => {
+                              const isAssigned = isMyUnit(u);
+                              return (
+                                <option key={u.id} value={u.id}>
+                                  Unit {u.unitNumber} {u.floor ? `(Floor ${u.floor})` : ""} — {formatCurrency(u.rentAmount)}
+                                  {isAssigned ? " • Your Home" : u.status === "vacant" ? " • Available" : " • Occupied"}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -358,7 +514,7 @@ export default function TenantPropertiesPage() {
                 <div className="px-5 pb-5 pt-2 flex items-center justify-between">
                   <div>
                     <span className="text-lg font-extrabold text-slate-900">
-                      {formatCurrency(property.monthlyRevenue || 0)}
+                      {formatCurrency(displayRent)}
                     </span>
                     <span className="text-xs text-slate-400 font-normal"> /mo</span>
                   </div>
@@ -495,6 +651,10 @@ export default function TenantPropertiesPage() {
                     fill
                     unoptimized
                     className="object-cover"
+                    onError={(e) => {
+                      const target = e.currentTarget as HTMLImageElement;
+                      target.src = "/images/landing/feature-property.jpg";
+                    }}
                   />
                 ) : (
                   <Building2 className="h-16 w-16 text-slate-300" />
@@ -514,12 +674,58 @@ export default function TenantPropertiesPage() {
 
               <div className="p-6 space-y-4">
                 <div>
-                  <h3 className="text-xl font-bold text-slate-900">{selectedProperty.name}</h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-xl font-bold text-slate-900">{selectedProperty.name}</h3>
+                    {isAssignedProperty(selectedProperty) && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[11px] font-semibold border border-blue-200">
+                        <Check className="h-3 w-3" /> Your Home {tenant?.unitNumber ? `• Unit ${tenant.unitNumber}` : ""}
+                      </span>
+                    )}
+                  </div>
                   <p className="flex items-center gap-1 text-xs text-slate-500 mt-1">
                     <MapPin className="h-3.5 w-3.5 text-slate-400" />
                     <span>{selectedProperty.location}</span>
                   </p>
                 </div>
+
+                {/* Unit Selector inside Modal */}
+                {(() => {
+                  const propertyUnits = units.filter((u) => u.propertyId === selectedProperty.id);
+                  if (propertyUnits.length === 0) return null;
+                  const defaultUnit = propertyUnits.find(isMyUnit) || propertyUnits.find((u) => u.status === "vacant") || propertyUnits[0];
+                  const currentUnitId = selectedUnitByProperty[selectedProperty.id] || defaultUnit?.id;
+                  return (
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                      <label className="text-[11px] text-slate-600 uppercase font-semibold flex items-center gap-1 mb-1.5">
+                        <Home className="h-3.5 w-3.5 text-slate-400" />
+                        Selected Unit
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={currentUnitId || ""}
+                          onChange={(e) => {
+                            setSelectedUnitByProperty((prev) => ({
+                              ...prev,
+                              [selectedProperty.id]: e.target.value,
+                            }));
+                          }}
+                          className="w-full h-10 pl-3 pr-8 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500 cursor-pointer appearance-none"
+                        >
+                          {propertyUnits.map((u) => {
+                            const isAssigned = isMyUnit(u);
+                            return (
+                              <option key={u.id} value={u.id}>
+                                Unit {u.unitNumber} {u.floor ? `(Floor ${u.floor})` : ""} — {formatCurrency(u.rentAmount)}
+                                {isAssigned ? " • Your Home" : u.status === "vacant" ? " • Available" : " • Occupied"}
+                              </option>
+                            );
+                          })}
+                        </select>
+                        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="grid grid-cols-2 gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                   <div>
@@ -544,25 +750,48 @@ export default function TenantPropertiesPage() {
 
                 <div className="pt-2 flex items-center justify-between border-t border-slate-100">
                   <div>
-                    <span className="text-xs text-slate-500">Rent starts at</span>
+                    <span className="text-xs text-slate-500">
+                      {isAssignedProperty(selectedProperty) ? "Your Monthly Rent" : "Rent starts at"}
+                    </span>
                     <p className="text-xl font-extrabold text-slate-900">
-                      {formatCurrency(selectedProperty.monthlyRevenue || 0)}
+                      {formatCurrency(getPropertyRent(selectedProperty))}
                       <span className="text-xs font-normal text-slate-500"> /mo</span>
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      toast.success("Inquiry sent!", {
-                        description: `We notified the owner/agent about your interest in ${selectedProperty.name}.`,
-                      });
-                      setSelectedProperty(null);
-                    }}
-                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-                  >
-                    Inquire Unit
-                  </button>
+                  {isAssignedProperty(selectedProperty) ? (
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
+                        <Check className="h-4 w-4 text-emerald-600" />
+                        Assigned &amp; Approved
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          toast.info("Active Lease", {
+                            description: `You are currently assigned to ${selectedProperty.name}${tenant?.unitNumber ? ` (Unit ${tenant.unitNumber})` : ""}. Your lease was assigned by your agent and approved by the owner.`,
+                          });
+                          setSelectedProperty(null);
+                        }}
+                        className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                      >
+                        Active Lease
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        toast.success("Inquiry sent!", {
+                          description: `We notified the owner/agent about your interest in ${selectedProperty.name}.`,
+                        });
+                        setSelectedProperty(null);
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                    >
+                      Inquire Unit
+                    </button>
+                  )}
                 </div>
               </div>
             </motion.div>

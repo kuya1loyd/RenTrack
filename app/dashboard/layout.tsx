@@ -50,7 +50,6 @@ const navItems: NavItem[] = [
   { label: "Tenants", href: "/dashboard/tenants", icon: Users, roles: ["admin", "owner", "agent"] },
   { label: "Agents", href: "/dashboard/owner/agents", icon: Users, roles: ["owner"] },
   { label: "Payments", href: "/dashboard/payments", icon: CreditCard, roles: ["owner", "agent", "tenant"] },
-  { label: "Reports", href: "/dashboard/reports", icon: BarChart3, roles: ["admin", "owner"] },
   { label: "Settings", href: "/dashboard/settings", icon: Settings, roles: ["admin", "owner", "tenant"] },
 ];
 

@@ -9,8 +9,8 @@ import {
   Bell, Home, Building2, CreditCard, Star, Plus,
   LayoutDashboard, MapPinned, HeartPulse, SlidersHorizontal,
   Eye, Pencil, KeyRound, Copy, Mail, MessageSquare, Phone,
-  Shield, ShieldOff, RotateCcw, Download, ChevronDown, MoreHorizontal,
-  Calendar, Check, Sparkles, Filter, UserCheck, MapPin, Clock, ExternalLink, Briefcase, AlertCircle, X, User,
+  Shield, ShieldOff, RotateCcw, Download, ChevronDown, MoreHorizontal, ShieldCheck,
+  Calendar, Check, Sparkles, Filter, UserCheck, MapPin, Clock, ExternalLink, Briefcase, AlertCircle, X, User, Camera,
 } from "lucide-react";
 import PropertyLocationMap from "@/components/property-location-map-loader";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -29,7 +29,7 @@ import {
   getPayments, getComplaints, getAllRatings, getAuditLogs,
   UserRecord, Property, Unit, TenantRecord, Notification, Payment, Complaint, Rating, AuditLog,
   deleteUser, updateUser, adminResetUserPassword,
-  updateComplaintStatus,
+  updateComplaintStatus, markAllMessagesRead,
   getComplaintById,
 } from "@/lib/data";
 import { toast } from "sonner";
@@ -42,6 +42,8 @@ import { ManagementBanner } from "@/components/management-panel";
 import { downloadExcelReport } from "@/lib/report-downloads";
 import { useAdminData, useAdminDataset } from "@/lib/admin-data-store";
 import SettingsPage from "@/app/dashboard/settings/page";
+import UnitImageCarousel from "@/components/unit-image-carousel";
+import { AgentIdInspectorModal } from "@/components/agent-id-inspector-modal";
 
 async function parseJsonSafely(res: Response) {
   try {
@@ -54,6 +56,114 @@ async function parseJsonSafely(res: Response) {
   } catch {
     return { success: false, error: `Invalid response (${res.status})` };
   }
+}
+
+interface VerificationInfo {
+  status: "approved" | "pending" | "rejected" | "unverified" | "not_required";
+  badgeText: string;
+  badgeClass: string;
+  icon: "check" | "clock" | "x" | "alert" | "shield" | "building";
+  canInspect: boolean;
+  isApproved: boolean;
+  isPending: boolean;
+  isExempt: boolean;
+}
+
+function getUserVerificationInfo(u: UserRecord, matchedTenant?: any): VerificationInfo {
+  const isSuperuser = Boolean(
+    u.role === "admin" ||
+    u.role === "owner" ||
+    isSampleAccount(u.email) ||
+    u.email.toLowerCase() === "admin@renttrack.com" ||
+    u.email.toLowerCase() === "renttrackowner@gmail.com"
+  );
+
+  if (isSuperuser) {
+    const isOwner = u.role === "owner" || u.email.toLowerCase() === "renttrackowner@gmail.com";
+    return {
+      status: "not_required",
+      badgeText: isOwner ? "Not Required (Owner)" : "Not Required (Superuser)",
+      badgeClass: isOwner
+        ? "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
+        : "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-800 dark:bg-purple-950/40 dark:text-purple-300",
+      icon: isOwner ? "building" : "shield",
+      canInspect: false,
+      isApproved: false,
+      isPending: false,
+      isExempt: true,
+    };
+  }
+
+  const rawStatus = (u.idVerificationStatus || (u as any).id_verification_status || matchedTenant?.idVerificationStatus || "").toLowerCase();
+  const idDocUrl = (u as any).idVerificationUrl || matchedTenant?.idVerificationUrl;
+  const isApproved = rawStatus === "approved" || (u as any).idVerified === true || (matchedTenant as any)?.isVerified === true;
+  const isRejected = rawStatus === "rejected";
+  const hasUploadedDoc = Boolean(idDocUrl);
+  const isPending = !isApproved && !isRejected && (rawStatus === "pending" || hasUploadedDoc);
+
+  if (isApproved) {
+    return {
+      status: "approved",
+      badgeText: "Verified ID",
+      badgeClass: "border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300",
+      icon: "check",
+      canInspect: Boolean(idDocUrl || u.role === "agent"),
+      isApproved: true,
+      isPending: false,
+      isExempt: false,
+    };
+  }
+
+  if (isRejected) {
+    return {
+      status: "rejected",
+      badgeText: "Rejected ID",
+      badgeClass: "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300",
+      icon: "x",
+      canInspect: Boolean(idDocUrl || u.role === "agent"),
+      isApproved: false,
+      isPending: false,
+      isExempt: false,
+    };
+  }
+
+  if (isPending) {
+    return {
+      status: "pending",
+      badgeText: u.role === "agent" ? "Pending Owner Approval" : "Pending Review",
+      badgeClass: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+      icon: "clock",
+      canInspect: Boolean(idDocUrl || u.role === "agent"),
+      isApproved: false,
+      isPending: true,
+      isExempt: false,
+    };
+  }
+
+  return {
+    status: "unverified",
+    badgeText: "Unverified",
+    badgeClass: "border-gray-200 bg-gray-50 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400",
+    icon: "alert",
+    canInspect: Boolean(idDocUrl || u.role === "agent"),
+    isApproved: false,
+    isPending: false,
+    isExempt: false,
+  };
+}
+
+function renderVerificationBadge(info: VerificationInfo) {
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap", info.badgeClass)}>
+      {info.icon === "check" && <CheckCircle2 className="h-3 w-3 shrink-0" />}
+      {info.icon === "clock" && <Clock className="h-3 w-3 shrink-0" />}
+      {info.icon === "x" && <XCircle className="h-3 w-3 shrink-0" />}
+      {info.icon === "alert" && <AlertCircle className="h-3 w-3 shrink-0" />}
+      {info.icon === "shield" && <Shield className="h-3 w-3 shrink-0" />}
+      {info.icon === "building" && <Building2 className="h-3 w-3 shrink-0" />}
+      <span>{info.badgeText}</span>
+    </span>
+  );
 }
 
 export default function AdminDashboard() {
@@ -94,6 +204,37 @@ export default function AdminDashboard() {
   const [userStatusFilter, setUserStatusFilter] = useState<"all" | "approved" | "pending" | "rejected" | "verified">("all");
   const [userSort, setUserSort] = useState<"newest" | "oldest" | "name-asc" | "name-desc" | "role">("newest");
   const [selectedUserDetails, setSelectedUserDetails] = useState<UserRecord | null>(null);
+  const [inspectingIdUser, setInspectingIdUser] = useState<UserRecord | null>(null);
+  const [isAdminVerifyingId, setIsAdminVerifyingId] = useState(false);
+
+  const handleAdminVerifyId = async (userId: string, status: "approved" | "rejected", reason?: string) => {
+    setIsAdminVerifyingId(true);
+    try {
+      const res = await fetch("/api/auth/verify-id", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, status, reason }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to update ID verification status");
+      }
+      toast.success(`ID verification ${status === "approved" ? "approved" : "rejected"} successfully`);
+      setUsers((current) =>
+        current.map((u) => (u.id === userId ? { ...u, idVerificationStatus: status, idVerified: status === "approved" } : u))
+      );
+      if (inspectingIdUser?.id === userId) {
+        setInspectingIdUser(null);
+      }
+    } catch (err: any) {
+      console.error("Admin verify ID error:", err);
+      toast.error(err.message || "Failed to update verification status");
+    } finally {
+      setIsAdminVerifyingId(false);
+    }
+  };
+  const [selectedUnitDetails, setSelectedUnitDetails] = useState<Unit | null>(null);
+  const [selectedPropertyDetails, setSelectedPropertyDetails] = useState<Property | null>(null);
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [newUserForm, setNewUserForm] = useState({
@@ -331,17 +472,27 @@ export default function AdminDashboard() {
   const filteredUsers = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     return users.filter((u) => {
+      const matchedTenant = tenants.find(
+        (t) => t.email.toLowerCase() === u.email.toLowerCase() || t.id === u.id
+      );
+      const verifInfo = getUserVerificationInfo(u, matchedTenant);
+
       if (roleFilter !== "all" && u.role !== roleFilter) return false;
-      if (userStatusFilter !== "all" && (u.idVerificationStatus || "pending") !== userStatusFilter) return false;
+      if (userStatusFilter !== "all") {
+        if (userStatusFilter === "verified" && verifInfo.status !== "approved") return false;
+        if (userStatusFilter === "pending" && verifInfo.status !== "pending") return false;
+        if (userStatusFilter === "unverified" && verifInfo.status !== "unverified") return false;
+        if (userStatusFilter === "not_required" && verifInfo.status !== "not_required") return false;
+      }
       if (!q) return true;
       const haystack = [
         u.id,
         u.name,
         u.email,
-        u.phone || "",
-        u.address || "",
+        u.phone || matchedTenant?.phone || "",
+        u.address || matchedTenant?.address || "",
         u.role,
-        u.idVerificationStatus || "",
+        verifInfo.badgeText,
       ].join(" ").toLowerCase();
       return haystack.includes(q);
     }).sort((a, b) => {
@@ -351,19 +502,36 @@ export default function AdminDashboard() {
       if (userSort === "role") return a.role.localeCompare(b.role);
       return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
     });
-  }, [users, roleFilter, userStatusFilter, searchTerm, userSort]);
+  }, [users, tenants, roleFilter, userStatusFilter, searchTerm, userSort]);
 
-  const userCounts = useMemo(() => ({
-    total: users.length,
-    admin: users.filter((u) => u.role === "admin").length,
-    owner: users.filter((u) => u.role === "owner").length,
-    agent: users.filter((u) => u.role === "agent").length,
-    tenant: users.filter((u) => u.role === "tenant").length,
-    approved: users.filter((u) => u.idVerificationStatus === "approved").length,
-    verified: users.filter((u) => u.idVerificationStatus === "approved" || isSampleAccount(u.email) || u.role === "admin" || u.role === "owner").length,
-    pending: users.filter((u) => !u.idVerificationStatus || u.idVerificationStatus === "pending").length,
-    rejected: users.filter((u) => u.idVerificationStatus === "rejected").length,
-  }), [users]);
+  const userCounts = useMemo(() => {
+    let verifiedCount = 0;
+    let pendingCount = 0;
+    let notRequiredCount = 0;
+    let unverifiedCount = 0;
+
+    users.forEach((u) => {
+      const matched = tenants.find((t) => t.email.toLowerCase() === u.email.toLowerCase() || t.id === u.id);
+      const info = getUserVerificationInfo(u, matched);
+      if (info.status === "approved") verifiedCount++;
+      else if (info.status === "pending") pendingCount++;
+      else if (info.status === "not_required") notRequiredCount++;
+      else unverifiedCount++;
+    });
+
+    return {
+      total: users.length,
+      admin: users.filter((u) => u.role === "admin").length,
+      owner: users.filter((u) => u.role === "owner").length,
+      agent: users.filter((u) => u.role === "agent").length,
+      tenant: users.filter((u) => u.role === "tenant").length,
+      approved: verifiedCount,
+      verified: verifiedCount,
+      pending: pendingCount,
+      notRequired: notRequiredCount,
+      unverified: unverifiedCount,
+    };
+  }, [users, tenants]);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -413,25 +581,19 @@ export default function AdminDashboard() {
         const matchedTenant = tenants.find((t) => t.email.toLowerCase() === u.email.toLowerCase() || t.id === u.id);
         const phone = u.phone || matchedTenant?.phone || "Not provided";
         const address = u.address || matchedTenant?.address || "Not provided";
-        const isVerified = Boolean(
-          u.role === "admin" ||
-          u.role === "owner" ||
-          isSampleAccount(u.email) ||
-          u.idVerificationStatus === "approved" ||
-          (u as any).id_verification_status === "approved" ||
-          (u as any).idVerified ||
-          (u as any).verified ||
-          (u as any).idVerificationUrl ||
-          matchedTenant?.idVerificationUrl ||
-          (matchedTenant as any)?.isVerified
-        );
+        const verifInfo = getUserVerificationInfo(u, matchedTenant);
         let propUnit = "System Admin";
         if (u.role === "tenant") {
           const pName = matchedTenant?.propertyName || (matchedTenant?.unitId && properties.find((p) => p.id === units.find((un) => un.id === matchedTenant?.unitId)?.propertyId)?.name);
           const uNum = matchedTenant?.unitNumber || (matchedTenant?.unitId && units.find((un) => un.id === matchedTenant?.unitId)?.unitNumber);
           propUnit = [pName, uNum ? `Unit ${uNum}` : ""].filter(Boolean).join(" - ") || "Unassigned";
         } else if (u.role === "owner") {
-          const count = properties.filter((p) => p.createdBy === u.id || p.createdBy === u.email).length;
+          const isBuiltinOrSoleOwner = u.email.toLowerCase() === "renttrackowner@gmail.com" || users.filter((usr) => usr.role === "owner").length <= 1;
+          const count = properties.filter((p) =>
+            p.createdBy === u.id ||
+            p.createdBy === u.email ||
+            (isBuiltinOrSoleOwner && (!p.createdBy || p.createdBy === "usr_builtin_admin" || (typeof p.createdBy === "string" && p.createdBy.includes("admin"))))
+          ).length;
           propUnit = `${count} Owned`;
         } else if (u.role === "agent") {
           const count = properties.filter((p) => p.agentId === u.id).length;
@@ -445,7 +607,7 @@ export default function AdminDashboard() {
           u.role,
           propUnit,
           address,
-          isVerified ? "Verified ID" : "Pending",
+          verifInfo.badgeText,
           "Active",
           u.createdAt ? formatDate(u.createdAt) : "",
         ];
@@ -626,7 +788,7 @@ export default function AdminDashboard() {
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className="space-y-6 w-full max-w-none">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className="space-y-6 w-full max-w-full min-w-0">
       {/* Map Tab */}
       {activeTab === "map" && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
@@ -691,19 +853,215 @@ export default function AdminDashboard() {
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {[
-              { title: "Unit Occupancy", description: "Occupied and available rental units", primary: occupiedUnits, secondary: availableUnits, primaryLabel: "Occupied Units", secondaryLabel: "Available Units", primaryColor: "#2563eb", secondaryColor: "#cbd5e1" },
-              { title: "Rental Status", description: "Tenants renting versus units available", primary: rentingTenants, secondary: availableUnits, primaryLabel: "Currently Renting", secondaryLabel: "Available Units", primaryColor: "#16a34a", secondaryColor: "#cbd5e1" },
+              {
+                title: "Unit Occupancy",
+                description: "Occupied and available rental units",
+                icon: Building2,
+                cardBorder: "border-blue-100/90 dark:border-blue-900/40 hover:border-blue-300 dark:hover:border-blue-700",
+                cardGradient: "bg-gradient-to-br from-white via-blue-50/25 to-indigo-50/30 dark:from-gray-900 dark:via-gray-900 dark:to-blue-950/25",
+                iconTone: "bg-blue-100 text-blue-600 dark:bg-blue-950/70 dark:text-blue-400 shadow-xs",
+                badgeTone: "border-blue-200 bg-blue-50/90 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300",
+                badgeText: (total: number, percent: number) => `${total} ${total === 1 ? "Unit" : "Units"}`,
+                centerLabel: "Occupied",
+                primary: occupiedUnits,
+                secondary: availableUnits,
+                primaryLabel: "Occupied Units",
+                secondaryLabel: "Available Units",
+                primaryColor: "#2563eb",
+                secondaryColor: "#10b981",
+                primaryGradientId: "occupancyPrimaryGrad",
+                secondaryGradientId: "occupancySecondaryGrad",
+                primaryGradientStops: { from: "#2563eb", to: "#60a5fa" },
+                secondaryGradientStops: { from: "#059669", to: "#34d399" },
+                primaryBarClass: "bg-gradient-to-r from-blue-600 to-sky-400",
+                secondaryBarClass: "bg-gradient-to-r from-emerald-600 to-teal-400",
+                primaryDotBg: "bg-blue-600 shadow-[0_0_8px_rgba(37,99,235,0.45)]",
+                secondaryDotBg: "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.45)]",
+              },
+              {
+                title: "Rental Status",
+                description: "Tenants renting versus units available",
+                icon: Home,
+                cardBorder: "border-emerald-100/90 dark:border-emerald-900/40 hover:border-emerald-300 dark:hover:border-emerald-700",
+                cardGradient: "bg-gradient-to-br from-white via-emerald-50/25 to-teal-50/30 dark:from-gray-900 dark:via-gray-900 dark:to-emerald-950/25",
+                iconTone: "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/70 dark:text-emerald-400 shadow-xs",
+                badgeTone: "border-emerald-200 bg-emerald-50/90 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300",
+                badgeText: (total: number, percent: number) => `${percent}% Active`,
+                centerLabel: "Renting",
+                primary: rentingTenants,
+                secondary: availableUnits,
+                primaryLabel: "Currently Renting",
+                secondaryLabel: "Available Units",
+                primaryColor: "#059669",
+                secondaryColor: "#f59e0b",
+                primaryGradientId: "rentalPrimaryGrad",
+                secondaryGradientId: "rentalSecondaryGrad",
+                primaryGradientStops: { from: "#059669", to: "#10b981" },
+                secondaryGradientStops: { from: "#d97706", to: "#fbbf24" },
+                primaryBarClass: "bg-gradient-to-r from-emerald-600 to-teal-400",
+                secondaryBarClass: "bg-gradient-to-r from-amber-500 to-yellow-400",
+                primaryDotBg: "bg-emerald-600 shadow-[0_0_8px_rgba(5,150,105,0.45)]",
+                secondaryDotBg: "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.45)]",
+              },
             ].map((chart) => {
               const total = chart.primary + chart.secondary;
               const primaryPercent = total ? Math.round((chart.primary / total) * 100) : 0;
-              return <motion.div key={chart.title} whileHover={{ y: -2 }} transition={{ duration: 0.2 }}><Card className="border-gray-200 shadow-sm dark:border-gray-700">
-                <CardHeader><CardTitle className="text-base text-gray-900 dark:text-white">{chart.title}</CardTitle><CardDescription>{chart.description}</CardDescription></CardHeader>
-                <CardContent className="grid grid-cols-1 items-center gap-4 sm:grid-cols-[220px_1fr]">
-                  <div className="h-56"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={[{ name: chart.primaryLabel, value: chart.primary }, { name: chart.secondaryLabel, value: chart.secondary }]} innerRadius={58} outerRadius={88} paddingAngle={3} dataKey="value" stroke="none"><Cell fill={chart.primaryColor} /><Cell fill={chart.secondaryColor} /></Pie><Tooltip /></PieChart></ResponsiveContainer></div>
-                  <div className="space-y-4">{[[chart.primaryLabel, chart.primary, chart.primaryColor, primaryPercent], [chart.secondaryLabel, chart.secondary, chart.secondaryColor, 100 - primaryPercent]].map(([label, value, color, percent]) => <motion.div key={String(label)} whileHover={{ x: 2 }} className="flex items-center justify-between border-b border-gray-100 pb-3 last:border-0 dark:border-gray-700 transition-all"><div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: String(color) }} /><span className="text-sm text-gray-600 dark:text-gray-300">{label}</span></div><span className="text-sm font-semibold text-gray-900 dark:text-white">{value} <span className="ml-1 text-xs font-normal text-gray-400">({percent}%)</span></span></motion.div>)}</div>
-                </CardContent>
-              </Card>
-              </motion.div>
+              const secondaryPercent = total ? 100 - primaryPercent : 0;
+              const ChartIcon = chart.icon;
+
+              const chartData = total === 0
+                ? [{ name: "No Data", value: 1, color: "#e2e8f0", fillId: "" }]
+                : [
+                    { name: chart.primaryLabel, value: chart.primary, color: chart.primaryColor, fillId: chart.primaryGradientId },
+                    { name: chart.secondaryLabel, value: chart.secondary, color: chart.secondaryColor, fillId: chart.secondaryGradientId },
+                  ];
+
+              return (
+                <motion.div key={chart.title} whileHover={{ y: -2 }} transition={{ duration: 0.2 }}>
+                  <Card className={cn("overflow-hidden rounded-2xl border shadow-sm transition-all hover:shadow-md", chart.cardBorder, chart.cardGradient)}>
+                    <CardHeader className="border-b border-gray-100/70 pb-3.5 dark:border-gray-800/60">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", chart.iconTone)}>
+                            <ChartIcon className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <CardTitle className="text-base font-bold text-gray-900 dark:text-white">
+                              {chart.title}
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                              {chart.description}
+                            </CardDescription>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className={cn("text-xs font-semibold shrink-0 shadow-2xs", chart.badgeTone)}>
+                          {chart.badgeText(total, primaryPercent)}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="grid grid-cols-1 items-center gap-4 pt-4 sm:grid-cols-[220px_1fr]">
+                      {/* Doughnut Chart with Center Metric */}
+                      <div className="relative flex h-56 w-full items-center justify-center">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <defs>
+                              <linearGradient id={chart.primaryGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stopColor={chart.primaryGradientStops.from} />
+                                <stop offset="100%" stopColor={chart.primaryGradientStops.to} />
+                              </linearGradient>
+                              <linearGradient id={chart.secondaryGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stopColor={chart.secondaryGradientStops.from} />
+                                <stop offset="100%" stopColor={chart.secondaryGradientStops.to} />
+                              </linearGradient>
+                            </defs>
+                            <Pie
+                              data={chartData}
+                              innerRadius={60}
+                              outerRadius={88}
+                              paddingAngle={total > 0 && chart.primary > 0 && chart.secondary > 0 ? 4 : 0}
+                              dataKey="value"
+                              stroke="none"
+                            >
+                              {chartData.map((entry) => (
+                                <Cell
+                                  key={entry.name}
+                                  fill={entry.fillId ? `url(#${entry.fillId})` : entry.color}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              content={({ active, payload }) => {
+                                if (active && payload && payload.length) {
+                                  const item = payload[0];
+                                  if (item.name === "No Data") return null;
+                                  return (
+                                    <div className="rounded-xl border border-gray-100 bg-white/95 px-3 py-2 shadow-lg backdrop-blur-xs text-xs dark:border-gray-800 dark:bg-gray-900/95">
+                                      <div className="flex items-center gap-2">
+                                        <span
+                                          className="h-2.5 w-2.5 rounded-full"
+                                          style={{ backgroundColor: item.payload?.color }}
+                                        />
+                                        <span className="font-semibold text-gray-900 dark:text-white">{item.name}:</span>
+                                        <span className="font-bold text-gray-700 dark:text-gray-200">
+                                          {item.value} ({total ? Math.round(((Number(item.value) || 0) / total) * 100) : 0}%)
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+
+                        {/* Center Ring Stat */}
+                        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                          <motion.span
+                            initial={{ scale: 0.6, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={{ duration: 0.4 }}
+                            className="text-2xl font-black tracking-tight text-gray-900 dark:text-white leading-none"
+                          >
+                            {primaryPercent}%
+                          </motion.span>
+                          <span className="mt-1 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                            {chart.centerLabel}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Right Legend with Animated Progress Bars */}
+                      <div className="space-y-3.5 sm:pl-1">
+                        {[
+                          {
+                            label: chart.primaryLabel,
+                            value: chart.primary,
+                            percent: primaryPercent,
+                            dotClass: chart.primaryDotBg,
+                            barClass: chart.primaryBarClass,
+                          },
+                          {
+                            label: chart.secondaryLabel,
+                            value: chart.secondary,
+                            percent: secondaryPercent,
+                            dotClass: chart.secondaryDotBg,
+                            barClass: chart.secondaryBarClass,
+                          },
+                        ].map((item) => (
+                          <motion.div
+                            key={item.label}
+                            whileHover={{ scale: 1.01 }}
+                            className="rounded-xl border border-gray-100/90 bg-white/80 p-3 shadow-2xs backdrop-blur-xs transition-all hover:bg-white hover:shadow-xs dark:border-gray-800 dark:bg-gray-900/60 dark:hover:bg-gray-900"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className={cn("h-2.5 w-2.5 rounded-full shrink-0", item.dotClass)} />
+                                <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{item.label}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">{item.value}</span>
+                                <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-400 tabular-nums">
+                                  {item.percent}%
+                                </span>
+                              </div>
+                            </div>
+                            {/* Animated Visual Progress Bar */}
+                            <div className="mt-2 h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                              <motion.div
+                                className={cn("h-full rounded-full", item.barClass)}
+                                initial={{ width: 0 }}
+                                animate={{ width: `${item.percent}%` }}
+                                transition={{ duration: 0.8, ease: "easeOut" }}
+                              />
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              );
             })}
           </div>
 
@@ -722,6 +1080,7 @@ export default function AdminDashboard() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
+          className="space-y-6 w-full max-w-full min-w-0"
         >
           <ManagementBanner
             category="SYSTEM ADMINISTRATION"
@@ -873,7 +1232,9 @@ export default function AdminDashboard() {
                   >
                     <option value="all">All Statuses</option>
                     <option value="verified">Verified ID</option>
-                    <option value="unverified">Pending / Unverified</option>
+                    <option value="pending">Pending Approval</option>
+                    <option value="unverified">Unverified</option>
+                    <option value="not_required">Not Required (Superuser / Owner)</option>
                   </select>
                 </div>
 
@@ -939,7 +1300,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <Card className="border border-gray-200 shadow-sm dark:border-gray-800">
+          <Card hover={false} className="w-full max-w-full min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <CardHeader className="border-b border-gray-100 bg-gray-50/60 px-6 py-4 dark:border-gray-800 dark:bg-gray-800/40">
               <div className="flex items-center justify-between">
                 <div>
@@ -955,7 +1316,7 @@ export default function AdminDashboard() {
                 </Badge>
               </div>
             </CardHeader>
-            <CardContent className="p-0">
+            <CardContent className="p-0 w-full max-w-full min-w-0 overflow-hidden">
               {filteredUsers.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-gray-800">
@@ -973,20 +1334,43 @@ export default function AdminDashboard() {
                   </Button>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table className="w-full">
-                    <TableHeader>
-                      <TableRow className="bg-gray-50/60 dark:bg-gray-800/40 text-[10px] uppercase tracking-wider text-gray-500 font-semibold border-b border-gray-100 dark:border-gray-800">
-                        <TableHead className="pl-4 pr-2 py-2.5 h-10 font-semibold">Account & ID</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Contact (Email & Phone)</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Role</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Property / Unit</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Address</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Verification</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Status & Activity</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Joined</TableHead>
-                        <TableHead className="pr-4 pl-2 py-2.5 h-10 text-right font-semibold">Actions</TableHead>
-                      </TableRow>
+                <div className="table-scroll-box w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[680px]">
+                  <table className="w-full min-w-[1400px] border-collapse text-left caption-bottom text-xs">
+                    <TableHeader className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-800/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-800 shadow-2xs">
+                      {roleFilter === "agent" ? (
+                        <TableRow className="bg-transparent text-[10px] uppercase tracking-wider text-gray-500 font-semibold whitespace-nowrap">
+                          <TableHead className="pl-4 pr-2 py-2.5 h-10 font-semibold">Agent</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Agent ID</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Email</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Phone</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Address</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Role</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Verification</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Rate</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Portfolio</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Collections</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Earnings</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Activity</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Joined</TableHead>
+                          <TableHead className="pr-4 pl-2 py-2.5 h-10 text-right font-semibold">Actions</TableHead>
+                        </TableRow>
+                      ) : (
+                        <TableRow className="bg-transparent text-[10px] uppercase tracking-wider text-gray-500 font-semibold whitespace-nowrap">
+                          <TableHead className="pl-4 pr-2 py-2.5 h-10 font-semibold">Account</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">User ID</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Email</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Phone</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Role</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Property</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Unit</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Address</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Verification</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Status</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Activity</TableHead>
+                          <TableHead className="px-2 py-2.5 h-10 font-semibold">Joined</TableHead>
+                          <TableHead className="pr-4 pl-2 py-2.5 h-10 text-right font-semibold">Actions</TableHead>
+                        </TableRow>
+                      )}
                     </TableHeader>
                     <TableBody>
                       {filteredUsers.map((u, i) => {
@@ -995,18 +1379,16 @@ export default function AdminDashboard() {
                         );
                         const userPhone = u.phone || matchedTenant?.phone || null;
                         const userAddress = u.address || matchedTenant?.address || null;
-                        const isVerified = Boolean(
-                          u.role === "admin" ||
-                          u.role === "owner" ||
-                          isSampleAccount(u.email) ||
-                          u.idVerificationStatus === "approved" ||
-                          (u as any).id_verification_status === "approved" ||
-                          (u as any).idVerified ||
-                          (u as any).verified ||
-                          (u as any).idVerificationUrl ||
-                          matchedTenant?.idVerificationUrl ||
-                          (matchedTenant as any)?.isVerified
+                        const verifInfo = getUserVerificationInfo(u, matchedTenant);
+
+                        // Agent metrics
+                        const agentProps = properties.filter((p) => p.agentId === u.id);
+                        const agentTenants = tenants.filter(
+                          (t) => agentProps.some((p) => p.id === t.propertyId) || (t as any).assignedAgentId === u.id
                         );
+                        const agentPayments = payments.filter((p: any) => p.createdBy === u.id || p.verifiedBy === u.id);
+                        const agentCollected = agentPayments.reduce((total: number, p: any) => total + (p.status === "paid" ? p.amountPaid : 0), 0);
+                        const agentRate = (u as any).commissionRate ?? 0;
 
                         // Detailed Property / Unit metadata
                         let propTitle = "Platform Superuser";
@@ -1020,14 +1402,20 @@ export default function AdminDashboard() {
                           propSubtitle = matchedTenant?.rentAmount ? formatCurrency(matchedTenant.rentAmount) + "/mo" : undefined;
                           unitBadge = uNum ? `Unit ${uNum}` : undefined;
                         } else if (u.role === "owner") {
-                          const ownedProps = properties.filter((p) => p.createdBy === u.id || p.createdBy === u.email);
+                          const isBuiltinOrSoleOwner = u.email.toLowerCase() === "renttrackowner@gmail.com" || users.filter((usr) => usr.role === "owner").length <= 1;
+                          const ownedProps = properties.filter((p) =>
+                            p.createdBy === u.id ||
+                            p.createdBy === u.email ||
+                            (isBuiltinOrSoleOwner && (!p.createdBy || p.createdBy === "usr_builtin_admin" || (typeof p.createdBy === "string" && p.createdBy.includes("admin"))))
+                          );
                           propTitle = ownedProps.length === 1 ? "1 Property Owned" : `${ownedProps.length} Properties Owned`;
                           propSubtitle = ownedProps.length > 0 ? ownedProps.map((p) => p.name).slice(0, 2).join(", ") : "No properties listed";
                         } else if (u.role === "agent") {
-                          const agentProps = properties.filter((p) => p.agentId === u.id);
                           propTitle = agentProps.length === 1 ? "1 Managed Property" : `${agentProps.length} Managed Properties`;
                           propSubtitle = agentProps.length > 0 ? agentProps.map((p) => p.name).slice(0, 2).join(", ") : "No properties assigned";
                         }
+
+                        const isAgentView = roleFilter === "agent";
 
                         return (
                           <motion.tr
@@ -1037,21 +1425,166 @@ export default function AdminDashboard() {
                             transition={{ delay: i * 0.02, duration: 0.2 }}
                             className="border-b border-border/50 hover:bg-surface-secondary transition-all duration-200"
                           >
-                            {/* Account & ID */}
-                            <TableCell className="pl-4 pr-2 py-2.5">
-                              <div className="flex items-center gap-2.5">
-                                <div className="relative shrink-0">
-                                  <Avatar
-                                    src={u.avatarUrl}
-                                    fallback={getInitials(u.name || "User")}
-                                    size="sm"
-                                  />
-                                  <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-white bg-emerald-500 dark:border-gray-900" />
-                                </div>
-                                <div className="flex flex-col min-w-0">
-                                  <span className="font-semibold text-gray-900 dark:text-white truncate max-w-[120px] text-xs">
-                                    {u.name || "Unnamed"}
+                            {isAgentView ? (
+                              <>
+                                {/* Agent */}
+                                <TableCell className="pl-4 pr-2 py-2.5 whitespace-nowrap">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="relative shrink-0">
+                                      <Avatar
+                                        src={u.avatarUrl}
+                                        fallback={getInitials(u.name || "Agent")}
+                                        size="sm"
+                                      />
+                                      <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-white bg-emerald-500 dark:border-gray-900" />
+                                    </div>
+                                    <span className="font-semibold text-gray-900 dark:text-white truncate max-w-[140px] text-xs">
+                                      {u.name || "Unnamed"}
+                                    </span>
+                                  </div>
+                                </TableCell>
+
+                                {/* Agent ID */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      navigator.clipboard.writeText(u.id);
+                                      toast.success("Agent ID copied");
+                                    }}
+                                    className="inline-flex items-center gap-1 font-mono text-[11px] text-gray-500 hover:text-blue-600 transition-colors bg-gray-50 dark:bg-gray-800/60 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700"
+                                    title="Click to copy Agent ID"
+                                  >
+                                    <span>#{u.id.slice(0, 8)}</span>
+                                    <Copy className="h-2.5 w-2.5 text-gray-400" />
+                                  </button>
+                                </TableCell>
+
+                                {/* Email */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                  <a href={`mailto:${u.email}`} className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-blue-600 transition-colors text-xs" title={u.email}>
+                                    <Mail className="h-3 w-3 text-gray-400 shrink-0" />
+                                    <span className="truncate max-w-[160px]">{u.email}</span>
+                                  </a>
+                                </TableCell>
+
+                                {/* Phone */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400 text-xs">
+                                    <Phone className="h-3 w-3 text-gray-400 shrink-0" />
+                                    {userPhone ? (
+                                      <a href={`tel:${userPhone}`} className="hover:text-blue-600 transition-colors">
+                                        {userPhone}
+                                      </a>
+                                    ) : (
+                                      <span className="text-gray-400">—</span>
+                                    )}
+                                  </div>
+                                </TableCell>
+
+                                {/* Address */}
+                                <TableCell className="px-2 py-2.5 max-w-[150px] whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300" title={userAddress || "No address"}>
+                                    <MapPin className="h-3 w-3 text-gray-400 shrink-0" />
+                                    <span className="truncate">{userAddress || "—"}</span>
+                                  </div>
+                                </TableCell>
+
+                                {/* Role */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
+                                    Agent
                                   </span>
+                                </TableCell>
+
+                                {/* Verification */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5">
+                                    {renderVerificationBadge(verifInfo)}
+
+                                    {verifInfo.canInspect && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() =>
+                                          setInspectingIdUser({
+                                            ...u,
+                                            phone: userPhone || undefined,
+                                            address: userAddress || undefined,
+                                            idVerificationUrl: (u as any).idVerificationUrl || matchedTenant?.idVerificationUrl || null,
+                                            idVerificationStatus: verifInfo.status,
+                                          })
+                                        }
+                                        className="h-6 px-1.5 text-[10px] text-purple-700 hover:bg-purple-50 dark:text-purple-300 dark:hover:bg-purple-950/40 border border-purple-200 dark:border-purple-800 font-semibold rounded-md shadow-2xs"
+                                        title="Inspect government ID document & authenticity signals"
+                                      >
+                                        <ShieldCheck className="h-3 w-3 mr-1 text-purple-600" />
+                                        Inspect ID
+                                      </Button>
+                                    )}
+                                  </div>
+                                </TableCell>
+
+                                {/* Rate */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap font-mono text-xs font-semibold tabular-nums text-gray-700 dark:text-gray-300">
+                                  {agentRate}%
+                                </TableCell>
+
+                                {/* Portfolio */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums">
+                                    <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700 border border-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800" title="Managed Properties">
+                                      {agentProps.length} props
+                                    </span>
+                                    <span className="rounded bg-purple-50 px-1.5 py-0.5 text-purple-700 border border-purple-100 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800" title="Assigned Tenants">
+                                      {agentTenants.length} tenants
+                                    </span>
+                                  </div>
+                                </TableCell>
+
+                                {/* Collections */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap font-mono text-xs tabular-nums text-gray-700 dark:text-gray-300">
+                                  {formatCurrency(agentCollected)}
+                                </TableCell>
+
+                                {/* Earnings */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap font-mono text-xs font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
+                                  {formatCurrency((agentCollected * agentRate) / 100)}
+                                </TableCell>
+
+                                {/* Activity */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
+                                  {(u as any).lastLoginAt ? `Active ${getTimeAgo((u as any).lastLoginAt)}` : "Registered"}
+                                </TableCell>
+
+                                {/* Joined */}
+                                <TableCell className="px-2 py-2.5 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                  {u.createdAt ? formatDate(u.createdAt) : "—"}
+                                </TableCell>
+                              </>
+                            ) : (
+                              <>
+                                {/* Account */}
+                                <TableCell className="pl-4 pr-2 py-2.5 whitespace-nowrap">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="relative shrink-0">
+                                      <Avatar
+                                        src={u.avatarUrl}
+                                        fallback={getInitials(u.name || "User")}
+                                        size="sm"
+                                      />
+                                      <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-white bg-emerald-500 dark:border-gray-900" />
+                                    </div>
+                                    <span className="font-semibold text-gray-900 dark:text-white truncate max-w-[140px] text-xs">
+                                      {u.name || "Unnamed"}
+                                    </span>
+                                  </div>
+                                </TableCell>
+
+                                {/* User ID */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -1059,113 +1592,135 @@ export default function AdminDashboard() {
                                       navigator.clipboard.writeText(u.id);
                                       toast.success("User ID copied");
                                     }}
-                                    className="inline-flex items-center gap-1 font-mono text-[10px] text-gray-400 hover:text-blue-600 transition-colors"
+                                    className="inline-flex items-center gap-1 font-mono text-[11px] text-gray-500 hover:text-blue-600 transition-colors bg-gray-50 dark:bg-gray-800/60 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700"
                                     title="Click to copy User ID"
                                   >
                                     <span>#{u.id.slice(0, 8)}</span>
-                                    <Copy className="h-2.5 w-2.5" />
+                                    <Copy className="h-2.5 w-2.5 text-gray-400" />
                                   </button>
-                                </div>
-                              </div>
-                            </TableCell>
+                                </TableCell>
 
-                            {/* Contact (Email & Phone) */}
-                            <TableCell className="px-2 py-2.5">
-                              <div className="flex flex-col gap-0.5 text-xs">
-                                <a href={`mailto:${u.email}`} className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-blue-600 transition-colors">
-                                  <Mail className="h-3 w-3 text-gray-400 shrink-0" />
-                                  <span className="truncate max-w-[150px]">{u.email}</span>
-                                </a>
-                                <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400 text-[11px]">
-                                  <Phone className="h-3 w-3 text-gray-400 shrink-0" />
-                                  {userPhone ? (
-                                    <a href={`tel:${userPhone}`} className="hover:text-blue-600 transition-colors">
-                                      {userPhone}
-                                    </a>
-                                  ) : (
-                                    <span>—</span>
-                                  )}
-                                </div>
-                              </div>
-                            </TableCell>
+                                {/* Email */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                  <a href={`mailto:${u.email}`} className="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-blue-600 transition-colors text-xs">
+                                    <Mail className="h-3 w-3 text-gray-400 shrink-0" />
+                                    <span className="truncate max-w-[160px]">{u.email}</span>
+                                  </a>
+                                </TableCell>
 
-                            {/* Role */}
-                            <TableCell className="px-2 py-2.5">
-                              <span
-                                className={cn(
-                                  "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border",
-                                  u.role === "admin" && "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800",
-                                  u.role === "owner" && "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
-                                  u.role === "agent" && "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
-                                  u.role === "tenant" && "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
-                                )}
-                              >
-                                {u.role === "admin" ? "Admin" : u.role === "owner" ? "Owner" : u.role === "agent" ? "Agent" : "Tenant"}
-                              </span>
-                            </TableCell>
+                                {/* Phone */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400 text-xs">
+                                    <Phone className="h-3 w-3 text-gray-400 shrink-0" />
+                                    {userPhone ? (
+                                      <a href={`tel:${userPhone}`} className="hover:text-blue-600 transition-colors">
+                                        {userPhone}
+                                      </a>
+                                    ) : (
+                                      <span className="text-gray-400">—</span>
+                                    )}
+                                  </div>
+                                </TableCell>
 
-                            {/* Property / Unit */}
-                            <TableCell className="px-2 py-2.5">
-                              <div className="flex flex-col gap-0.5 text-xs">
-                                <div className="flex items-center gap-1.5">
-                                  <Building2 className="h-3 w-3 text-gray-400 shrink-0" />
-                                  <span className="font-medium text-gray-900 dark:text-white truncate max-w-[130px]">
-                                    {propTitle}
+                                {/* Role */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                  <span
+                                    className={cn(
+                                      "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border",
+                                      u.role === "admin" && "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800",
+                                      u.role === "owner" && "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
+                                      u.role === "agent" && "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
+                                      u.role === "tenant" && "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
+                                    )}
+                                  >
+                                    {u.role === "admin" ? "Admin" : u.role === "owner" ? "Owner" : u.role === "agent" ? "Agent" : "Tenant"}
                                   </span>
-                                  {unitBadge && (
-                                    <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800">
+                                </TableCell>
+
+                                {/* Property */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                  <div className="flex flex-col gap-0.5 text-xs">
+                                    <div className="flex items-center gap-1.5">
+                                      <Building2 className="h-3 w-3 text-gray-400 shrink-0" />
+                                      <span className="font-medium text-gray-900 dark:text-white truncate max-w-[140px]">
+                                        {propTitle}
+                                      </span>
+                                    </div>
+                                    {propSubtitle && (
+                                      <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate max-w-[140px] pl-4.5">
+                                        {propSubtitle}
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+
+                                {/* Unit */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                  {unitBadge ? (
+                                    <span className="rounded bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800">
                                       {unitBadge}
                                     </span>
+                                  ) : (
+                                    <span className="text-gray-400 text-xs">—</span>
                                   )}
-                                </div>
-                                {propSubtitle && (
-                                  <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate max-w-[140px] pl-4.5">
-                                    {propSubtitle}
+                                </TableCell>
+
+                                {/* Address */}
+                                <TableCell className="px-2 py-2.5 max-w-[140px] whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+                                    <MapPin className="h-3 w-3 text-gray-400 shrink-0" />
+                                    <span className="truncate">{userAddress || "—"}</span>
+                                  </div>
+                                </TableCell>
+
+                                {/* Verification */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5">
+                                    {renderVerificationBadge(verifInfo)}
+
+                                    {verifInfo.canInspect && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() =>
+                                          setInspectingIdUser({
+                                            ...u,
+                                            phone: userPhone || undefined,
+                                            address: userAddress || undefined,
+                                            idVerificationUrl: (u as any).idVerificationUrl || matchedTenant?.idVerificationUrl || null,
+                                            idVerificationStatus: verifInfo.status,
+                                          })
+                                        }
+                                        className="h-6 px-1.5 text-[10px] text-purple-700 hover:bg-purple-50 dark:text-purple-300 dark:hover:bg-purple-950/40 border border-purple-200 dark:border-purple-800 font-semibold rounded-md shadow-2xs"
+                                        title="Inspect government ID document & authenticity signals"
+                                      >
+                                        <ShieldCheck className="h-3 w-3 mr-1 text-purple-600" />
+                                        Inspect ID
+                                      </Button>
+                                    )}
+                                  </div>
+                                </TableCell>
+
+                                {/* Status */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                    Active
                                   </span>
-                                )}
-                              </div>
-                            </TableCell>
+                                </TableCell>
 
-                            {/* Address */}
-                            <TableCell className="px-2 py-2.5 max-w-[130px]">
-                              <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
-                                <MapPin className="h-3 w-3 text-gray-400 shrink-0" />
-                                <span className="truncate">{userAddress || "—"}</span>
-                              </div>
-                            </TableCell>
-
-                            {/* Verification */}
-                            <TableCell className="px-2 py-2.5">
-                              {isVerified ? (
-                                <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-700 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  Verified ID
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-500 dark:border-gray-700 dark:bg-gray-800">
-                                  <Clock className="h-3 w-3" />
-                                  Pending
-                                </span>
-                              )}
-                            </TableCell>
-
-                            {/* Status & Activity */}
-                            <TableCell className="px-2 py-2.5">
-                              <div className="flex flex-col gap-0.5 text-xs">
-                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                  Active
-                                </span>
-                                <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                                {/* Activity */}
+                                <TableCell className="px-2 py-2.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
                                   {(u as any).lastLoginAt ? `Active ${getTimeAgo((u as any).lastLoginAt)}` : "Registered"}
-                                </span>
-                              </div>
-                            </TableCell>
+                                </TableCell>
 
-                            {/* Joined */}
-                            <TableCell className="px-2 py-2.5 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                              {u.createdAt ? formatDate(u.createdAt) : "—"}
-                            </TableCell>
+                                {/* Joined */}
+                                <TableCell className="px-2 py-2.5 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                  {u.createdAt ? formatDate(u.createdAt) : "—"}
+                                </TableCell>
+                              </>
+                            )}
 
                             {/* Actions */}
                             <TableCell className="pr-4 pl-2 py-2.5 text-right">
@@ -1193,6 +1748,24 @@ export default function AdminDashboard() {
                                       <Eye className="h-3.5 w-3.5 text-blue-500 transition-transform duration-150 group-hover:scale-110" />
                                       <span>View Complete Details</span>
                                     </DropdownMenuItem>
+
+                                    {((u as any).idVerificationUrl || matchedTenant?.idVerificationUrl || u.role === "agent") && (
+                                      <DropdownMenuItem
+                                        onSelect={() =>
+                                          setInspectingIdUser({
+                                            ...u,
+                                            phone: userPhone || undefined,
+                                            address: userAddress || undefined,
+                                            idVerificationUrl: (u as any).idVerificationUrl || matchedTenant?.idVerificationUrl || null,
+                                            idVerificationStatus: (u as any).idVerificationStatus || (u as any).id_verification_status || verifInfo.status || "pending",
+                                          })
+                                        }
+                                        className="group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50 dark:text-purple-300 dark:hover:bg-purple-950/40 cursor-pointer transition-all duration-150 hover:translate-x-1"
+                                      >
+                                        <ShieldCheck className="h-3.5 w-3.5 text-purple-600 transition-transform duration-150 group-hover:scale-110" />
+                                        <span>Inspect Government ID</span>
+                                      </DropdownMenuItem>
+                                    )}
 
                                     <DropdownMenuItem
                                       onSelect={() => handleEditUser(u)}
@@ -1251,7 +1824,7 @@ export default function AdminDashboard() {
                         );
                       })}
                     </TableBody>
-                  </Table>
+                  </table>
                 </div>
         )}
       </CardContent>
@@ -1349,51 +1922,218 @@ export default function AdminDashboard() {
               {filteredProperties.length === 0 ? (
                 <div className="py-12 text-center text-sm text-gray-500">No properties match your search or filter.</div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-gray-50/40 text-[11px] uppercase tracking-wider text-gray-500">
-                        <TableHead className="pl-6">Name</TableHead>
-                        <TableHead>Location</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Units</TableHead>
-                        <TableHead className="pr-6">Status</TableHead>
+                <div className="table-scroll-box w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[680px]">
+                  <table className="w-full min-w-[1550px] border-collapse text-left caption-bottom text-xs">
+                    <TableHeader className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-800/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-800 shadow-2xs">
+                      <TableRow className="bg-transparent text-[10px] uppercase tracking-wider text-gray-500 font-semibold whitespace-nowrap">
+                        <TableHead className="pl-4 pr-2 py-2.5 h-10 font-semibold">Photo</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Property Name</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Location / Address</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Type</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Total Units</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Occupancy</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Monthly Revenue</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Availability</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Condition</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Owner</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Assigned Agent</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Status</TableHead>
+                        <TableHead className="pr-4 pl-2 py-2.5 h-10 text-right font-semibold">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredProperties.map((p, i) => (
-                        <motion.tr
-                          key={p.id}
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: i * 0.03, duration: 0.2 }}
-                          className="border-b border-gray-100 hover:bg-surface-secondary transition-colors"
-                        >
-                          <TableCell className="pl-6 font-semibold text-gray-900 dark:text-white">{p.name}</TableCell>
-                          <TableCell className="text-text-secondary text-xs">{p.location}</TableCell>
-                          <TableCell>
-                            <span className={cn(
-                              "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize",
-                              p.type === "house" && "bg-blue-50 text-blue-700 border border-blue-200",
-                              p.type === "condominium" && "bg-purple-50 text-purple-700 border border-purple-200",
-                            )}>
-                              {p.type}
-                            </span>
-                          </TableCell>
-                          <TableCell className="font-semibold text-xs">{p.units}</TableCell>
-                          <TableCell className="pr-6">
-                            <span className={cn(
-                              "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize",
-                              p.status === "active" && "bg-green-50 text-green-700 border border-green-200",
-                              p.status === "inactive" && "bg-gray-50 text-gray-600 border border-gray-200",
-                            )}>
-                              {p.status}
-                            </span>
-                          </TableCell>
-                        </motion.tr>
-                      ))}
+                      {filteredProperties.map((p, i) => {
+                        const propUnits = units.filter((u) => u.propertyId === p.id);
+                        const occupiedCount = propUnits.length > 0 ? propUnits.filter((u) => u.status === "occupied").length : (p.occupiedUnits || 0);
+                        const totalUnits = propUnits.length > 0 ? propUnits.length : (p.units || 0);
+                        const occPercent = totalUnits > 0 ? Math.round((occupiedCount / totalUnits) * 100) : 0;
+                        const propRevenue = propUnits.reduce((acc, u) => acc + (u.status === "occupied" ? (u.rentAmount || 0) : 0), 0) || p.monthlyRevenue || 0;
+                        const defaultOwner = users.find((usr) => usr.role === "owner") || users.find((usr) => usr.email.toLowerCase() === "renttrackowner@gmail.com");
+                        const owner = (p.createdBy && !["usr_builtin_admin", "admin"].includes(p.createdBy) && !p.createdBy.includes("admin")
+                          ? users.find((u) => u.role === "owner" && (u.id === p.createdBy || u.email === p.createdBy))
+                          : null) || defaultOwner || null;
+                        const agent = users.find((u) => u.id === p.agentId);
+                        const propImgs = p.imageUrls?.length ? p.imageUrls : p.imageUrl ? [p.imageUrl] : [];
+
+                        return (
+                          <motion.tr
+                            key={p.id}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: i * 0.02, duration: 0.2 }}
+                            className="border-b border-gray-100 hover:bg-surface-secondary transition-colors"
+                          >
+                            {/* Photo */}
+                            <TableCell className="pl-4 pr-2 py-2">
+                              <UnitImageCarousel
+                                images={propImgs}
+                                alt={p.name}
+                                title={p.name}
+                                subtitle={`${p.location} • ${p.type} • ${totalUnits} units`}
+                                className="h-12 w-16 shrink-0 rounded-lg border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
+                                imageClassName="group-hover:scale-105 transition-transform duration-300"
+                              />
+                            </TableCell>
+
+                            {/* Property Name */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600 font-bold border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800">
+                                  <Building2 className="h-3.5 w-3.5" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="font-bold text-gray-900 dark:text-white text-xs">{p.name}</span>
+                                  <span className="text-[10px] text-gray-400 font-mono">#{p.id.slice(0, 8)}</span>
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            {/* Location */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 max-w-[200px] truncate" title={p.location}>
+                                <MapPin className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                                <span className="truncate">{p.location || "—"}</span>
+                              </div>
+                            </TableCell>
+
+                            {/* Type */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <span className={cn(
+                                "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize",
+                                p.type === "house" && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
+                                p.type === "condominium" && "bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800",
+                                !p.type && "bg-gray-50 text-gray-600 border border-gray-200"
+                              )}>
+                                {p.type || "Standard"}
+                              </span>
+                            </TableCell>
+
+                            {/* Total Units */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap font-semibold text-xs text-gray-900 dark:text-white">
+                              {totalUnits} {totalUnits === 1 ? "Unit" : "Units"}
+                            </TableCell>
+
+                            {/* Occupancy */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <div className="flex flex-col gap-1 min-w-[110px]">
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="font-semibold text-gray-800 dark:text-gray-200">{occupiedCount}/{totalUnits}</span>
+                                  <span className="text-[10px] text-gray-500">{occPercent}%</span>
+                                </div>
+                                <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                                  <div
+                                    className={cn(
+                                      "h-full rounded-full transition-all",
+                                      occPercent === 100 ? "bg-emerald-500" : occPercent > 50 ? "bg-blue-500" : "bg-amber-500"
+                                    )}
+                                    style={{ width: `${Math.min(occPercent, 100)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            {/* Monthly Revenue */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <span className="font-bold text-xs text-gray-900 dark:text-white tabular-nums">
+                                {formatCurrency(propRevenue)}
+                              </span>
+                            </TableCell>
+
+                            {/* Availability */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <span className={cn(
+                                "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold",
+                                (p.availabilityStatus === "Available" || (!p.availabilityStatus && occPercent < 100)) && "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
+                                (p.availabilityStatus === "Occupied" || (!p.availabilityStatus && occPercent === 100)) && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300",
+                                p.availabilityStatus === "Reserved" && "bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300",
+                                p.availabilityStatus === "Under Maintenance" && "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300",
+                              )}>
+                                {p.availabilityStatus || (occPercent === 100 ? "Occupied" : "Available")}
+                              </span>
+                            </TableCell>
+
+                            {/* Condition */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap text-xs text-gray-600 dark:text-gray-300">
+                              {p.condition || "Good"}
+                            </TableCell>
+
+                            {/* Owner */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <Avatar src={owner?.avatarUrl} fallback={getInitials(owner?.name || "Owner")} size="xs" className="h-6 w-6 shrink-0" />
+                                <div className="flex flex-col">
+                                  <span className="font-medium text-gray-900 dark:text-white text-xs">{owner?.name || "Property Owner"}</span>
+                                  <span className="text-[10px] text-gray-400">{owner?.email || "—"}</span>
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            {/* Assigned Agent */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              {agent ? (
+                                <div className="flex items-center gap-2">
+                                  <Avatar src={agent.avatarUrl} fallback={getInitials(agent.name)} size="xs" className="h-6 w-6 shrink-0" />
+                                  <div className="flex flex-col">
+                                    <span className="font-medium text-gray-900 dark:text-white text-xs">{agent.name}</span>
+                                    <span className="text-[10px] text-blue-600 dark:text-blue-400">Agent</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-400">Unassigned</span>
+                              )}
+                            </TableCell>
+
+                            {/* Status */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <span className={cn(
+                                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize",
+                                p.status === "active" && "bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800",
+                                p.status === "inactive" && "bg-gray-50 text-gray-600 border border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700",
+                              )}>
+                                <span className={cn("h-1.5 w-1.5 rounded-full", p.status === "active" ? "bg-green-500" : "bg-gray-400")} />
+                                {p.status}
+                              </span>
+                            </TableCell>
+
+                            {/* Actions */}
+                            <TableCell className="pr-4 pl-2 py-2.5 text-right whitespace-nowrap">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600 focus:outline-none dark:border-gray-700 dark:text-gray-400"
+                                    aria-label="Property actions"
+                                  >
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </motion.button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-xl">
+                                  <DropdownMenuItem
+                                    onSelect={() => setSelectedPropertyDetails(p)}
+                                    className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
+                                  >
+                                    <Eye className="h-3.5 w-3.5 text-blue-500" />
+                                    <span>View Property Details</span>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => {
+                                      navigator.clipboard.writeText(p.id);
+                                      toast.success("Property ID copied to clipboard");
+                                    }}
+                                    className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
+                                  >
+                                    <Copy className="h-3.5 w-3.5 text-gray-500" />
+                                    <span>Copy Property ID</span>
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </motion.tr>
+                        );
+                      })}
                     </TableBody>
-                  </Table>
+                  </table>
                 </div>
               )}
             </CardContent>
@@ -1493,44 +2233,253 @@ export default function AdminDashboard() {
               {filteredUnits.length === 0 ? (
                 <div className="py-12 text-center text-sm text-gray-500">No units match your search or filter.</div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-gray-50/40 text-[11px] uppercase tracking-wider text-gray-500">
-                        <TableHead className="pl-6">Unit Number</TableHead>
-                        <TableHead>Property</TableHead>
-                        <TableHead>Floor</TableHead>
-                        <TableHead>Rent</TableHead>
-                        <TableHead className="pr-6">Status</TableHead>
+                <div className="table-scroll-box w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[680px]">
+                  <table className="w-full min-w-[1650px] border-collapse text-left caption-bottom text-xs">
+                    <TableHeader className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-800/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-800 shadow-2xs">
+                      <TableRow className="bg-transparent text-[10px] uppercase tracking-wider text-gray-500 font-semibold whitespace-nowrap">
+                        <TableHead className="pl-4 pr-2 py-2.5 h-10 font-semibold">Photo</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Unit Number</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Property</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Type</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Location / Address</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Floor</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Monthly Rent</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Status</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Current Tenant</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Lease Term</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Property Owner</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Assigned Agent</TableHead>
+                        <TableHead className="pr-4 pl-2 py-2.5 h-10 text-right font-semibold">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredUnits.map((u, i) => (
-                        <motion.tr
-                          key={u.id}
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: i * 0.03, duration: 0.2 }}
-                          className="border-b border-gray-100 hover:bg-surface-secondary transition-colors"
-                        >
-                          <TableCell className="pl-6 font-semibold text-gray-900 dark:text-white">{u.unitNumber}</TableCell>
-                          <TableCell className="text-text-secondary text-xs">{properties.find((p) => p.id === u.propertyId)?.name || u.propertyId}</TableCell>
-                          <TableCell className="text-xs">{u.floor ?? "-"}</TableCell>
-                          <TableCell className="font-semibold text-xs text-gray-900 dark:text-white">{formatCurrency(u.rentAmount || 0)}</TableCell>
-                          <TableCell className="pr-6">
-                            <span className={cn(
-                              "inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold capitalize",
-                              u.status === "occupied" && "bg-green-50 text-green-700 border border-green-200",
-                              u.status === "vacant" && "bg-blue-50 text-blue-700 border border-blue-200",
-                              u.status === "maintenance" && "bg-amber-50 text-amber-700 border border-amber-200",
-                            )}>
-                              {u.status}
-                            </span>
-                          </TableCell>
-                        </motion.tr>
-                      ))}
+                      {filteredUnits.map((u, i) => {
+                        const prop = properties.find((p) => p.id === u.propertyId);
+                        const unitImgs = u.imageUrls?.length
+                          ? u.imageUrls
+                          : u.imageUrl
+                            ? [u.imageUrl]
+                            : prop?.imageUrls?.length
+                              ? prop.imageUrls
+                              : prop?.imageUrl
+                                ? [prop.imageUrl]
+                                : [];
+
+                        const matchedTenant = tenants.find(
+                          (t) => t.unitId === u.id || t.id === u.tenantId || (t.propertyName === prop?.name && t.unitNumber === u.unitNumber)
+                        );
+                        const tenantName = u.tenantName || matchedTenant?.name;
+                        const defaultOwner = users.find((usr) => usr.role === "owner") || users.find((usr) => usr.email.toLowerCase() === "renttrackowner@gmail.com");
+                        const ownerUser = (prop?.createdBy && !["usr_builtin_admin", "admin"].includes(prop.createdBy) && !prop.createdBy.includes("admin")
+                          ? users.find((usr) => usr.role === "owner" && (usr.id === prop.createdBy || usr.email === prop.createdBy))
+                          : null) || defaultOwner || null;
+                        const agentUser = users.find((usr) => usr.id === prop?.agentId);
+
+                        return (
+                          <motion.tr
+                            key={u.id}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: i * 0.02, duration: 0.2 }}
+                            className="border-b border-gray-100 hover:bg-surface-secondary transition-colors"
+                          >
+                            {/* Photo */}
+                            <TableCell className="pl-4 pr-2 py-2">
+                              <UnitImageCarousel
+                                images={unitImgs}
+                                alt={`Unit ${u.unitNumber} - ${prop?.name || "Property"}`}
+                                title={`Unit ${u.unitNumber} • ${prop?.name || "Property"}`}
+                                subtitle={`${prop?.location || "No address specified"} • Floor ${u.floor ?? "—"} • ${formatCurrency(u.rentAmount || 0)}/mo`}
+                                className="h-12 w-16 shrink-0 rounded-lg border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
+                                imageClassName="group-hover:scale-105 transition-transform duration-300"
+                              />
+                            </TableCell>
+
+                            {/* Unit Number */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600 font-bold border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800">
+                                  <Home className="h-3.5 w-3.5" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="font-bold text-gray-900 dark:text-white text-xs">Unit {u.unitNumber}</span>
+                                  <span className="text-[10px] text-gray-400 font-mono">#{u.id.slice(0, 8)}</span>
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            {/* Property */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <UnitImageCarousel
+                                  images={prop?.imageUrls?.length ? prop.imageUrls : prop?.imageUrl ? [prop.imageUrl] : []}
+                                  alt={prop?.name || "Property"}
+                                  title={prop?.name || "Property"}
+                                  subtitle={prop?.location || "No address specified"}
+                                  className="h-9 w-12 shrink-0 rounded-md border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
+                                  imageClassName="group-hover:scale-105"
+                                />
+                                <div className="flex flex-col min-w-0">
+                                  <span className="font-semibold text-xs text-gray-900 dark:text-white truncate max-w-[140px]">{prop?.name || "Unassigned"}</span>
+                                  <span className="text-[10px] text-gray-500 truncate max-w-[140px]">{prop?.location || "—"}</span>
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            {/* Property Type */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <span className={cn(
+                                "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize",
+                                prop?.type === "house" && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
+                                prop?.type === "condominium" && "bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800",
+                                !prop?.type && "bg-gray-50 text-gray-600 border border-gray-200"
+                              )}>
+                                {prop?.type || "Standard"}
+                              </span>
+                            </TableCell>
+
+                            {/* Location / Address */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 max-w-[200px] truncate" title={prop?.location}>
+                                <MapPin className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                                <span className="truncate">{prop?.location || "—"}</span>
+                              </div>
+                            </TableCell>
+
+                            {/* Floor */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 font-medium text-xs dark:bg-gray-800 dark:text-gray-300">
+                                {u.floor ? `Floor ${u.floor}` : "Ground Floor"}
+                              </span>
+                            </TableCell>
+
+                            {/* Monthly Rent */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <div className="flex flex-col">
+                                <span className="font-bold text-gray-900 dark:text-white text-xs tabular-nums">
+                                  {formatCurrency(u.rentAmount || 0)}
+                                </span>
+                                <span className="text-[10px] text-gray-400">per month</span>
+                              </div>
+                            </TableCell>
+
+                            {/* Status */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <span className={cn(
+                                "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold capitalize",
+                                u.status === "occupied" && "bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800",
+                                u.status === "vacant" && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
+                                u.status === "maintenance" && "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
+                              )}>
+                                <span className={cn(
+                                  "h-1.5 w-1.5 rounded-full",
+                                  u.status === "occupied" && "bg-green-500",
+                                  u.status === "vacant" && "bg-blue-500",
+                                  u.status === "maintenance" && "bg-amber-500",
+                                )} />
+                                {u.status}
+                              </span>
+                            </TableCell>
+
+                            {/* Current Tenant */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              {tenantName ? (
+                                <div className="flex items-center gap-2">
+                                  <Avatar src={matchedTenant?.avatarUrl} fallback={getInitials(tenantName)} size="xs" className="h-6 w-6 shrink-0" />
+                                  <div className="flex flex-col">
+                                    <span className="font-medium text-gray-900 dark:text-white text-xs">{tenantName}</span>
+                                    <span className="text-[10px] text-gray-400">
+                                      {matchedTenant?.phone || matchedTenant?.email || "Occupant"}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[11px] text-gray-400">
+                                  <User className="h-3 w-3 text-gray-300" />
+                                  Vacant (No Tenant)
+                                </span>
+                              )}
+                            </TableCell>
+
+                            {/* Lease Term */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap text-xs text-gray-600 dark:text-gray-300">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                {matchedTenant?.contractStart && matchedTenant?.contractEnd ? (
+                                  <span>{formatDate(matchedTenant.contractStart)} – {formatDate(matchedTenant.contractEnd)}</span>
+                                ) : u.leaseEnd ? (
+                                  <span>Until {formatDate(u.leaseEnd)}</span>
+                                ) : (
+                                  <span className="text-gray-400 text-[11px]">Ready for Lease</span>
+                                )}
+                              </div>
+                            </TableCell>
+
+                            {/* Property Owner */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <Avatar src={ownerUser?.avatarUrl} fallback={getInitials(ownerUser?.name || "Owner")} size="xs" className="h-6 w-6 shrink-0" />
+                                <div className="flex flex-col">
+                                  <span className="font-medium text-gray-900 dark:text-white text-xs">{ownerUser?.name || "Property Owner"}</span>
+                                  <span className="text-[10px] text-gray-400">{ownerUser?.email || "—"}</span>
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            {/* Assigned Agent */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              {agentUser ? (
+                                <div className="flex items-center gap-2">
+                                  <Avatar src={agentUser.avatarUrl} fallback={getInitials(agentUser.name)} size="xs" className="h-6 w-6 shrink-0" />
+                                  <div className="flex flex-col">
+                                    <span className="font-medium text-gray-900 dark:text-white text-xs">{agentUser.name}</span>
+                                    <span className="text-[10px] text-blue-600 dark:text-blue-400">Agent</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-400">Unassigned</span>
+                              )}
+                            </TableCell>
+
+                            {/* Actions */}
+                            <TableCell className="pr-4 pl-2 py-2.5 text-right whitespace-nowrap">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600 focus:outline-none dark:border-gray-700 dark:text-gray-400"
+                                    aria-label="Unit actions"
+                                  >
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </motion.button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-xl">
+                                  <DropdownMenuItem
+                                    onSelect={() => setSelectedUnitDetails(u)}
+                                    className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
+                                  >
+                                    <Eye className="h-3.5 w-3.5 text-blue-500" />
+                                    <span>View Complete Profile</span>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => {
+                                      navigator.clipboard.writeText(`Unit ${u.unitNumber} at ${prop?.name || ""}`);
+                                      toast.success("Unit info copied to clipboard");
+                                    }}
+                                    className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
+                                  >
+                                    <Copy className="h-3.5 w-3.5 text-gray-500" />
+                                    <span>Copy Unit Details</span>
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </motion.tr>
+                        );
+                      })}
                     </TableBody>
-                  </Table>
+                  </table>
                 </div>
               )}
             </CardContent>
@@ -2276,6 +3225,7 @@ export default function AdminDashboard() {
             onClose={() => undefined}
             fullPage
             onSelectConversation={(conversation) => {
+              void markAllMessagesRead(conversation.userId);
               setSelectedConversation(conversation);
               setIsMessagingOpen(true);
             }}
@@ -2991,23 +3941,20 @@ export default function AdminDashboard() {
         );
         const modalPhone = selectedUserDetails.phone || modalTenant?.phone || "Not provided";
         const modalAddress = selectedUserDetails.address || modalTenant?.address || "Not provided";
-        const modalIsVerified = Boolean(
-          selectedUserDetails.role === "admin" ||
-          selectedUserDetails.role === "owner" ||
-          isSampleAccount(selectedUserDetails.email) ||
-          selectedUserDetails.idVerificationStatus === "approved" ||
-          (selectedUserDetails as any).id_verification_status === "approved" ||
-          (selectedUserDetails as any).idVerified ||
-          (selectedUserDetails as any).verified ||
-          (selectedUserDetails as any).idVerificationUrl ||
-          modalTenant?.idVerificationUrl ||
-          (modalTenant as any)?.isVerified
-        );
+        const modalVerifInfo = getUserVerificationInfo(selectedUserDetails, modalTenant);
         const modalIdDocUrl = (selectedUserDetails as any).idVerificationUrl || modalTenant?.idVerificationUrl;
 
         // Relationship info
+        const isBuiltinOrSoleOwner = selectedUserDetails.role === "owner" && (
+          selectedUserDetails.email.toLowerCase() === "renttrackowner@gmail.com" ||
+          users.filter((u) => u.role === "owner").length <= 1
+        );
         const ownedProps = selectedUserDetails.role === "owner"
-          ? properties.filter((p) => p.createdBy === selectedUserDetails.id || p.createdBy === selectedUserDetails.email)
+          ? properties.filter((p) =>
+              p.createdBy === selectedUserDetails.id ||
+              p.createdBy === selectedUserDetails.email ||
+              (isBuiltinOrSoleOwner && (!p.createdBy || p.createdBy === "usr_builtin_admin" || (typeof p.createdBy === "string" && p.createdBy.includes("admin"))))
+            )
           : [];
         const managedProps = selectedUserDetails.role === "agent"
           ? properties.filter((p) => p.agentId === selectedUserDetails.id)
@@ -3044,17 +3991,7 @@ export default function AdminDashboard() {
                       )}>
                         {selectedUserDetails.role}
                       </span>
-                      {modalIsVerified ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-700 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
-                          <CheckCircle2 className="h-3 w-3" />
-                          Verified ID
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-500 dark:border-gray-700 dark:bg-gray-800">
-                          <Clock className="h-3 w-3" />
-                          Pending ID
-                        </span>
-                      )}
+                      {renderVerificationBadge(modalVerifInfo)}
                     </div>
                     <div className="flex items-center gap-3 mt-1.5 flex-wrap text-xs text-gray-500 dark:text-gray-400">
                       <span>{selectedUserDetails.email}</span>
@@ -3227,38 +4164,65 @@ export default function AdminDashboard() {
                     <div className="rounded-lg bg-white p-2.5 dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
                       <span className="text-gray-400 text-[11px]">Verification Status</span>
                       <p className="mt-1">
-                        {modalIsVerified ? (
+                        {modalVerifInfo.isExempt ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2.5 py-0.5 text-xs font-semibold text-purple-700 dark:border-purple-800 dark:bg-purple-950/40 dark:text-purple-300">
+                            <Shield className="h-3.5 w-3.5" />
+                            {modalVerifInfo.badgeText}
+                          </span>
+                        ) : modalVerifInfo.isApproved ? (
                           <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-0.5 text-xs font-semibold text-teal-700 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             Verified & Approved
                           </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                        ) : modalVerifInfo.isPending ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
                             <Clock className="h-3.5 w-3.5" />
-                            Pending Verification
+                            {modalVerifInfo.badgeText}
+                          </span>
+                        ) : modalVerifInfo.status === "rejected" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+                            <XCircle className="h-3.5 w-3.5" />
+                            Rejected ID
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-500 dark:border-gray-700 dark:bg-gray-800">
+                            <AlertCircle className="h-3.5 w-3.5" />
+                            Unverified
                           </span>
                         )}
                       </p>
+                      {modalVerifInfo.isExempt && (
+                        <p className="mt-1 text-[10px] text-gray-400">
+                          Built-in platform superuser / system owner. KYC verification not required.
+                        </p>
+                      )}
                     </div>
                     <div className="rounded-lg bg-white p-2.5 dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
                       <span className="text-gray-400 text-[11px]">Uploaded ID Proof</span>
-                      <p className="mt-1">
+                      <div className="mt-1">
                         {modalIdDocUrl ? (
-                          <a
-                            href={modalIdDocUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setInspectingIdUser({
+                                ...selectedUserDetails,
+                                idVerificationUrl: modalIdDocUrl,
+                                idVerificationStatus: modalVerifInfo.status,
+                              })
+                            }
+                            className="h-7 text-xs text-purple-700 hover:bg-purple-50 border-purple-200 dark:text-purple-300 dark:border-purple-800 font-semibold gap-1.5 shadow-2xs"
                           >
-                            <span>View Document</span>
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
-                        ) : selectedUserDetails.role === "admin" || selectedUserDetails.role === "owner" || isSampleAccount(selectedUserDetails.email) ? (
-                          <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">System Pre-Verified</span>
+                            <ShieldCheck className="h-3.5 w-3.5 text-purple-600" />
+                            <span>Inspect ID & Authenticity Report</span>
+                          </Button>
+                        ) : modalVerifInfo.isExempt ? (
+                          <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">Exempt (System Superuser)</span>
                         ) : (
                           <span className="text-xs text-gray-400">No document attached</span>
                         )}
-                      </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -3338,6 +4302,498 @@ export default function AdminDashboard() {
                   onClick={() => setSelectedUserDetails(null)}
                 >
                   Done
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        );
+      })()}
+
+      {/* Unit Details Modal */}
+      {selectedUnitDetails && (() => {
+        const u = selectedUnitDetails;
+        const prop = properties.find((p) => p.id === u.propertyId);
+        const unitImgs = u.imageUrls?.length
+          ? u.imageUrls
+          : u.imageUrl
+            ? [u.imageUrl]
+            : prop?.imageUrls?.length
+              ? prop.imageUrls
+              : prop?.imageUrl
+                ? [prop.imageUrl]
+                : [];
+        const matchedTenant = tenants.find(
+          (t) => t.unitId === u.id || t.id === u.tenantId || (t.propertyName === prop?.name && t.unitNumber === u.unitNumber)
+        );
+        const tenantName = u.tenantName || matchedTenant?.name;
+        const defaultOwner = users.find((usr) => usr.role === "owner") || users.find((usr) => usr.email.toLowerCase() === "renttrackowner@gmail.com");
+        const ownerUser = (prop?.createdBy && !["usr_builtin_admin", "admin"].includes(prop.createdBy) && !prop.createdBy.includes("admin")
+          ? users.find((usr) => usr.role === "owner" && (usr.id === prop.createdBy || usr.email === prop.createdBy))
+          : null) || defaultOwner || null;
+        const agentUser = users.find((usr) => usr.id === prop?.agentId);
+
+        return (
+          <div className="fixed inset-0 z-9999 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedUnitDetails(null)} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-800 dark:bg-gray-900"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-gray-100 pb-4 dark:border-gray-800">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800">
+                    <Home className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                      Unit {u.unitNumber}
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {prop?.name || "Unassigned"} • Floor {u.floor ?? "—"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold capitalize",
+                    u.status === "occupied" && "bg-green-50 text-green-700 border border-green-200",
+                    u.status === "vacant" && "bg-blue-50 text-blue-700 border border-blue-200",
+                    u.status === "maintenance" && "bg-amber-50 text-amber-700 border border-amber-200",
+                  )}>
+                    <span className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      u.status === "occupied" && "bg-green-500",
+                      u.status === "vacant" && "bg-blue-500",
+                      u.status === "maintenance" && "bg-amber-500",
+                    )} />
+                    {u.status}
+                  </span>
+                  <button
+                    onClick={() => setSelectedUnitDetails(null)}
+                    className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    aria-label="Close dialog"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Photos Gallery */}
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                    <Camera className="h-3.5 w-3.5 text-blue-500" />
+                    Unit Photos ({unitImgs.length})
+                  </span>
+                  <span className="text-[11px] text-gray-400">Click photo for full lightbox</span>
+                </div>
+                <UnitImageCarousel
+                  images={unitImgs}
+                  alt={`Unit ${u.unitNumber} at ${prop?.name || "Property"}`}
+                  title={`Unit ${u.unitNumber} • ${prop?.name || "Property"}`}
+                  subtitle={`${prop?.location || ""} • Floor ${u.floor ?? "—"} • ${formatCurrency(u.rentAmount || 0)}/mo`}
+                  className="h-64 sm:h-72 w-full rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm"
+                  variant="carousel"
+                />
+              </div>
+
+              {/* Information Grid */}
+              <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* Specs */}
+                <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3.5 dark:border-gray-800 dark:bg-gray-800/40">
+                  <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-blue-500" />
+                    Unit Specifications
+                  </h4>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                      <span className="text-gray-400">Monthly Rent:</span>
+                      <span className="font-bold text-gray-900 dark:text-white tabular-nums">{formatCurrency(u.rentAmount || 0)}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                      <span className="text-gray-400">Floor Level:</span>
+                      <span className="font-semibold text-gray-800 dark:text-gray-200">{u.floor ? `Floor ${u.floor}` : "Ground Floor"}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                      <span className="text-gray-400">Property Type:</span>
+                      <span className="font-semibold text-gray-800 dark:text-gray-200 capitalize">{prop?.type || "Standard"}</span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-gray-400">Address:</span>
+                      <span className="font-medium text-gray-800 dark:text-gray-200 max-w-[150px] truncate" title={prop?.location}>{prop?.location || "—"}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tenant & Lease */}
+                <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3.5 dark:border-gray-800 dark:bg-gray-800/40">
+                  <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1.5">
+                    <User className="h-3.5 w-3.5 text-emerald-500" />
+                    Occupancy &amp; Lease
+                  </h4>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                      <span className="text-gray-400">Occupant:</span>
+                      <span className="font-semibold text-gray-900 dark:text-white">{tenantName || "Vacant (None)"}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                      <span className="text-gray-400">Tenant Phone:</span>
+                      <span className="font-medium text-gray-800 dark:text-gray-200">{matchedTenant?.phone || "—"}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                      <span className="text-gray-400">Tenant Email:</span>
+                      <span className="font-medium text-gray-800 dark:text-gray-200 truncate max-w-[140px]">{matchedTenant?.email || "—"}</span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-gray-400">Lease Term:</span>
+                      <span className="font-medium text-gray-800 dark:text-gray-200">
+                        {matchedTenant?.contractStart && matchedTenant?.contractEnd
+                          ? `${formatDate(matchedTenant.contractStart)} - ${formatDate(matchedTenant.contractEnd)}`
+                          : u.leaseEnd
+                            ? `Until ${formatDate(u.leaseEnd)}`
+                            : "Ready for Lease"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ownership */}
+                <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3.5 dark:border-gray-800 dark:bg-gray-800/40">
+                  <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-purple-500" />
+                    Property Owner
+                  </h4>
+                  <div className="flex items-center gap-3">
+                    <Avatar src={ownerUser?.avatarUrl} fallback={getInitials(ownerUser?.name || "Owner")} size="sm" />
+                    <div>
+                      <p className="font-bold text-xs text-gray-900 dark:text-white">{ownerUser?.name || "Owner"}</p>
+                      <p className="text-[11px] text-gray-500">{ownerUser?.email || "—"}</p>
+                      {ownerUser?.phone && <p className="text-[10px] text-gray-400">{ownerUser.phone}</p>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Agent */}
+                <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3.5 dark:border-gray-800 dark:bg-gray-800/40">
+                  <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1.5">
+                    <Briefcase className="h-3.5 w-3.5 text-amber-500" />
+                    Assigned Agent
+                  </h4>
+                  {agentUser ? (
+                    <div className="flex items-center gap-3">
+                      <Avatar src={agentUser.avatarUrl} fallback={getInitials(agentUser.name)} size="sm" />
+                      <div>
+                        <p className="font-bold text-xs text-gray-900 dark:text-white">{agentUser.name}</p>
+                        <p className="text-[11px] text-gray-500">{agentUser.email}</p>
+                        {agentUser.phone && <p className="text-[10px] text-gray-400">{agentUser.phone}</p>}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-400">No agent currently assigned to this property.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="mt-6 flex flex-wrap gap-2.5 border-t border-gray-100 pt-4 dark:border-gray-800">
+                {matchedTenant && (
+                  <Button
+                    variant="outline"
+                    className="flex-1 text-xs text-emerald-700 hover:bg-emerald-50 border-emerald-200"
+                    onClick={() => {
+                      setSelectedConversation({
+                        userId: matchedTenant.id,
+                        otherUser: {
+                          id: matchedTenant.id,
+                          name: matchedTenant.name,
+                          email: matchedTenant.email,
+                          role: "tenant",
+                          avatarUrl: matchedTenant.avatarUrl,
+                        },
+                        lastMessage: null,
+                        unreadCount: 0,
+                      });
+                      setIsMessagingOpen(true);
+                      setSelectedUnitDetails(null);
+                    }}
+                  >
+                    <MessageSquare className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
+                    Message Tenant
+                  </Button>
+                )}
+                {ownerUser && (
+                  <Button
+                    variant="outline"
+                    className="flex-1 text-xs text-blue-700 hover:bg-blue-50 border-blue-200"
+                    onClick={() => {
+                      setSelectedConversation({
+                        userId: ownerUser.id,
+                        otherUser: {
+                          id: ownerUser.id,
+                          name: ownerUser.name,
+                          email: ownerUser.email,
+                          role: ownerUser.role,
+                          avatarUrl: ownerUser.avatarUrl,
+                        },
+                        lastMessage: null,
+                        unreadCount: 0,
+                      });
+                      setIsMessagingOpen(true);
+                      setSelectedUnitDetails(null);
+                    }}
+                  >
+                    <MessageSquare className="mr-1.5 h-3.5 w-3.5 text-blue-600" />
+                    Message Owner
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`Unit ${u.unitNumber} at ${prop?.name || ""}`);
+                    toast.success("Unit info copied");
+                  }}
+                >
+                  <Copy className="mr-1.5 h-3.5 w-3.5 text-gray-500" />
+                  Copy Info
+                </Button>
+                <Button
+                  className="bg-blue-600 text-xs text-white hover:bg-blue-700 px-5"
+                  onClick={() => setSelectedUnitDetails(null)}
+                >
+                  Close
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        );
+      })()}
+
+      {/* Property Details Modal */}
+      {selectedPropertyDetails && (() => {
+        const p = selectedPropertyDetails;
+        const propUnits = units.filter((u) => u.propertyId === p.id);
+        const occupiedCount = propUnits.length > 0 ? propUnits.filter((u) => u.status === "occupied").length : (p.occupiedUnits || 0);
+        const totalUnits = propUnits.length > 0 ? propUnits.length : (p.units || 0);
+        const occPercent = totalUnits > 0 ? Math.round((occupiedCount / totalUnits) * 100) : 0;
+        const propRevenue = propUnits.reduce((acc, u) => acc + (u.status === "occupied" ? (u.rentAmount || 0) : 0), 0) || p.monthlyRevenue || 0;
+        const defaultOwner = users.find((usr) => usr.role === "owner") || users.find((usr) => usr.email.toLowerCase() === "renttrackowner@gmail.com");
+        const owner = (p.createdBy && !["usr_builtin_admin", "admin"].includes(p.createdBy) && !p.createdBy.includes("admin")
+          ? users.find((u) => u.role === "owner" && (u.id === p.createdBy || u.email === p.createdBy))
+          : null) || defaultOwner || null;
+        const agent = users.find((u) => u.id === p.agentId);
+        const propImgs = p.imageUrls?.length ? p.imageUrls : p.imageUrl ? [p.imageUrl] : [];
+
+        return (
+          <div className="fixed inset-0 z-9999 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedPropertyDetails(null)} />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-800 dark:bg-gray-900"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-gray-100 pb-4 dark:border-gray-800">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800">
+                    <Building2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">{p.name}</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                      <MapPin className="h-3 w-3 text-rose-500" />
+                      {p.location}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize",
+                    p.status === "active" ? "bg-green-50 text-green-700 border border-green-200" : "bg-gray-100 text-gray-600"
+                  )}>
+                    {p.status}
+                  </span>
+                  <button
+                    onClick={() => setSelectedPropertyDetails(null)}
+                    className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    aria-label="Close dialog"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Photos Gallery */}
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                    <Camera className="h-3.5 w-3.5 text-blue-500" />
+                    Property Photos ({propImgs.length})
+                  </span>
+                  <span className="text-[11px] text-gray-400">Click photo for full lightbox</span>
+                </div>
+                <UnitImageCarousel
+                  images={propImgs}
+                  alt={p.name}
+                  title={p.name}
+                  subtitle={`${p.location} • ${p.type} • ${totalUnits} units`}
+                  className="h-64 sm:h-72 w-full rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm"
+                  variant="carousel"
+                />
+              </div>
+
+              {/* Information Grid */}
+              <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* Stats */}
+                <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3.5 dark:border-gray-800 dark:bg-gray-800/40">
+                  <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1.5">
+                    <Home className="h-3.5 w-3.5 text-blue-500" />
+                    Units &amp; Occupancy
+                  </h4>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                      <span className="text-gray-400">Total Units:</span>
+                      <span className="font-bold text-gray-900 dark:text-white">{totalUnits}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                      <span className="text-gray-400">Occupied Units:</span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400">{occupiedCount} ({occPercent}%)</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                      <span className="text-gray-400">Vacant Units:</span>
+                      <span className="font-semibold text-blue-600 dark:text-blue-400">{totalUnits - occupiedCount}</span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-gray-400">Monthly Revenue:</span>
+                      <span className="font-bold text-gray-900 dark:text-white tabular-nums">{formatCurrency(propRevenue)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Details */}
+                <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3.5 dark:border-gray-800 dark:bg-gray-800/40">
+                  <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-purple-500" />
+                    Property Details
+                  </h4>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                      <span className="text-gray-400">Property Type:</span>
+                      <span className="font-semibold capitalize text-gray-800 dark:text-gray-200">{p.type}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                      <span className="text-gray-400">Condition:</span>
+                      <span className="font-medium text-gray-800 dark:text-gray-200">{p.condition || "Good"}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                      <span className="text-gray-400">Availability:</span>
+                      <span className="font-medium text-gray-800 dark:text-gray-200">{p.availabilityStatus || "Available"}</span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-gray-400">Listed Date:</span>
+                      <span className="font-medium text-gray-800 dark:text-gray-200">{p.createdAt ? formatDate(p.createdAt) : "—"}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Owner */}
+                <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3.5 dark:border-gray-800 dark:bg-gray-800/40">
+                  <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1.5">
+                    <User className="h-3.5 w-3.5 text-blue-500" />
+                    Owner Details
+                  </h4>
+                  <div className="flex items-center gap-3">
+                    <Avatar src={owner?.avatarUrl} fallback={getInitials(owner?.name || "Owner")} size="sm" />
+                    <div>
+                      <p className="font-bold text-xs text-gray-900 dark:text-white">{owner?.name || "Property Owner"}</p>
+                      <p className="text-[11px] text-gray-500">{owner?.email || "—"}</p>
+                      {owner?.phone && <p className="text-[10px] text-gray-400">{owner.phone}</p>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Agent */}
+                <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-3.5 dark:border-gray-800 dark:bg-gray-800/40">
+                  <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1.5">
+                    <Briefcase className="h-3.5 w-3.5 text-amber-500" />
+                    Assigned Agent
+                  </h4>
+                  {agent ? (
+                    <div className="flex items-center gap-3">
+                      <Avatar src={agent.avatarUrl} fallback={getInitials(agent.name)} size="sm" />
+                      <div>
+                        <p className="font-bold text-xs text-gray-900 dark:text-white">{agent.name}</p>
+                        <p className="text-[11px] text-gray-500">{agent.email}</p>
+                        {agent.phone && <p className="text-[10px] text-gray-400">{agent.phone}</p>}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-400">No agent currently assigned.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Features */}
+              {p.features && p.features.length > 0 && (
+                <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50/70 p-3.5 dark:border-gray-800 dark:bg-gray-800/40">
+                  <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Amenities &amp; Features</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {p.features.map((feat, idx) => (
+                      <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[11px] font-medium border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800">
+                        {feat}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="mt-6 flex flex-wrap gap-2.5 border-t border-gray-100 pt-4 dark:border-gray-800">
+                {owner && (
+                  <Button
+                    variant="outline"
+                    className="flex-1 text-xs text-blue-700 hover:bg-blue-50 border-blue-200"
+                    onClick={() => {
+                      setSelectedConversation({
+                        userId: owner.id,
+                        otherUser: {
+                          id: owner.id,
+                          name: owner.name,
+                          email: owner.email,
+                          role: owner.role,
+                          avatarUrl: owner.avatarUrl,
+                        },
+                        lastMessage: null,
+                        unreadCount: 0,
+                      });
+                      setIsMessagingOpen(true);
+                      setSelectedPropertyDetails(null);
+                    }}
+                  >
+                    <MessageSquare className="mr-1.5 h-3.5 w-3.5 text-blue-600" />
+                    Message Owner
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() => {
+                    navigator.clipboard.writeText(p.id);
+                    toast.success("Property ID copied");
+                  }}
+                >
+                  <Copy className="mr-1.5 h-3.5 w-3.5 text-gray-500" />
+                  Copy ID
+                </Button>
+                <Button
+                  className="bg-blue-600 text-xs text-white hover:bg-blue-700 px-5"
+                  onClick={() => setSelectedPropertyDetails(null)}
+                >
+                  Close
                 </Button>
               </div>
             </motion.div>
@@ -3434,6 +4890,15 @@ export default function AdminDashboard() {
           </motion.div>
         </div>
       )}
+      {/* Agent & User Government ID Authenticity Inspector Modal */}
+      <AgentIdInspectorModal
+        isOpen={!!inspectingIdUser}
+        onClose={() => setInspectingIdUser(null)}
+        agent={inspectingIdUser}
+        canApprove={true}
+        onVerify={handleAdminVerifyId}
+        isVerifying={isAdminVerifyingId}
+      />
     </motion.div>
   );
 }

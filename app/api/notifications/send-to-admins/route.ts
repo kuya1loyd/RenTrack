@@ -14,30 +14,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Title and message are required" }, { status: 400 });
     }
 
-    const targetRole = recipientRole === "owner" ? "owner" : "admin";
-    const { data: users } = await getAdminSupabase()
-      .schema("public").from("users")
-      .select("id")
-      .eq("role", targetRole);
+    const targetRoles =
+      recipientRole === "both" || type === "tenant"
+        ? ["owner", "admin"]
+        : recipientRole === "owner"
+        ? ["owner"]
+        : ["admin"];
 
-    if (!users || users.length === 0) {
-      return NextResponse.json({ success: false, error: `No ${targetRole}s found to notify` }, { status: 404 });
+    const { data: users } = await getAdminSupabase()
+      .schema("public")
+      .from("users")
+      .select("id")
+      .in("role", targetRoles);
+
+    const recipientIds = new Set<string>((users || []).map((u: any) => u.id));
+    if (body.targetUserId) {
+      recipientIds.add(body.targetUserId);
+    }
+
+    if (recipientIds.size === 0) {
+      return NextResponse.json(
+        { success: false, error: `No recipients found to notify` },
+        { status: 404 }
+      );
     }
 
     await Promise.all(
-      users.flatMap((user: any) => [
+      Array.from(recipientIds).flatMap((userId) => [
         createNotification({
-          userId: user.id,
+          userId,
           title,
           message,
           type: type || "system",
           read: false,
         }),
-        sendMessage(auth.userId, user.id, title, message),
+        sendMessage(auth.userId, userId, title, message),
       ])
     );
 
-    return NextResponse.json({ success: true, notifiedCount: users.length });
+    return NextResponse.json({ success: true, notifiedCount: recipientIds.size });
   } catch (error) {
     console.error("Send to admins error:", error);
     return NextResponse.json({ success: false, error: "Failed to send notification" }, { status: 500 });

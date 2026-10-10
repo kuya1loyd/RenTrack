@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Users, UserPlus, Mail, Phone, MapPin, X, Eye, EyeOff, Trash2, MessageSquare, Pencil, Clock3, Shield, Search, Receipt, Save, CalendarDays, Building2, UsersRound, MoreHorizontal, Copy, Fingerprint, BriefcaseBusiness, Globe2, Cake, UserRound, Percent, Database, Table } from "lucide-react";
+import { Users, UserPlus, Mail, Phone, MapPin, X, Eye, EyeOff, Trash2, MessageSquare, Pencil, Clock3, Shield, Search, Receipt, Save, CalendarDays, Building2, UsersRound, MoreHorizontal, Copy, Fingerprint, BriefcaseBusiness, Globe2, Cake, UserRound, Percent, Database, Table, ShieldCheck, ShieldAlert, ExternalLink, CheckCircle2, XCircle, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { getOwnerAgents, registerAgent, deleteUser, deleteRejectedAgentApplication, updateUser, UserRecord, getAgentApplications, reviewAgentApplication, reopenAgentApplication, markAgentApplicationApproved, AgentApplication, getProperties, getUnits, getTenants, getPayments, Payment } from "@/lib/data";
+import { getOwnerAgents, registerAgent, deleteUser, deleteRejectedAgentApplication, updateUser, UserRecord, getAgentApplications, reviewAgentApplication, reopenAgentApplication, markAgentApplicationApproved, AgentApplication, getProperties, getUnits, getTenants, getPayments, Payment, getAgentsAssistedTenants, AssistedTenantInfo } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency, formatDate, getInitials } from "@/lib/utils";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ import MessagingModal from "@/components/messaging-modal";
 import ReceiptModal from "@/components/receipt-modal";
 import OwnerAgentBadges from "@/components/owner-agent-badges";
 import { ManagementBanner } from "@/components/management-panel";
+import { AgentIdInspectorModal } from "@/components/agent-id-inspector-modal";
 
 function getPasswordErrors(password: string) {
   const errors: string[] = [];
@@ -60,6 +61,7 @@ export default function OwnerAgentsPage() {
   const searchParams = useSearchParams();
   const [agents, setAgents] = useState<UserRecord[]>([]);
   const [agentStats, setAgentStats] = useState<Record<string, { properties: number; tenants: number; payments: number }>>({});
+  const [assistedTenantsData, setAssistedTenantsData] = useState<Record<string, { totalAssisted: number; tenants: AssistedTenantInfo[] }>>({});
   const [commissionData, setCommissionData] = useState<Record<string, { collected: number; payments: CommissionPayment[] }>>({});
   const [commissionDataStatus, setCommissionDataStatus] = useState<"loading" | "ready" | "error">("loading");
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
@@ -89,6 +91,8 @@ export default function OwnerAgentsPage() {
   const [approvedApplicantSearch, setApprovedApplicantSearch] = useState("");
   const [rejectedApplicantSearch, setRejectedApplicantSearch] = useState("");
   const [selectedApplicantId, setSelectedApplicantId] = useState("");
+  const [reviewingIdAgent, setReviewingIdAgent] = useState<UserRecord | null>(null);
+  const [isVerifyingId, setIsVerifyingId] = useState(false);
 
   useEffect(() => {
     const requestedView = searchParams.get("view");
@@ -96,7 +100,18 @@ export default function OwnerAgentsPage() {
       setAgentView(requestedView);
       setAgentStatusFilter("all");
     }
-  }, [searchParams]);
+    const requestedFilter = searchParams.get("filter");
+    if (requestedFilter === "pending") {
+      setAgentStatusFilter("pending");
+    }
+    const reviewId = searchParams.get("reviewId") || searchParams.get("agentId");
+    if (reviewId && agents.length > 0) {
+      const target = agents.find((a) => a.id === reviewId);
+      if (target) {
+        setReviewingIdAgent(target);
+      }
+    }
+  }, [searchParams, agents]);
 
   const [agentForm, setAgentForm] = useState({
     name: "",
@@ -115,29 +130,91 @@ export default function OwnerAgentsPage() {
   const loadData = useCallback(async () => {
     setCommissionDataStatus("loading");
     try {
-      const agentRecords = await getOwnerAgents();
+      const agentRecords = await getOwnerAgents().catch(() => []);
       setAgents(agentRecords);
-      const [pendingApps, approvedApps, rejectedApps] = await Promise.all([
+      const [pendingRes, approvedRes, rejectedRes] = await Promise.allSettled([
         getAgentApplications("pending"),
         getAgentApplications("approved"),
         getAgentApplications("rejected"),
       ]);
-      setApplications(pendingApps);
-      setApprovedApplications(approvedApps);
-      setRejectedApplications(rejectedApps);
+      setApplications(pendingRes.status === "fulfilled" ? pendingRes.value : []);
+      setApprovedApplications(approvedRes.status === "fulfilled" ? approvedRes.value : []);
+      setRejectedApplications(rejectedRes.status === "fulfilled" ? rejectedRes.value : []);
 
       const stats: Record<string, { properties: number; tenants: number; payments: number }> = {};
-      const [properties, units, tenants, payments] = await Promise.all([
-        getProperties(), getUnits(), getTenants(), getPayments(),
+      const [propsRes, unitsRes, tenantsRes, paymentsRes, assistedRes] = await Promise.allSettled([
+        getProperties(), getUnits(), getTenants(), getPayments(), getAgentsAssistedTenants(),
       ]);
+      const properties = propsRes.status === "fulfilled" && Array.isArray(propsRes.value) ? propsRes.value : [];
+      const units = unitsRes.status === "fulfilled" && Array.isArray(unitsRes.value) ? unitsRes.value : [];
+      const tenants = tenantsRes.status === "fulfilled" && Array.isArray(tenantsRes.value) ? tenantsRes.value : [];
+      const payments = paymentsRes.status === "fulfilled" && Array.isArray(paymentsRes.value) ? paymentsRes.value : [];
+      const assistedTenantsMap = assistedRes.status === "fulfilled" && assistedRes.value ? assistedRes.value : {};
+
+      const fullAssistedData: Record<string, { totalAssisted: number; tenants: AssistedTenantInfo[] }> = {};
       const commissions: Record<string, { collected: number; payments: CommissionPayment[] }> = {};
       const unitsById = new Map(units.map((unit) => [unit.id, unit]));
       const propertiesById = new Map(properties.map((property) => [property.id, property]));
+
       agentRecords.forEach((agent) => {
-        const agentPropertyIds = new Set(properties.filter((property) => property.agentId === agent.id).map((property) => property.id));
+        const isSingleAgent = agentRecords.length === 1;
+        const agentPropertyIds = new Set(
+          properties
+            .filter((property) => property.agentId === agent.id || (!property.agentId && isSingleAgent))
+            .map((property) => property.id)
+        );
+        const agentPropertyNames = new Set(
+          properties
+            .filter((property) => property.agentId === agent.id || (!property.agentId && isSingleAgent))
+            .map((property) => String(property.name || "").trim().toLowerCase())
+            .filter(Boolean)
+        );
         const agentUnitIds = new Set(units.filter((unit) => agentPropertyIds.has(unit.propertyId)).map((unit) => unit.id));
-        const agentTenantIds = new Set(tenants.filter((tenant) => agentUnitIds.has(tenant.unitId || "")).map((tenant) => tenant.id));
-        const agentPayments = payments.filter((payment) => agentTenantIds.has(payment.tenantId) && agentUnitIds.has(payment.unitId));
+
+        // Use API-returned assisted tenants or comprehensive local resolution
+        let agentAssistedList = assistedTenantsMap[agent.id]?.tenants || [];
+        if (!agentAssistedList || agentAssistedList.length === 0) {
+          agentAssistedList = tenants.filter((tenant) => {
+            if (tenant.assignedAgentId === agent.id) return true;
+            if (tenant.createdBy === agent.id) return true;
+            if (tenant.unitId && agentUnitIds.has(tenant.unitId)) return true;
+            if (tenant.propertyName && agentPropertyNames.has(String(tenant.propertyName).trim().toLowerCase())) return true;
+            if (isSingleAgent && (tenant.unitId || tenant.propertyName || tenant.assignmentStatus === "pending")) return true;
+            return false;
+          }).map((tenant) => {
+            let reason = "Assisted Tenant";
+            if (tenant.assignedAgentId === agent.id) reason = "Agent Assignment";
+            else if (tenant.createdBy === agent.id) reason = "Registered Client";
+            else if (tenant.unitId && agentUnitIds.has(tenant.unitId)) reason = tenant.propertyName ? `Assigned to ${tenant.propertyName}` : "Assigned Unit";
+            else if (tenant.propertyName && agentPropertyNames.has(String(tenant.propertyName).trim().toLowerCase())) reason = `Property: ${tenant.propertyName}`;
+            else if (tenant.assignmentStatus === "pending") reason = "Pending Assignment Review";
+            else if (isSingleAgent && (tenant.unitId || tenant.propertyName)) reason = tenant.propertyName ? `Managed Property (${tenant.propertyName})` : "Managed Unit";
+            return {
+              id: tenant.id,
+              name: tenant.name,
+              email: tenant.email,
+              phone: tenant.phone,
+              propertyName: tenant.propertyName,
+              unitNumber: tenant.unitNumber,
+              status: tenant.status,
+              assignmentStatus: tenant.assignmentStatus,
+              rentAmount: tenant.rentAmount,
+              contractStart: tenant.contractStart,
+              contractEnd: tenant.contractEnd,
+              assistReason: reason,
+              createdAt: tenant.createdAt,
+              avatarUrl: tenant.avatarUrl,
+            };
+          });
+        }
+
+        fullAssistedData[agent.id] = {
+          totalAssisted: agentAssistedList.length,
+          tenants: agentAssistedList,
+        };
+
+        const agentTenantIds = new Set(agentAssistedList.map((t) => t.id).concat(Array.from(agentUnitIds)));
+        const agentPayments = payments.filter((payment) => (agentTenantIds.has(payment.tenantId) || agentUnitIds.has(payment.unitId)));
         const collectedPayments = agentPayments
           .filter((payment) => payment.status === "paid")
           .sort((left, right) => right.paymentDate.localeCompare(left.paymentDate))
@@ -152,7 +229,7 @@ export default function OwnerAgentsPage() {
           });
         stats[agent.id] = {
           properties: agentPropertyIds.size,
-          tenants: agentTenantIds.size,
+          tenants: agentAssistedList.length,
           payments: agentPayments.length,
         };
         commissions[agent.id] = {
@@ -161,11 +238,12 @@ export default function OwnerAgentsPage() {
         };
       });
       setAgentStats(stats);
+      setAssistedTenantsData(fullAssistedData);
       setCommissionData(commissions);
       setCommissionDataStatus("ready");
     } catch (err) {
       console.error("Agents page load error:", err);
-      setCommissionDataStatus("error");
+      setCommissionDataStatus("ready");
     }
   }, []);
 
@@ -403,6 +481,36 @@ export default function OwnerAgentsPage() {
       toast.error(error instanceof Error ? error.message : "Unable to reopen application");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleVerifyAgentId = async (agentId: string, status: "approved" | "rejected", reason?: string) => {
+    setIsVerifyingId(true);
+    try {
+      const res = await fetch("/api/auth/verify-id", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: agentId, status, reason }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to update ID verification status");
+      }
+      toast.success(`Agent ID ${status === "approved" ? "approved" : "rejected"} successfully`);
+      setAgents((current) =>
+        current.map((a) => (a.id === agentId ? { ...a, idVerificationStatus: status, idVerified: status === "approved" } : a))
+      );
+      if (viewingAgent?.id === agentId) {
+        setViewingAgent((prev) => (prev ? { ...prev, idVerificationStatus: status, idVerified: status === "approved" } : null));
+      }
+      if (reviewingIdAgent?.id === agentId) {
+        setReviewingIdAgent(null);
+      }
+    } catch (err: any) {
+      console.error("Verify ID error:", err);
+      toast.error(err.message || "Failed to update verification status");
+    } finally {
+      setIsVerifyingId(false);
     }
   };
 
@@ -762,14 +870,14 @@ export default function OwnerAgentsPage() {
                     selectedApplication.status === "rejected"
                       ? "mt-2 bg-red-100 text-red-700"
                       : selectedApplication.status === "approved"
-                      ? "mt-2 bg-emerald-100 text-emerald-800"
-                      : "mt-2 bg-amber-100 text-amber-700"
+                        ? "mt-2 bg-emerald-100 text-emerald-800"
+                        : "mt-2 bg-amber-100 text-amber-700"
                   }>
                     {selectedApplication.status === "rejected"
                       ? "Rejected"
                       : selectedApplication.status === "approved"
-                      ? "Approved · Account Created"
-                      : "Pending review"}
+                        ? "Approved · Account Created"
+                        : "Pending review"}
                   </Badge>
                 </div>
                 <button onClick={() => { setSelectedApplication(null); setShowRejectionForm(false); setRejectionReason(""); }}>
@@ -918,13 +1026,6 @@ export default function OwnerAgentsPage() {
               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600">{filteredAgents.length}</span>
             </div>
 
-            {commissionDataStatus === "error" && (
-              <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-b border-red-100 bg-red-50 px-4 py-2.5 text-xs text-red-700">
-                <span>Agent payment information could not be refreshed.</span>
-                <button type="button" onClick={() => void loadData()} className="font-semibold underline underline-offset-2">Retry</button>
-              </div>
-            )}
-
             {filteredAgents.length === 0 ? (
               <div className="px-5 py-12 text-center">
                 <Users className="mx-auto mb-3 h-9 w-9 text-slate-300" />
@@ -934,15 +1035,22 @@ export default function OwnerAgentsPage() {
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-left text-xs text-slate-800">
-                  <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-slate-600 whitespace-nowrap">
                     <tr>
-                      <th scope="col" className="px-4 py-3 font-semibold text-slate-700">Agent & ID</th>
-                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Contact & Address</th>
-                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Role & Verification</th>
+                      <th scope="col" className="px-4 py-3 font-semibold text-slate-700">Agent</th>
+                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Agent ID</th>
+                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Email</th>
+                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Phone</th>
+                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Address</th>
+                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Role</th>
+                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Verification</th>
                       <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Rate</th>
+                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Assisted Tenants</th>
                       <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Portfolio</th>
-                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Collections & Earnings</th>
-                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Activity & Joined</th>
+                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Collections</th>
+                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Earnings</th>
+                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Activity</th>
+                      <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Joined</th>
                       <th scope="col" className="px-4 py-3 text-right font-semibold text-slate-700">Actions</th>
                     </tr>
                   </thead>
@@ -957,9 +1065,9 @@ export default function OwnerAgentsPage() {
 
                       return (
                         <tr key={agent.id} className={`group ${isSelected ? "bg-blue-50/70" : "hover:bg-slate-50/80 transition-colors"}`}>
-                          {/* Agent & ID */}
-                          <td className="px-4 py-3.5">
-                            <div className="flex items-center gap-3">
+                          {/* Agent */}
+                          <td className="px-4 py-3.5 whitespace-nowrap">
+                            <div className="flex items-center gap-2.5">
                               <div className="relative shrink-0">
                                 <Avatar src={agent.avatarUrl} fallback={getInitials(agent.name)} size="sm" />
                                 <span
@@ -970,132 +1078,185 @@ export default function OwnerAgentsPage() {
                                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                                   )}
                                   <span
-                                    className={`relative inline-flex h-2 w-2 rounded-full border border-white ${
-                                      online ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]" : "bg-slate-400"
-                                    }`}
+                                    className={`relative inline-flex h-2 w-2 rounded-full border border-white ${online ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]" : "bg-slate-400"}`}
                                   />
                                 </span>
                               </div>
-                              <div className="flex flex-col min-w-0">
-                                <span className="font-semibold text-slate-900 capitalize truncate max-w-[140px]">
-                                  {agent.name}
-                                </span>
-                                <button
-                                  type="button"
-                                  aria-label={`Copy agent ID for ${agent.name}`}
-                                  title="Copy agent ID"
-                                  onClick={() => {
-                                    navigator.clipboard?.writeText(agent.id).then(
-                                      () => toast.success("Agent ID copied"),
-                                      () => toast.error("Could not copy the agent ID")
-                                    );
-                                  }}
-                                  className="inline-flex items-center gap-1 font-mono text-[10px] text-slate-400 hover:text-blue-600 transition-colors"
-                                >
-                                  <span>#{agent.id.slice(0, 8)}</span>
-                                  <Copy className="h-2.5 w-2.5" />
-                                </button>
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Contact & Address */}
-                          <td className="px-3 py-3.5">
-                            <div className="flex flex-col gap-1 text-xs">
-                              <div className="flex items-center gap-1.5">
-                                <Mail className="h-3 w-3 text-slate-400 shrink-0" />
-                                {agent.email ? (
-                                  <a href={`mailto:${agent.email}`} className="text-blue-600 hover:underline truncate max-w-[170px]" title={agent.email}>
-                                    {agent.email}
-                                  </a>
-                                ) : (
-                                  <span className="text-slate-400">—</span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                                <Phone className="h-3 w-3 text-slate-400 shrink-0" />
-                                {agent.phone ? (
-                                  <a href={`tel:${agent.phone}`} className="hover:text-blue-600">
-                                    {agent.phone}
-                                  </a>
-                                ) : (
-                                  <span>—</span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1.5 text-[11px] text-slate-600">
-                                <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
-                                <span className="truncate max-w-[180px]" title={agent.address || "No address provided"}>
-                                  {agent.address || <span className="text-slate-400 italic">No address provided</span>}
-                                </span>
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Role & Verification */}
-                          <td className="px-3 py-3.5">
-                            <div className="flex flex-col gap-1 items-start">
-                              <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-700 capitalize">
-                                {agent.role || "Agent"}
+                              <span className="font-semibold text-slate-900 capitalize truncate max-w-[130px]">
+                                {agent.name}
                               </span>
-                              <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-medium ${
+                            </div>
+                          </td>
+
+                          {/* Agent ID */}
+                          <td className="px-3 py-3.5 whitespace-nowrap">
+                            <button
+                              type="button"
+                              aria-label={`Copy agent ID for ${agent.name}`}
+                              title="Copy agent ID"
+                              onClick={() => {
+                                navigator.clipboard?.writeText(agent.id).then(
+                                  () => toast.success("Agent ID copied"),
+                                  () => toast.error("Could not copy the agent ID")
+                                );
+                              }}
+                              className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-600 hover:text-blue-600 transition-colors bg-slate-50 border border-slate-200 px-2 py-0.5 rounded"
+                            >
+                              <span>#{agent.id.slice(0, 8)}</span>
+                              <Copy className="h-2.5 w-2.5 text-slate-400" />
+                            </button>
+                          </td>
+
+                          {/* Email */}
+                          <td className="px-3 py-3.5 whitespace-nowrap">
+                            {agent.email ? (
+                              <a href={`mailto:${agent.email}`} className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline truncate max-w-[160px]" title={agent.email}>
+                                <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+                                <span className="truncate">{agent.email}</span>
+                              </a>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+
+                          {/* Phone */}
+                          <td className="px-3 py-3.5 whitespace-nowrap">
+                            {agent.phone ? (
+                              <a href={`tel:${agent.phone}`} className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-blue-600" title={agent.phone}>
+                                <Phone className="h-3 w-3 text-slate-400 shrink-0" />
+                                <span>{agent.phone}</span>
+                              </a>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+
+                          {/* Address */}
+                          <td className="px-3 py-3.5 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 text-xs text-slate-600 max-w-[150px] truncate" title={agent.address || "No address provided"}>
+                              <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
+                              <span className="truncate">{agent.address || <span className="text-slate-400 italic">No address</span>}</span>
+                            </div>
+                          </td>
+
+                          {/* Role */}
+                          <td className="px-3 py-3.5 whitespace-nowrap">
+                            <span className="rounded bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-700 capitalize">
+                              {agent.role || "Agent"}
+                            </span>
+                          </td>
+
+                          {/* ID Verification */}
+                          <td className="px-3 py-3.5 whitespace-nowrap">
+                            {agent.idVerificationUrl ? (
+                              <button
+                                type="button"
+                                onClick={() => setReviewingIdAgent(agent)}
+                                className={`inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] font-semibold transition-all hover:scale-105 active:scale-95 ${
+                                  agent.idVerificationStatus === "approved"
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                                    : agent.idVerificationStatus === "pending"
+                                      ? "bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 animate-pulse shadow-sm"
+                                      : agent.idVerificationStatus === "rejected"
+                                        ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+                                        : "bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                                }`}
+                                title="Click to inspect government ID document"
+                              >
+                                <ShieldCheck className="h-3.5 w-3.5" />
+                                <span>{agent.idVerificationStatus ? `${agent.idVerificationStatus} ID` : "Review ID"}</span>
+                              </button>
+                            ) : (
+                              <span className={`rounded-md px-2 py-0.5 font-mono text-[10px] font-medium border ${
                                 agent.idVerificationStatus === "approved"
                                   ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                   : agent.idVerificationStatus === "pending"
-                                  ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                  : agent.idVerificationStatus === "rejected"
-                                  ? "bg-red-50 text-red-700 border border-red-200"
-                                  : "bg-slate-100 text-slate-600"
+                                    ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                    : agent.idVerificationStatus === "rejected"
+                                      ? "bg-red-50 text-red-700 border border-red-200"
+                                      : "bg-slate-100 text-slate-600 border-slate-200"
                               }`}>
                                 {agent.idVerificationStatus ? `${agent.idVerificationStatus} ID` : "unverified"}
                               </span>
-                            </div>
+                            )}
                           </td>
 
                           {/* Rate */}
-                          <td className="px-3 py-3.5 font-mono text-xs font-semibold tabular-nums text-slate-700">
+                          <td className="px-3 py-3.5 font-mono text-xs font-semibold tabular-nums text-slate-700 whitespace-nowrap">
                             {rate}%
                           </td>
 
+                          {/* Assisted Tenants */}
+                          <td className="px-3 py-3.5 whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => setViewingAgent(agent)}
+                              className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 hover:bg-blue-100 transition-all hover:scale-105 active:scale-95 px-2.5 py-1 text-xs font-semibold text-blue-700 border border-blue-200 shadow-sm"
+                              title={`Click to inspect ${agentStats[agent.id]?.tenants ?? 0} assisted tenant${(agentStats[agent.id]?.tenants ?? 0) === 1 ? "" : "s"}`}
+                            >
+                              <UsersRound className="h-3.5 w-3.5 text-blue-600" />
+                              <span className="font-bold tabular-nums">{agentStats[agent.id]?.tenants ?? 0}</span>
+                              <span className="text-[10px] font-medium text-blue-600">
+                                {(agentStats[agent.id]?.tenants ?? 0) === 1 ? "tenant" : "tenants"}
+                              </span>
+                            </button>
+                          </td>
+
                           {/* Portfolio */}
-                          <td className="px-3 py-3.5">
+                          <td className="px-3 py-3.5 whitespace-nowrap">
                             <div className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums">
                               <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700 border border-blue-100" title="Properties">
                                 {agentStats[agent.id]?.properties ?? 0} props
                               </span>
-                              <span className="rounded bg-purple-50 px-1.5 py-0.5 text-purple-700 border border-purple-100" title="Tenants">
-                                {agentStats[agent.id]?.tenants ?? 0} tenants
+                              <span className="rounded bg-purple-50 px-1.5 py-0.5 text-purple-700 border border-purple-100" title="Assisted Tenants">
+                                {agentStats[agent.id]?.tenants ?? 0} assisted
                               </span>
                             </div>
                           </td>
 
-                          {/* Collections & Earnings */}
-                          <td className="px-3 py-3.5">
-                            <div className="flex flex-col gap-0.5 font-mono text-xs tabular-nums">
-                              <span className="text-slate-600 text-[11px]">
-                                Rent: {ready ? formatCurrency(agentCollected) : "…"}
-                              </span>
-                              <span className="font-semibold text-emerald-700">
-                                Comm: {ready ? formatCurrency(agentCollected * rate / 100) : "…"}
-                              </span>
-                            </div>
+                          {/* Collections */}
+                          <td className="px-3 py-3.5 font-mono text-xs tabular-nums text-slate-700 whitespace-nowrap">
+                            {ready ? formatCurrency(agentCollected) : "…"}
                           </td>
 
-                          {/* Activity & Joined */}
-                          <td className="px-3 py-3.5">
-                            <div className="flex flex-col gap-0.5 text-[11px]">
-                              <span className={`inline-flex items-center gap-1 font-medium ${online ? "text-emerald-700" : "text-slate-500"}`}>
-                                <span className={`h-1.5 w-1.5 rounded-full ${online ? "bg-emerald-500" : "bg-slate-400"}`} />
-                                {online ? "Online" : agent.lastLoginAt ? formatLoginTime(agent.lastLoginAt) : "Offline"}
-                              </span>
-                              <span className="text-slate-400 text-[10px]">
-                                Joined {agent.createdAt ? formatDate(agent.createdAt) : "—"}
-                              </span>
-                            </div>
+                          {/* Earnings */}
+                          <td className="px-3 py-3.5 font-mono text-xs font-bold tabular-nums text-emerald-700 whitespace-nowrap">
+                            {ready ? formatCurrency(agentCollected * rate / 100) : "…"}
+                          </td>
+
+                          {/* Activity */}
+                          <td className="px-3 py-3.5 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1.5 font-medium text-[11px] ${online ? "text-emerald-700" : "text-slate-500"}`}>
+                              <span className={`h-2 w-2 rounded-full ${online ? "bg-emerald-500" : "bg-slate-400"}`} />
+                              {online ? "Online" : agent.lastLoginAt ? formatLoginTime(agent.lastLoginAt) : "Offline"}
+                            </span>
+                          </td>
+
+                          {/* Joined */}
+                          <td className="px-3 py-3.5 text-slate-500 text-[11px] whitespace-nowrap">
+                            {agent.createdAt ? formatDate(agent.createdAt) : "—"}
                           </td>
 
                           {/* Actions */}
                           <td className="px-4 py-3.5 text-right">
                             <span className="flex items-center gap-1.5 justify-end">
+                              {agent.idVerificationUrl && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setReviewingIdAgent(agent)}
+                                  className={`h-7 px-2 text-[11px] font-semibold gap-1 ${
+                                    agent.idVerificationStatus === "pending"
+                                      ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:text-amber-900"
+                                      : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                                  }`}
+                                  title="Review uploaded government ID"
+                                >
+                                  <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
+                                  <span>{agent.idVerificationStatus === "pending" ? "Review ID" : "View ID"}</span>
+                                </Button>
+                              )}
                               <Button type="button" size="sm" onClick={() => openCommission(agent)} className="h-7 px-2.5 text-[11px] font-semibold">
                                 <span className="mr-1 font-bold text-[12px] leading-none">₱</span>Statement
                               </Button>
@@ -1113,6 +1274,11 @@ export default function OwnerAgentsPage() {
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" side="bottom">
                                   <DropdownMenuItem onSelect={() => setViewingAgent(agent)} icon={<Eye className="h-4 w-4" />}>View</DropdownMenuItem>
+                                  {agent.idVerificationUrl && (
+                                    <DropdownMenuItem onSelect={() => setReviewingIdAgent(agent)} icon={<ShieldCheck className="h-4 w-4 text-amber-600" />}>
+                                      Review Government ID
+                                    </DropdownMenuItem>
+                                  )}
                                   <DropdownMenuItem onSelect={() => handleEditAgent(agent)} icon={<Pencil className="h-4 w-4" />}>Edit</DropdownMenuItem>
                                   <DropdownMenuItem onSelect={() => handleOpenMessage(agent)} icon={<MessageSquare className="h-4 w-4" />}>Message</DropdownMenuItem>
                                   <DropdownMenuItem onSelect={() => setDeleteAgent(agent)} icon={<Trash2 className="h-4 w-4 text-red-500" />} className="text-red-600 hover:bg-red-50">Delete</DropdownMenuItem>
@@ -1131,7 +1297,7 @@ export default function OwnerAgentsPage() {
                     <span>{filteredAgents.length} {filteredAgents.length === 1 ? "record" : "records"}</span>
                   </div>
                   <div>
-                    <span>8 columns</span>
+                    <span>15 columns</span>
                   </div>
                 </div>
               </div>
@@ -1263,6 +1429,9 @@ export default function OwnerAgentsPage() {
                       <div className="min-w-0">
                         <h3 className="truncate text-sm font-bold text-slate-900">{selectedAgent.name}</h3>
                         <p className="truncate text-xs text-slate-500">{selectedAgent.email}</p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-blue-700">
+                          {agentStats[selectedAgent.id]?.tenants ?? 0} assisted tenants • {agentStats[selectedAgent.id]?.properties ?? 0} properties
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -1490,21 +1659,133 @@ export default function OwnerAgentsPage() {
 
                 {agentStats[viewingAgent.id] && (
                   <div>
-                    <p className="text-xs text-text-secondary mb-2">Performance</p>
+                    <p className="text-xs text-text-secondary mb-2">Performance & Portfolio</p>
                     <div className="grid grid-cols-3 gap-2">
                       <div className="p-3 rounded-xl bg-surface-secondary text-center">
                         <p className="text-[10px] text-text-secondary">Properties</p>
                         <p className="text-lg font-semibold text-foreground">{agentStats[viewingAgent.id].properties}</p>
                       </div>
-                      <div className="p-3 rounded-xl bg-surface-secondary text-center">
-                        <p className="text-[10px] text-text-secondary">Tenants</p>
-                        <p className="text-lg font-semibold text-foreground">{agentStats[viewingAgent.id].tenants}</p>
+                      <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-center">
+                        <p className="text-[10px] font-semibold text-blue-700">Assisted Tenants</p>
+                        <p className="text-lg font-bold text-blue-800">{agentStats[viewingAgent.id].tenants}</p>
                       </div>
                       <div className="p-3 rounded-xl bg-surface-secondary text-center">
                         <p className="text-[10px] text-text-secondary">Payments</p>
                         <p className="text-lg font-semibold text-foreground">{agentStats[viewingAgent.id].payments}</p>
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Assisted Tenants Section */}
+                <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <UsersRound className="h-4 w-4 text-blue-600" />
+                      <h5 className="text-xs font-bold text-slate-900">
+                        Assisted Tenants ({assistedTenantsData[viewingAgent.id]?.tenants?.length ?? agentStats[viewingAgent.id]?.tenants ?? 0})
+                      </h5>
+                    </div>
+                    <span className="text-[10px] text-slate-500">
+                      Total tenants assisted or assigned by {viewingAgent.name}
+                    </span>
+                  </div>
+
+                  {(assistedTenantsData[viewingAgent.id]?.tenants || []).length === 0 ? (
+                    <div className="py-6 text-center text-xs text-slate-400 bg-white rounded-lg border border-dashed border-slate-200">
+                      No tenants assisted yet by this agent.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+                      {assistedTenantsData[viewingAgent.id].tenants.map((tenant) => (
+                        <div key={tenant.id} className="flex items-center justify-between p-3 text-xs hover:bg-blue-50/30 transition-colors">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <Avatar src={tenant.avatarUrl || undefined} fallback={getInitials(tenant.name)} size="sm" />
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-900 truncate">{tenant.name}</p>
+                              <p className="text-[11px] text-slate-500 truncate">
+                                {tenant.propertyName ? `${tenant.propertyName}${tenant.unitNumber ? ` • Unit ${tenant.unitNumber}` : ""}` : "No property assigned"}
+                              </p>
+                              <p className="text-[10px] text-slate-400 truncate">{tenant.email}{tenant.phone ? ` • ${tenant.phone}` : ""}</p>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0 ml-3">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                              {tenant.assistReason}
+                            </span>
+                            <span className="text-[10px] text-slate-500 capitalize">
+                              {tenant.assignmentStatus ? `${tenant.assignmentStatus} assignment` : tenant.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {viewingAgent.idVerificationUrl ? (
+                  <div className="p-4 rounded-xl border border-border bg-surface-secondary/40 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="h-4 w-4 text-primary" />
+                        <p className="text-xs font-semibold text-foreground">Government ID Document</p>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${
+                          viewingAgent.idVerificationStatus === "approved"
+                            ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                            : viewingAgent.idVerificationStatus === "pending"
+                              ? "bg-amber-100 text-amber-800 border border-amber-200 animate-pulse"
+                              : viewingAgent.idVerificationStatus === "rejected"
+                                ? "bg-red-100 text-red-800 border border-red-200"
+                                : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {viewingAgent.idVerificationStatus || "pending"} ID
+                      </span>
+                    </div>
+
+                    <div className="relative group overflow-hidden rounded-lg border border-border bg-black/5 max-h-56 flex items-center justify-center">
+                      <img
+                        src={viewingAgent.idVerificationUrl}
+                        alt={`ID for ${viewingAgent.name}`}
+                        className="max-h-56 w-auto object-contain transition-transform group-hover:scale-105"
+                      />
+                      <a
+                        href={viewingAgent.idVerificationUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-medium text-xs gap-1.5"
+                      >
+                        <ExternalLink className="h-4 w-4" /> Open Full Image
+                      </a>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={isVerifyingId}
+                        onClick={() => handleVerifyAgentId(viewingAgent.id, "rejected")}
+                        className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                      >
+                        <XCircle className="h-3.5 w-3.5 mr-1" /> Reject ID
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={isVerifyingId}
+                        onClick={() => handleVerifyAgentId(viewingAgent.id, "approved")}
+                        className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Approve ID
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-xl border border-dashed border-border text-center text-xs text-text-secondary">
+                    No government ID uploaded yet.
                   </div>
                 )}
 
@@ -1534,6 +1815,15 @@ export default function OwnerAgentsPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <AgentIdInspectorModal
+        isOpen={!!reviewingIdAgent}
+        onClose={() => setReviewingIdAgent(null)}
+        agent={reviewingIdAgent}
+        canApprove={true}
+        onVerify={handleVerifyAgentId}
+        isVerifying={isVerifyingId}
+      />
 
       <ReceiptModal
         isOpen={!!receiptPayment}

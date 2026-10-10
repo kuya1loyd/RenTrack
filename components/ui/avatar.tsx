@@ -8,10 +8,11 @@ interface AvatarProps extends React.HTMLAttributes<HTMLDivElement> {
   src?: string;
   alt?: string;
   fallback?: string;
-  size?: "sm" | "md" | "lg" | "xl";
+  size?: "xs" | "sm" | "md" | "lg" | "xl";
 }
 
 const sizeMap = {
+  xs: "h-6 w-6 text-[10px]",
   sm: "h-8 w-8 text-xs",
   md: "h-10 w-10 text-sm",
   lg: "h-14 w-14 text-lg",
@@ -30,12 +31,13 @@ export function Avatar({
   const normalizedSrc = src && src.trim() ? src.trim() : null;
   const isLocalRoute = !!normalizedSrc && !/^https?:\/\//i.test(normalizedSrc) && !normalizedSrc.startsWith("//");
   const isUploadRoute = !!normalizedSrc && /(\/api\/auth\/upload\/|\/api\/auth\/upload$)/.test(normalizedSrc);
+  const sizeClass = (size && sizeMap[size as keyof typeof sizeMap]) || sizeMap.md;
 
   return (
     <div
       className={cn(
-        "relative inline-flex items-center justify-center rounded-full overflow-hidden ring-2 ring-white dark:ring-gray-800",
-        sizeMap[size],
+        "relative inline-flex shrink-0 items-center justify-center rounded-full overflow-hidden ring-2 ring-white dark:ring-gray-800",
+        sizeClass,
         className
       )}
       {...props}

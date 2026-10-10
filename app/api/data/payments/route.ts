@@ -10,6 +10,7 @@ import {
   getTenants,
   createNotification,
   getUnits,
+  getProperties,
   getAdminSupabase,
   snakeToCamel,
 } from "@/lib/db";
@@ -317,18 +318,44 @@ export async function POST(request: NextRequest) {
       console.error("Failed to create in-app notification:", err);
     }
 
-    // All payment reviewers get the same work item so a tenant submission is
-    // visible to the owner, agent, and administrator without a manual upload.
+    // Notify only admins, the property owner, and the specific assigned agent of the unit
     try {
-      const reviewers = (await getAllUsers()).filter((candidate: any) => ["admin", "owner", "agent"].includes(candidate.role));
-      await Promise.all(reviewers.map((reviewer: any) => createNotification({
+      let assignedAgentId: string | null = inquiryAgent?.id || null;
+      let propertyOwnerId: string | null = null;
+
+      if (unitId) {
+        const units = await getUnits();
+        const unit = units.find((u) => u.id === unitId);
+        if (unit?.propertyId) {
+          const properties = await getProperties();
+          const prop = properties.find((p) => p.id === unit.propertyId);
+          if (prop) {
+            if (prop.agentId) assignedAgentId = prop.agentId;
+            if (prop.ownerId) propertyOwnerId = prop.ownerId;
+          }
+        }
+      }
+
+      const allUsers = await getAllUsers();
+      const targetReviewers = allUsers.filter((candidate: any) => {
+        if (candidate.role === "admin") return true;
+        if (candidate.role === "owner") {
+          return !propertyOwnerId || candidate.id === propertyOwnerId;
+        }
+        if (candidate.role === "agent") {
+          return assignedAgentId ? candidate.id === assignedAgentId : false;
+        }
+        return false;
+      });
+
+      await Promise.all(targetReviewers.map((reviewer: any) => createNotification({
         userId: reviewer.id,
         title: "New Payment Pending Verification",
-        message: `${tenantName} submitted ${formatCurrency(amountPaid)} for verification.`,
+        message: `${tenantName} submitted ${formatCurrency(amountPaid)} for verification (${propertyName || "Rental Unit"}).`,
         type: "payment",
       })));
     } catch (err) {
-      console.error("Failed to notify agents about payment:", err);
+      console.error("Failed to notify targeted reviewers about payment:", err);
     }
 
     if (inquiryAgent) {
@@ -472,13 +499,27 @@ export async function PATCH(request: NextRequest) {
           message: `Your payment of ${formatCurrency(payment.amountPaid)} was confirmed by ${auth.user.name}.`,
           type: "payment",
         });
-        const agents = (await getAllUsers()).filter((candidate: any) => candidate.role === "agent" && candidate.id !== auth.userId);
-        await Promise.all(agents.map((agent: any) => createNotification({
-          userId: agent.id,
-          title: "Payment Confirmed",
-          message: `${payment.tenantName || "A tenant"}'s payment of ${formatCurrency(payment.amountPaid)} was confirmed.`,
-          type: "payment",
-        })));
+        let assignedAgentId: string | null = null;
+        if (payment.unitId) {
+          const units = await getUnits();
+          const unit = units.find((u) => u.id === payment.unitId);
+          if (unit?.propertyId) {
+            const properties = await getProperties();
+            const prop = properties.find((p) => p.id === unit.propertyId);
+            if (prop?.agentId) {
+              assignedAgentId = prop.agentId;
+            }
+          }
+        }
+
+        if (assignedAgentId && assignedAgentId !== auth.userId) {
+          await createNotification({
+            userId: assignedAgentId,
+            title: "Payment Confirmed",
+            message: `${payment.tenantName || "A tenant"}'s payment of ${formatCurrency(payment.amountPaid)} was confirmed.`,
+            type: "payment",
+          });
+        }
       } catch (notificationError) {
         console.error("Failed to notify payment confirmation recipients:", notificationError);
       }

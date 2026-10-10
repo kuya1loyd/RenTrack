@@ -8,7 +8,7 @@ import { logAudit, getAdminSupabase } from "@/lib/db";
 
 const ALLOWED_PROPERTY_FIELDS = [
   "name", "location", "type", "units", "occupiedUnits",
-  "monthlyRevenue", "status", "latitude", "longitude", "imageUrl", "imageUrls", "features", "condition", "availabilityStatus"
+  "monthlyRevenue", "status", "latitude", "longitude", "imageUrl", "imageUrls", "features", "condition", "availabilityStatus", "agentId", "agent_id"
 ];
 
 export async function PATCH(request: NextRequest) {
@@ -29,13 +29,17 @@ export async function PATCH(request: NextRequest) {
 
     const updates: Record<string, any> = {};
     for (const [key, val] of Object.entries(data)) {
-      if (val === undefined || val === null) continue;
+      if (val === undefined) continue;
       const dbKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
       if (!ALLOWED_PROPERTY_FIELDS.map(f => f.replace(/([A-Z])/g, "_$1").toLowerCase()).includes(dbKey)) {
         await logAudit(auth.userId, "suspicious_update_attempt", { field: dbKey, propertyId: id }, auth.ip, auth.userAgent);
         continue;
       }
-      if (dbKey === "features") {
+      if (dbKey === "agent_id") {
+        updates[dbKey] = val && typeof val === "string" && val.trim() ? val.trim() : null;
+      } else if (val === null) {
+        continue;
+      } else if (dbKey === "features") {
         if (!Array.isArray(val) || val.some((feature) => typeof feature !== "string")) continue;
         updates[dbKey] = val.slice(0, 30);
       } else if (dbKey === "latitude" || dbKey === "longitude") {

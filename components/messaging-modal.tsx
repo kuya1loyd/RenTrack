@@ -96,6 +96,7 @@ export default function MessagingModal({ isOpen, onClose, otherUser, properties 
 
   useEffect(() => {
     if (isOpen && otherUser?.id) {
+      void markAllMessagesRead(otherUser.id);
       setLoading(true);
       setMessages([]);
       setNewMessage("");
@@ -111,7 +112,7 @@ export default function MessagingModal({ isOpen, onClose, otherUser, properties 
         .then((msgs) => {
           setMessages(msgs);
           if (msgs.length > 0) {
-            markAllMessagesRead(otherUser.id);
+            void markAllMessagesRead(otherUser.id);
           }
         })
         .catch(() => toast.error("Failed to load messages"))

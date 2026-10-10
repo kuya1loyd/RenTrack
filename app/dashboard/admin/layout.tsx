@@ -5,7 +5,7 @@ import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
-import { getNotifications, markNotificationRead, markAllNotificationsRead, getUnreadCount, getConversations, getUnreadMessageCount, getProperties, getUnits, Notification, Conversation, Property, Unit } from "@/lib/data";
+import { getNotifications, markNotificationRead, markAllNotificationsRead, markAllMessagesRead, getUnreadCount, getConversations, getUnreadMessageCount, getProperties, getUnits, Notification, Conversation, Property, Unit } from "@/lib/data";
 import AdminSidebar from "@/components/admin-sidebar";
 import AccountRequestReviewModal from "@/components/account-request-review-modal";
 import MessagingPanel from "@/components/messaging-panel";
@@ -112,13 +112,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       refreshNotificationsCount();
       refreshMessagesCount();
       getConversations().then((convs) => {
+        setConversations(convs);
         const requests = convs.filter((c) => c.lastMessage?.subject === "Account Creation Request");
         setAccountRequests(requests);
       }).catch(() => {});
     };
 
+    const handleMessagesRead = (e: Event) => {
+      const customEvent = e as CustomEvent<{ otherUserId?: string }>;
+      const otherId = customEvent.detail?.otherUserId;
+      if (otherId) {
+        setConversations((prev) => prev.map((c) => c.userId === otherId ? { ...c, unreadCount: 0 } : c));
+      }
+      refreshMessagesCount();
+      getConversations().then((convs) => {
+        setConversations(convs);
+        setAccountRequests(convs.filter((c) => c.lastMessage?.subject === "Account Creation Request"));
+      }).catch(() => {});
+    };
+
     window.addEventListener("renttrack-notifications-updated", handleRefresh);
-    return () => window.removeEventListener("renttrack-notifications-updated", handleRefresh);
+    window.addEventListener("renttrack-messages-read", handleMessagesRead);
+    return () => {
+      window.removeEventListener("renttrack-notifications-updated", handleRefresh);
+      window.removeEventListener("renttrack-messages-read", handleMessagesRead);
+    };
   }, [user, refreshNotificationsCount, refreshMessagesCount]);
 
   useEffect(() => {
@@ -211,7 +229,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <AdminDataProvider userId={user.id}>
-    <div className="min-h-screen flex w-full bg-[#f3f7fc]">
+    <div className="min-h-screen flex w-full max-w-full overflow-x-hidden bg-[#f3f7fc]">
       {/* Sidebar - fixed on all screens */}
       <AdminSidebar mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
 
@@ -220,7 +238,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           initial={reduceMotion ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: reduceMotion ? 0 : 0.22 }}
-          className="flex min-h-screen w-full flex-1 flex-col lg:ml-56"
+          className="flex min-h-screen w-full min-w-0 max-w-full flex-1 flex-col lg:ml-56 lg:w-[calc(100%-14rem)] lg:max-w-[calc(100%-14rem)] overflow-x-hidden"
         >
           {/* Top Header */}
           <motion.header
@@ -379,6 +397,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                                 type="button"
                                 onClick={() => {
                                   setShowUserMenu(false);
+                                  setConversations((prev) => prev.map((c) => c.userId === conv.userId ? { ...c, unreadCount: 0 } : c));
+                                  setUnreadMessagesCount((prev) => Math.max(0, prev - (conv.unreadCount || 1)));
+                                  void markAllMessagesRead(conv.userId);
                                   if (conv.lastMessage?.subject === "Account Creation Request") {
                                     setSelectedAccountRequest(conv);
                                   } else {
@@ -403,12 +424,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </motion.header>
 
         {/* Page Content */}
-        <main className="flex-1 w-full overflow-auto p-4 sm:p-6">
+        <main className="flex-1 w-full min-w-0 max-w-full overflow-y-auto overflow-x-hidden p-4 sm:p-6">
           <motion.div
             key={activeTab}
             initial={reduceMotion ? false : { opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.21, 0.47, 0.32, 0.98] }}
+            className="w-full min-w-0 max-w-full"
           >
             {children}
           </motion.div>
@@ -421,6 +443,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               isOpen={showMessages}
               onClose={() => setShowMessages(false)}
               onSelectConversation={(conv) => {
+                setConversations((prev) => prev.map((c) => c.userId === conv.userId ? { ...c, unreadCount: 0 } : c));
+                setUnreadMessagesCount((prev) => Math.max(0, prev - (conv.unreadCount || 1)));
+                void markAllMessagesRead(conv.userId);
                 setSelectedConversation(conv);
                 setShowMessages(false);
               }}

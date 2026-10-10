@@ -6,7 +6,7 @@ import {
   Users, UserPlus, Mail, Phone, MapPin, Eye, Trash2,
   MessageSquare, Pencil, Shield, ShieldOff, Search,
   Copy, MoreHorizontal, ChevronDown, Check, Building2,
-  CalendarDays, User, Home, AlertTriangle, X
+  CalendarDays, User, Home, AlertTriangle, X, CheckCircle2, Clock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -285,19 +285,11 @@ export default function TenantsPanel({
             <UserPlus className="h-4 w-4" />
             Create Tenant
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onReload}
-            className="h-9 border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            Refresh
-          </Button>
         </div>
       </div>
 
       {/* Supabase Database Table */}
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/75 px-4 py-2.5">
           <div className="flex items-center gap-2">
             <span className="font-mono text-[11px] font-semibold text-slate-700 uppercase tracking-wider">
@@ -316,15 +308,21 @@ export default function TenantsPanel({
             <p className="mt-1 text-xs text-slate-500">{tenants.length ? "Try another search or status filter." : "Click 'Create Tenant' to register your first tenant."}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-xs text-slate-800">
-              <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+          <div className="table-scroll-box w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[680px]">
+            <table className="w-full min-w-[1400px] border-collapse text-left text-xs text-slate-800">
+              <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 backdrop-blur-xs text-[11px] font-semibold uppercase tracking-wider text-slate-600 whitespace-nowrap shadow-2xs">
                 <tr>
-                  <th scope="col" className="px-4 py-3 font-semibold text-slate-700">Tenant & ID</th>
-                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Contact & Address</th>
-                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Property / Unit & Rent</th>
+                  <th scope="col" className="px-4 py-3 font-semibold text-slate-700">Tenant</th>
+                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">User ID</th>
+                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Email</th>
+                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Phone</th>
+                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Role</th>
+                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Property</th>
+                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Unit</th>
+                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Address</th>
+                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Rent</th>
                   <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Lease Term</th>
-                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Status & Assignment</th>
+                  <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Status</th>
                   <th scope="col" className="px-3 py-3 font-semibold text-slate-700">Joined</th>
                   <th scope="col" className="px-4 py-3 text-right font-semibold text-slate-700">Actions</th>
                 </tr>
@@ -337,9 +335,9 @@ export default function TenantsPanel({
 
                   return (
                     <tr key={tenant.id} className="group hover:bg-slate-50/80 transition-colors">
-                      {/* Tenant & ID */}
-                      <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-3">
+                      {/* Tenant */}
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <div className="flex items-center gap-2.5">
                           <div className="relative shrink-0">
                             <Avatar src={tenant.avatarUrl} fallback={getInitials(tenant.name)} size="sm" />
                             <span className="absolute -bottom-0.5 -right-0.5 flex h-2.5 w-2.5 items-center justify-center">
@@ -350,77 +348,98 @@ export default function TenantsPanel({
                               />
                             </span>
                           </div>
-                          <div className="flex flex-col min-w-0">
-                            <span className="font-semibold text-slate-900 capitalize truncate max-w-[150px]">
-                              {tenant.name}
-                            </span>
-                            <button
-                              type="button"
-                              aria-label={`Copy tenant ID for ${tenant.name}`}
-                              title="Copy tenant ID"
-                              onClick={() => {
-                                navigator.clipboard?.writeText(tenant.id).then(
-                                  () => toast.success("Tenant ID copied"),
-                                  () => toast.error("Could not copy tenant ID")
-                                );
-                              }}
-                              className="inline-flex items-center gap-1 font-mono text-[10px] text-slate-400 hover:text-blue-600 transition-colors"
-                            >
-                              <span>#{tenant.id.slice(0, 8)}</span>
-                              <Copy className="h-2.5 w-2.5" />
-                            </button>
-                          </div>
+                          <span className="font-semibold text-slate-900 capitalize truncate max-w-[150px] text-xs">
+                            {tenant.name}
+                          </span>
                         </div>
                       </td>
 
-                      {/* Contact & Address */}
-                      <td className="px-3 py-3.5">
-                        <div className="flex flex-col gap-1 text-xs">
-                          <a href={`mailto:${tenant.email}`} className="inline-flex items-center gap-1.5 text-blue-600 hover:underline truncate max-w-[170px]" title={tenant.email}>
-                            <Mail className="h-3 w-3 text-slate-400 shrink-0" />
-                            <span className="truncate">{tenant.email}</span>
-                          </a>
-                          <div className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
-                            <Phone className="h-3 w-3 text-slate-400 shrink-0" />
-                            {tenant.phone ? (
-                              <a href={`tel:${tenant.phone}`} className="hover:text-blue-600 transition-colors">
-                                {tenant.phone}
-                              </a>
-                            ) : (
-                              <span>—</span>
-                            )}
-                          </div>
-                          <div className="inline-flex items-center gap-1.5 text-[11px] text-slate-600">
-                            <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
-                            <span className="truncate max-w-[180px]" title={tenant.address || "No address provided"}>
-                              {tenant.address || <span className="text-slate-400 italic">No address provided</span>}
-                            </span>
-                          </div>
+                      {/* User ID */}
+                      <td className="px-3 py-3.5 whitespace-nowrap">
+                        <button
+                          type="button"
+                          aria-label={`Copy tenant ID for ${tenant.name}`}
+                          title="Copy tenant ID"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(tenant.id).then(
+                              () => toast.success("Tenant ID copied"),
+                              () => toast.error("Could not copy tenant ID")
+                            );
+                          }}
+                          className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 hover:text-blue-600 transition-colors bg-slate-50 px-2 py-0.5 rounded border border-slate-200"
+                        >
+                          <span>#{tenant.id.slice(0, 8)}</span>
+                          <Copy className="h-2.5 w-2.5 text-slate-400" />
+                        </button>
+                      </td>
+
+                      {/* Email */}
+                      <td className="px-3 py-3.5 whitespace-nowrap">
+                        <a href={`mailto:${tenant.email}`} className="inline-flex items-center gap-1.5 text-blue-600 hover:underline truncate max-w-[160px] text-xs" title={tenant.email}>
+                          <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+                          <span className="truncate">{tenant.email}</span>
+                        </a>
+                      </td>
+
+                      {/* Phone */}
+                      <td className="px-3 py-3.5 whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1.5 text-xs text-slate-600">
+                          <Phone className="h-3 w-3 text-slate-400 shrink-0" />
+                          {tenant.phone ? (
+                            <a href={`tel:${tenant.phone}`} className="hover:text-blue-600 transition-colors">
+                              {tenant.phone}
+                            </a>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </div>
                       </td>
 
-                      {/* Property / Unit & Rent */}
-                      <td className="px-3 py-3.5">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                            <span className="font-medium text-slate-900 truncate max-w-[150px]">
-                              {tenant.propertyName || "No Property Assigned"}
-                            </span>
-                            {tenant.unitNumber && (
-                              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 border border-slate-200">
-                                Unit {tenant.unitNumber}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] font-semibold text-emerald-700">
-                            {tenant.rentAmount != null && tenant.rentAmount > 0 ? (
-                              <span>₱{tenant.rentAmount.toLocaleString()} / mo</span>
-                            ) : (
-                              <span className="text-slate-400 font-normal">—</span>
-                            )}
-                          </div>
+                      {/* Role */}
+                      <td className="px-3 py-3.5 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200">
+                          Tenant
+                        </span>
+                      </td>
+
+                      {/* Property */}
+                      <td className="px-3 py-3.5 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                          <span className="font-medium text-slate-900 truncate max-w-[140px]">
+                            {tenant.propertyName || "No Property Assigned"}
+                          </span>
                         </div>
+                      </td>
+
+                      {/* Unit */}
+                      <td className="px-3 py-3.5 whitespace-nowrap">
+                        {tenant.unitNumber ? (
+                          <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 border border-slate-200">
+                            Unit {tenant.unitNumber}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-xs">—</span>
+                        )}
+                      </td>
+
+                      {/* Address */}
+                      <td className="px-3 py-3.5 whitespace-nowrap max-w-[160px]">
+                        <div className="inline-flex items-center gap-1.5 text-xs text-slate-600 truncate">
+                          <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
+                          <span className="truncate" title={tenant.address || "No address provided"}>
+                            {tenant.address || <span className="text-slate-400 italic">No address provided</span>}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Rent */}
+                      <td className="px-3 py-3.5 whitespace-nowrap text-xs font-semibold text-emerald-700">
+                        {tenant.rentAmount != null && tenant.rentAmount > 0 ? (
+                          <span>₱{tenant.rentAmount.toLocaleString()} / mo</span>
+                        ) : (
+                          <span className="text-slate-400 font-normal">—</span>
+                        )}
                       </td>
 
                       {/* Lease Term */}
@@ -439,9 +458,9 @@ export default function TenantsPanel({
                         )}
                       </td>
 
-                      {/* Status & Assignment */}
-                      <td className="px-3 py-3.5">
-                        <div className="flex flex-col gap-1 items-start">
+                      {/* Status */}
+                      <td className="px-3 py-3.5 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
                           <span
                             className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
                               tenant.status === "active"
@@ -456,17 +475,19 @@ export default function TenantsPanel({
                             />
                             {tenant.status === "active" ? "Active" : "Blocked"}
                           </span>
-                          <span
-                            className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
-                              isConfirmed
-                                ? "bg-blue-50 text-blue-700 border border-blue-200"
-                                : isPending
-                                ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                : "bg-slate-100 text-slate-600"
-                            }`}
-                          >
-                            {tenant.assignmentStatus || "unassigned"}
-                          </span>
+                          {tenant.assignmentStatus && (
+                            <span
+                              className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                                isConfirmed
+                                  ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                  : isPending
+                                  ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                  : "bg-slate-100 text-slate-600"
+                              }`}
+                            >
+                              {tenant.assignmentStatus}
+                            </span>
+                          )}
                         </div>
                       </td>
 

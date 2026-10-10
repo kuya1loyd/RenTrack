@@ -17,7 +17,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Not authorized" }, { status: 403 });
     }
 
-    const { userId, status } = await request.json();
+    const { userId, status, reason } = await request.json();
     if (!userId || !["approved", "rejected"].includes(status)) {
       return NextResponse.json({ success: false, error: "Invalid request" }, { status: 400 });
     }
@@ -27,11 +27,34 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
     }
 
+    // Property owners and administrators can verify and accept agent identification documents
+    if (targetUser.role === "agent" && !["owner", "admin"].includes(currentUser.role)) {
+      return NextResponse.json(
+        { success: false, error: "Only property owners and administrators can verify and accept agent ID applications." },
+        { status: 403 }
+      );
+    }
+
     await updateUserIdVerification(userId, targetUser.idVerificationUrl || "", status);
+
+    try {
+      const { createNotification } = await import("@/lib/db");
+      const rejectionNote = reason?.trim() ? ` Reason: ${reason.trim()}` : "";
+      await createNotification({
+        userId,
+        title: status === "approved" ? "ID Verification Approved" : "ID Verification Rejected",
+        message: status === "approved"
+          ? "Your government ID has been reviewed and approved."
+          : `Your government ID was rejected.${rejectionNote} Please upload a clear valid government ID.`,
+        type: "id_verification",
+      });
+    } catch (notifErr) {
+      console.warn("Could not dispatch ID verification notification:", notifErr);
+    }
 
     const actorId = getSessionUserId(request);
     if (actorId) {
-      await logAudit(actorId, "id_verification_updated", { targetUserId: userId, status }, getClientIp(request), request.headers.get("user-agent") || "unknown");
+      await logAudit(actorId, "id_verification_updated", { targetUserId: userId, status, reason: reason?.trim() || undefined }, getClientIp(request), request.headers.get("user-agent") || "unknown");
     }
 
     return NextResponse.json({ success: true, message: `ID verification ${status}` });

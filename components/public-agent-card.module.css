@@ -495,16 +495,16 @@
 }
 
 .compactLandscape {
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 4 / 4.7;
 }
 
 .compactLandscape .image {
-  object-position: center 22%;
+  object-position: center 25%;
 }
 
 .directoryGrid {
   display: grid;
-  grid-template-columns: minmax(0, 340px);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
   justify-content: start;
   align-items: stretch;
   gap: 22px;
@@ -512,44 +512,18 @@
 
 .directoryGrid > * {
   min-width: 0;
+  width: 100%;
 }
 
 @media (min-width: 640px) {
   .directoryGrid {
-    grid-template-columns: repeat(2, minmax(0, 320px));
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   }
 }
 
 @media (min-width: 1024px) {
   .directoryGrid {
-    grid-template-columns: minmax(0, 340px) repeat(2, minmax(0, 300px));
-  }
-
-  .directoryGrid > :first-child {
-    grid-row: span 2;
-  }
-
-  .directoryGrid > :first-child .compactPortrait {
-    flex: 1 1 auto;
-    aspect-ratio: 4 / 4.9;
-  }
-
-  .directoryGrid > :first-child .compactPortrait .brand {
-    top: 16px;
-    left: 16px;
-    padding: 6px 10px;
-    font-size: 15px;
-  }
-
-  .directoryGrid > :first-child .compactPortrait .saveButton {
-    top: 14px;
-    right: 14px;
-    width: 46px;
-    height: 46px;
-  }
-
-  .directoryGrid > :first-child .compactName {
-    font-size: 20px;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
   }
 }
 

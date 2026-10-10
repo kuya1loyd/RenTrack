@@ -179,6 +179,8 @@ export async function PATCH(request: NextRequest) {
       contractEnd: "contract_end",
       rentAmount: "rent_amount",
       assignmentStatus: "assignment_status",
+      assignedAgentId: "assigned_agent_id",
+      assignedBy: "assigned_agent_id",
     };
 
     const cleaned: Record<string, any> = {};
@@ -187,6 +189,23 @@ export async function PATCH(request: NextRequest) {
       if (value === undefined || value === null) continue;
       cleaned[snake] = value;
     }
+    if (auth.role === "agent") {
+      cleaned.assigned_agent_id = cleaned.assigned_agent_id || auth.userId;
+    }
+    if (cleaned.unit_id && auth.role === "agent") {
+      try {
+        const { data: targetUnit } = await getAdminSupabase().from("units").select("property_id").eq("id", cleaned.unit_id).maybeSingle();
+        if (targetUnit?.property_id) {
+          const { data: targetProp } = await getAdminSupabase().from("properties").select("agent_id").eq("id", targetUnit.property_id).maybeSingle();
+          if (!targetProp?.agent_id) {
+            await getAdminSupabase().from("properties").update({ agent_id: auth.userId }).eq("id", targetUnit.property_id);
+          }
+        }
+      } catch (pErr) {
+        console.warn("Could not link agent to property:", pErr);
+      }
+    }
+
 
     const { data, error } = await getAdminSupabase()
       .from("tenants")
@@ -235,6 +254,7 @@ export async function PATCH(request: NextRequest) {
           assignmentStatus: row.assignment_status,
           createdBy: row.created_by,
           createdAt: row.created_at,
+          assignedAgentId: row.assigned_agent_id || null,
           avatarUrl: null,
           idVerificationUrl: null,
           idVerificationStatus: null,
@@ -286,6 +306,7 @@ export async function PATCH(request: NextRequest) {
           assignmentStatus: row.assignment_status,
           createdBy: row.created_by,
           createdAt: row.created_at,
+          assignedAgentId: row.assigned_agent_id || null,
           avatarUrl: null,
           idVerificationUrl: null,
           idVerificationStatus: null,
@@ -328,6 +349,7 @@ export async function PATCH(request: NextRequest) {
       assignmentStatus: row.assignment_status,
       createdBy: row.created_by,
       createdAt: row.created_at,
+      assignedAgentId: row.assigned_agent_id || null,
       avatarUrl: null,
       idVerificationUrl: null,
       idVerificationStatus: null,

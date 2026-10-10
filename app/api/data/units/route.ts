@@ -9,13 +9,7 @@ import { logAudit } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
-    const units = await Promise.race([
-      getUnits(),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("Unit lookup timed out")), 1500);
-      }),
-    ]);
-    console.log("Units GET count:", units.length);
+    const units = await getUnits();
     return NextResponse.json({ success: true, units: units.map(u => sanitizeResponse(u)) });
   } catch (error) {
     console.warn("Units unavailable:", error instanceof Error ? error.message : error);
@@ -60,8 +54,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, unit: sanitizeResponse(unit) });
   } catch (error) {
     console.error("Create unit error:", error);
-    const message = (error as any)?.message || (error instanceof Error ? error.message : "Failed to create unit");
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json({ success: false, error: "Failed to create unit" }, { status: 500 });
   }
 }
 

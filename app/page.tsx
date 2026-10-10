@@ -670,7 +670,7 @@ export default function LandingPage() {
                             <motion.div className="relative h-full w-full" whileHover={{ scale: 1.04 }} transition={{ duration: 0.45, ease: "easeOut" }}>
                               <UnitImageCarousel images={propertyImages} fallbackImage={img} alt={property.name} className="h-full w-full" imageClassName="object-cover" />
                             </motion.div>
-                            <div className="absolute left-4 top-4 flex max-w-[calc(100%-2rem)] items-start gap-1 rounded-[10px] bg-slate-900/85 px-3 py-2 text-xs font-bold uppercase leading-snug tracking-wide text-white shadow-sm backdrop-blur-sm">
+                            <div className="pointer-events-none absolute left-4 top-4 flex max-w-[calc(100%-2rem)] items-start gap-1 rounded-[10px] bg-slate-900/85 px-3 py-2 text-xs font-bold uppercase leading-snug tracking-wide text-white shadow-sm backdrop-blur-sm">
                               <motion.span
                                 initial={{ scale: 0 }}
                                 whileInView={{ scale: 1 }}
