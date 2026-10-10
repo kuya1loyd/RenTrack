@@ -35,7 +35,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     const buffer = Buffer.isBuffer(upload.data) ? upload.data : Buffer.from(upload.data);
-    const response = new NextResponse(buffer, {
+    const response = new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": upload.mime_type || "application/octet-stream",
         "Cache-Control": isPublicUpload ? "public, max-age=86400, stale-while-revalidate=604800, immutable" : "private, max-age=3600",
