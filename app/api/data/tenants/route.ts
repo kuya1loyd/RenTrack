@@ -189,10 +189,10 @@ export async function PATCH(request: NextRequest) {
       if (value === undefined || value === null) continue;
       cleaned[snake] = value;
     }
-    if (auth.role === "agent") {
+if (auth.user.role === "agent") {
       cleaned.assigned_agent_id = cleaned.assigned_agent_id || auth.userId;
     }
-    if (cleaned.unit_id && auth.role === "agent") {
+    if (cleaned.unit_id && auth.user.role === "agent") {
       try {
         const { data: targetUnit } = await getAdminSupabase().from("units").select("property_id").eq("id", cleaned.unit_id).maybeSingle();
         if (targetUnit?.property_id) {

@@ -201,7 +201,7 @@ export default function AdminDashboard() {
   const [propertyStatusFilter, setPropertyStatusFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "owner" | "agent" | "tenant">("all");
-  const [userStatusFilter, setUserStatusFilter] = useState<"all" | "approved" | "pending" | "rejected" | "verified">("all");
+  const [userStatusFilter, setUserStatusFilter] = useState<"all" | "verified" | "pending" | "unverified" | "not_required">("all");
   const [userSort, setUserSort] = useState<"newest" | "oldest" | "name-asc" | "name-desc" | "role">("newest");
   const [selectedUserDetails, setSelectedUserDetails] = useState<UserRecord | null>(null);
   const [inspectingIdUser, setInspectingIdUser] = useState<UserRecord | null>(null);
@@ -1384,7 +1384,7 @@ export default function AdminDashboard() {
                         // Agent metrics
                         const agentProps = properties.filter((p) => p.agentId === u.id);
                         const agentTenants = tenants.filter(
-                          (t) => agentProps.some((p) => p.id === t.propertyId) || (t as any).assignedAgentId === u.id
+                          (t) => agentProps.some((p) => p.id === units.find((un) => un.id === t.unitId)?.propertyId) || (t as any).assignedAgentId === u.id
                         );
                         const agentPayments = payments.filter((p: any) => p.createdBy === u.id || p.verifiedBy === u.id);
                         const agentCollected = agentPayments.reduce((total: number, p: any) => total + (p.status === "paid" ? p.amountPaid : 0), 0);

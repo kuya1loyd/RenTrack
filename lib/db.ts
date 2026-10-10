@@ -1042,7 +1042,9 @@ export async function getProperties() {
       fallbackAgentId = primaryAgent.id;
       const unassignedIds = rows.filter((r: any) => !r.agent_id || r.agent_id === "").map((r: any) => r.id);
       if (unassignedIds.length > 0) {
-        adminClient.from("properties").update({ agent_id: fallbackAgentId }).in("id", unassignedIds).then(({ error: pErr }) => {
+        Promise.resolve(
+          adminClient.from("properties").update({ agent_id: fallbackAgentId }).in("id", unassignedIds)
+        ).then(({ error: pErr }) => {
           if (pErr) console.warn("Failed to update unassigned properties agent_id:", pErr.message);
         }).catch((err) => console.warn("Error assigning agent to properties:", err));
       }
@@ -1064,7 +1066,9 @@ export async function getProperties() {
           .filter((row: any) => !row.created_by || row.created_by === "usr_builtin_admin" || (typeof row.created_by === "string" && row.created_by.toLowerCase().includes("admin")))
           .map((row: any) => row.id);
         if (idsToUpdate.length > 0) {
-          adminClient.from("properties").update({ created_by: fallbackOwnerId }).in("id", idsToUpdate).then(({ error: updateErr }) => {
+          Promise.resolve(
+            adminClient.from("properties").update({ created_by: fallbackOwnerId }).in("id", idsToUpdate)
+          ).then(({ error: updateErr }) => {
             if (updateErr) console.warn("Failed to persist property owner reassignment:", updateErr.message);
           }).catch((err) => console.warn("Error reassigning property owner:", err));
         }

@@ -104,7 +104,7 @@ export default function TenantContactPage() {
   const filteredRequests = useMemo(() => {
     if (statusFilter === "all") return tabRequests;
     if (statusFilter === "pending") {
-      return tabRequests.filter((r) => r.status === "pending" || !r.status);
+      return tabRequests.filter((r) => r.status === "open" || !r.status);
     }
     if (statusFilter === "resolved") {
       return tabRequests.filter((r) => r.status === "resolved");
@@ -574,7 +574,7 @@ export default function TenantContactPage() {
                   >
                     Open (
                     {
-                      tabRequests.filter((r) => r.status === "pending" || !r.status).length
+                      tabRequests.filter((r) => r.status === "open" || !r.status).length
                     }
                     )
                   </button>

@@ -113,7 +113,7 @@ export default function TenantPropertiesPage() {
   const isAssignedProperty = (property: Property) => {
     if (!tenant) return false;
     if (tenant.propertyName && property.name.toLowerCase() === tenant.propertyName.toLowerCase()) return true;
-    if (tenant.propertyId && property.id === tenant.propertyId) return true;
+    if (tenant.unitId && units.some((u) => u.id === tenant.unitId && u.propertyId === property.id)) return true;
     return units.some((u) => u.propertyId === property.id && (u.tenantId === user?.id || (tenant.id && u.tenantId === tenant.id) || (tenant.unitId && u.id === tenant.unitId)));
   };
 
