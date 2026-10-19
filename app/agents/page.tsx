@@ -6,14 +6,11 @@ import Image from "next/image";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   ArrowLeft,
-  ArrowUpDown,
   Building2,
   ChevronDown,
   FileText,
   MapPin,
-  Search,
   UserRound,
-  X,
 } from "lucide-react";
 import PublicAgentCard from "@/components/public-agent-card";
 import agentCardStyles from "@/components/public-agent-card.module.css";
@@ -32,12 +29,9 @@ type Agent = {
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [search, setSearch] = useState("");
   const [location, setLocation] = useState("");
-  const [sortBy, setSortBy] = useState<"recommended" | "name" | "recent">("recommended");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [hasMounted, setHasMounted] = useState(false);
   const [listingCounts, setListingCounts] = useState<Record<string, number> | null>(null);
   const reduceMotion = useReducedMotion();
 
@@ -73,21 +67,8 @@ export default function AgentsPage() {
 
   const locations = Array.from(new Set(agents.map((agent) => agent.location?.trim()).filter((value): value is string => Boolean(value))))
     .sort((first, second) => first.localeCompare(second));
-  const query = search.trim().toLocaleLowerCase();
   const filteredAgents = agents
-    .filter((agent) => (
-      `${agent.name} ${agent.email} ${agent.experience || ""} ${agent.location || ""}`.toLocaleLowerCase().includes(query)
-      && (!location || agent.location?.trim().toLocaleLowerCase() === location.toLocaleLowerCase())
-    ))
-    .sort((first, second) => {
-      if (sortBy === "name") return first.name.localeCompare(second.name);
-      if (sortBy === "recent") {
-        const firstJoined = Date.parse(first.createdAt || "");
-        const secondJoined = Date.parse(second.createdAt || "");
-        return (Number.isFinite(secondJoined) ? secondJoined : 0) - (Number.isFinite(firstJoined) ? firstJoined : 0);
-      }
-      return 0;
-    });
+    .filter((agent) => (!location || agent.location?.trim().toLocaleLowerCase() === location.toLocaleLowerCase()));
 
   return (
     <main className="min-h-screen bg-white text-slate-900">
@@ -159,65 +140,22 @@ export default function AgentsPage() {
               </p>
             </div>
             <p id="agent-search-hint" className="mt-1 text-xs leading-5 text-slate-600">
-              Search by name or refine the directory by location.
+              Refine the directory by location.
             </p>
-            <div className="mt-4 grid gap-2.5">
-              <label htmlFor="agent-search" className="sr-only">Search agents by name, email, experience, or location</label>
-              <div className="flex h-11 min-w-0 items-center gap-2.5 rounded-full border border-slate-300 bg-white px-3.5 text-slate-500 shadow-sm transition focus-within:border-amber-700 focus-within:ring-4 focus-within:ring-amber-100">
-                <Search aria-hidden="true" className="h-4 w-4 shrink-0" />
-                {hasMounted ? (
-                  <input
-                    id="agent-search"
-                    aria-describedby="agent-search-hint"
-                    type="search"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Name, email, experience, or location"
-                    className="h-full min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                  />
-                ) : (
-                  <div aria-hidden="true" className="h-4 min-w-0 flex-1" />
-                )}
-                {hasMounted && search && (
-                  <button
-                    type="button"
-                    onClick={() => setSearch("")}
-                    aria-label="Clear agent search"
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-amber-50 hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-800"
-                  >
-                    <X aria-hidden="true" className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-              <div className="grid gap-2.5 sm:grid-cols-2">
-                <label className="flex h-11 min-w-0 items-center gap-2 rounded-full border border-slate-300 bg-white px-3.5 text-slate-500 shadow-sm transition focus-within:border-amber-700 focus-within:ring-4 focus-within:ring-amber-100">
-                  <MapPin aria-hidden="true" className="h-4 w-4 shrink-0" />
-                  <span className="sr-only">Filter by location</span>
-                  <select
-                    value={location}
-                    onChange={(event) => setLocation(event.target.value)}
-                    className="h-full w-full min-w-0 appearance-none bg-transparent pr-1 text-xs font-medium text-slate-700 outline-none"
-                  >
-                    <option value="">All locations</option>
-                    {locations.map((agentLocation) => <option key={agentLocation} value={agentLocation}>{agentLocation}</option>)}
-                  </select>
-                  <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                </label>
-                <label className="flex h-11 min-w-0 items-center gap-2 rounded-full border border-slate-300 bg-white px-3.5 text-slate-500 shadow-sm transition focus-within:border-amber-700 focus-within:ring-4 focus-within:ring-amber-100">
-                  <ArrowUpDown aria-hidden="true" className="h-4 w-4 shrink-0" />
-                  <span className="sr-only">Sort agents</span>
-                  <select
-                    value={sortBy}
-                    onChange={(event) => setSortBy(event.target.value as "recommended" | "name" | "recent")}
-                    className="h-full w-full min-w-0 appearance-none bg-transparent pr-1 text-xs font-medium text-slate-700 outline-none"
-                  >
-                    <option value="recommended">Recommended</option>
-                    <option value="name">Name A–Z</option>
-                    <option value="recent">Recently joined</option>
-                  </select>
-                  <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                </label>
-              </div>
+            <div className="mt-4">
+              <label className="flex h-11 w-full min-w-0 items-center gap-2 rounded-full border border-slate-300 bg-white px-3.5 text-slate-500 shadow-sm transition focus-within:border-amber-700 focus-within:ring-4 focus-within:ring-amber-100">
+                <MapPin aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-800" />
+                <span className="sr-only">Filter by location</span>
+                <select
+                  value={location}
+                  onChange={(event) => setLocation(event.target.value)}
+                  className="h-full w-full min-w-0 appearance-none bg-transparent pr-1 text-xs font-medium text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="">All locations</option>
+                  {locations.map((agentLocation) => <option key={agentLocation} value={agentLocation}>{agentLocation}</option>)}
+                </select>
+                <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              </label>
             </div>
           </form>
         </motion.section>
@@ -258,10 +196,10 @@ export default function AgentsPage() {
                 <span aria-hidden="true" className="h-px w-7 bg-amber-600" />
               </p>
               <h2 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-slate-950 sm:text-2xl">
-                {agents.length ? "No agents match your search." : "No owner-managed agents are available yet."}
+                {agents.length ? "No agents match this location." : "No owner-managed agents are available yet."}
               </h2>
               <p className="mt-2 max-w-md text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
-                {agents.length ? "Try another name, email, experience, or location keyword, or choose All locations." : "When owner-managed agents join RentTrack, you’ll find their profiles here."}
+                {agents.length ? "Try choosing All locations to see all available agents." : "When owner-managed agents join RentTrack, you’ll find their profiles here."}
               </p>
             </div>
           ) : (
