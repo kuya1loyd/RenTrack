@@ -220,7 +220,7 @@ export default function UnitsPage() {
             ) : null;
           })()}
           {canManage && (
-            <Button onClick={() => { setFormData({ propertyId: properties[0]?.id || "", unitNumber: "", floor: 0, rentAmount: 0, imageUrl: "", imageUrls: [] }); setShowAddModal(true); }}
+            <Button onClick={() => { setFormData({ propertyId: properties[0]?.id || "", unitNumber: "", floor: 0, rentAmount: 0, type: "condo", condition: "", imageUrl: "", imageUrls: [] }); setShowAddModal(true); }}
               className="h-9 border border-blue-700 bg-blue-700 text-white hover:bg-blue-800"><Plus className="h-4 w-4 mr-1.5" />Add Unit</Button>
           )}
         </div>
