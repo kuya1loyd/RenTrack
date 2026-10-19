@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import Image from "next/image";
-import { Bell, Shield, MapPin, Home, Search, Menu, ChevronRight, ChevronDown, Star, Phone, Mail, MessageCircle, ArrowRight, CreditCard, BarChart3, Building2, Users, X, UserPlus, BedDouble, Bath, Car, Grid2X2, Ruler, Wifi, Snowflake, Sofa, Utensils, WashingMachine, TreePine, LockKeyhole, SlidersHorizontal, Sparkles, CheckCircle2, DoorOpen, Check } from "lucide-react";
+import { Bell, Shield, MapPin, Home, Search, Menu, ChevronRight, ChevronDown, Star, Phone, Mail, MessageCircle, ArrowRight, CreditCard, BarChart3, Building2, Users, X, UserPlus, BedDouble, Bath, Car, Grid2X2, Ruler, Wifi, Snowflake, Sofa, Utensils, WashingMachine, TreePine, LockKeyhole, SlidersHorizontal, Sparkles, CheckCircle2, DoorOpen, Check, UploadCloud, FileText, ShieldCheck, Award, Briefcase } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import UnitImageCarousel from "@/components/unit-image-carousel";
@@ -2484,34 +2484,260 @@ export default function LandingPage() {
       </AnimatePresence>
       <AnimatePresence>
         {showAgentApplication && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto p-4">
-            <div className="absolute inset-0 bg-black/50 cursor-pointer" onClick={() => setShowAgentApplication(false)} />
-            <motion.form onSubmit={submitAgentApplication} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} role="dialog" aria-modal="true" aria-labelledby="agent-application-title" className="relative max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl cursor-default sm:p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs cursor-pointer" onClick={() => setShowAgentApplication(false)} />
+            <motion.form
+              onSubmit={submitAgentApplication}
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.2 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="agent-application-title"
+              className="relative w-full max-w-2xl max-h-[92dvh] overflow-y-auto rounded-2xl bg-white shadow-2xl border border-slate-200 cursor-default p-4 sm:p-7 z-10"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close Button */}
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowAgentApplication(false);
                 }}
-                className="absolute right-4 top-4 z-50 p-1.5 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors cursor-pointer pointer-events-auto"
+                className="absolute right-3.5 top-3.5 sm:right-5 sm:top-5 z-20 h-8 w-8 sm:h-9 sm:w-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
                 aria-label="Close application modal"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4 sm:h-5 sm:w-5" />
               </button>
-              <h2 id="agent-application-title" className="text-xl font-bold text-gray-900">Apply as an Agent</h2>
-              <p className="mt-1 text-sm text-gray-500">Share your details and resume for owner review.</p>
-              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <input required placeholder="Full name *" value={agentApplication.name} onChange={(e) => setAgentApplication({ ...agentApplication, name: e.target.value })} className="h-11 rounded-lg border px-3 text-sm" />
-                <input required type="email" placeholder="Email *" value={agentApplication.email} onChange={(e) => setAgentApplication({ ...agentApplication, email: e.target.value })} className="h-11 rounded-lg border px-3 text-sm" />
-                <input placeholder="Phone" value={agentApplication.phone} onChange={(e) => setAgentApplication({ ...agentApplication, phone: e.target.value })} className="h-11 rounded-lg border px-3 text-sm" />
-                <select required value={agentApplication.address} onChange={(e) => setAgentApplication({ ...agentApplication, address: e.target.value })} className="h-11 rounded-lg border bg-white px-3 text-sm">
-                  <option value="">Select city *</option><option value="Cebu">Cebu</option><option value="Manila">Manila</option><option value="Davao">Davao</option><option value="Butuan">Butuan</option>
-                </select>
-                <select value={agentApplication.gender} onChange={(e) => setAgentApplication({ ...agentApplication, gender: e.target.value })} className="h-11 rounded-lg border bg-white px-3 text-sm"><option value="">Gender</option><option>Male</option><option>Female</option><option>Other</option></select>
-                <input type="date" value={agentApplication.birthdate} onChange={(e) => setAgentApplication({ ...agentApplication, birthdate: e.target.value })} className="h-11 rounded-lg border px-3 text-sm" />
-                <label className="sm:col-span-2"><span className="mb-1 block text-xs font-medium text-gray-600">Resume (PDF or Word, max 5 MB) *</span><input required type="file" accept=".pdf,.doc,.docx,application/pdf" onChange={(e) => setAgentResume(e.target.files?.[0] || null)} className="w-full rounded-lg border px-3 py-2 text-sm" /></label>
+
+              {/* Brokerage Brand Header */}
+              <div className="pr-8">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-2">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] sm:text-xs font-bold tracking-wide uppercase bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
+                    <Building2 className="h-3.5 w-3.5 text-blue-600" />
+                    HedgeHomes Realty & Brokerage
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                    <ShieldCheck className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-emerald-600" />
+                    Accredited Network
+                  </span>
+                </div>
+                <h2 id="agent-application-title" className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+                  Apply as a Real Estate Agent
+                </h2>
+                <p className="mt-1 text-xs sm:text-sm text-slate-600 leading-relaxed">
+                  Join the official accredited agent team at <span className="font-semibold text-slate-900">HedgeHomes Realty & Brokerage</span> (powered by RentTrack). Submit your professional credentials and resume for brokerage evaluation.
+                </p>
               </div>
-              <button type="submit" disabled={agentApplicationSending} className="mt-5 h-11 w-full rounded-lg bg-blue-600 font-semibold text-white hover:bg-blue-700 disabled:opacity-60">{agentApplicationSending ? "Submitting..." : "Submit Application"}</button>
+
+              {/* Requirements & Qualification Checklist Box */}
+              <div className="mt-4 rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50/70 via-white to-indigo-50/30 p-3.5 sm:p-4 shadow-2xs">
+                <div className="flex items-center justify-between gap-2 mb-2.5">
+                  <div className="flex items-center gap-2 font-bold text-slate-900 text-xs sm:text-sm">
+                    <Award className="h-4 w-4 text-blue-600 shrink-0" />
+                    <span>Agent Accreditation Requirements</span>
+                  </div>
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded-md">
+                    Qualifications
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-700">
+                  <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-lg border border-blue-50 shadow-2xs">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-slate-900 text-xs">PRC / RES Accreditation</p>
+                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5">Licensed Real Estate Broker, PRC registered Salesperson, or willing to be accredited under HedgeHomes Brokerage.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-lg border border-blue-50 shadow-2xs">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-slate-900 text-xs">Valid Government-Issued ID</p>
+                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5">Primary ID (PRC ID, Driver&apos;s License, Passport, or UMID) required upon onboarding verification.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-lg border border-blue-50 shadow-2xs">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-slate-900 text-xs">Comprehensive Resume / CV</p>
+                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5">Detailed curriculum vitae showcasing educational background, sales track record, or rental experience.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-lg border border-blue-50 shadow-2xs">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-slate-900 text-xs">Target Service Coverage</p>
+                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5">Active physical presence in our key service hubs: Cebu, Metro Manila, Davao, or Butuan.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Form Input Fields */}
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Full Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    required
+                    placeholder="e.g. Maria Santos"
+                    value={agentApplication.name}
+                    onChange={(e) => setAgentApplication({ ...agentApplication, name: e.target.value })}
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-slate-50/40 px-3.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Email Address <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    required
+                    type="email"
+                    placeholder="e.g. maria.santos@gmail.com"
+                    value={agentApplication.email}
+                    onChange={(e) => setAgentApplication({ ...agentApplication, email: e.target.value })}
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-slate-50/40 px-3.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Contact Phone Number
+                  </label>
+                  <input
+                    placeholder="e.g. 0917 123 4567"
+                    value={agentApplication.phone}
+                    onChange={(e) => setAgentApplication({ ...agentApplication, phone: e.target.value })}
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-slate-50/40 px-3.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Target Service City <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={agentApplication.address}
+                    onChange={(e) => setAgentApplication({ ...agentApplication, address: e.target.value })}
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-xs sm:text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all cursor-pointer"
+                  >
+                    <option value="">Select Service City *</option>
+                    <option value="Cebu">Cebu (Metro Cebu, Mandaue, Lapu-Lapu)</option>
+                    <option value="Manila">Manila (Metro Manila, Makati, BGC, QC)</option>
+                    <option value="Davao">Davao (Davao City, Tagum)</option>
+                    <option value="Butuan">Butuan (Butuan City, Agusan)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Gender
+                  </label>
+                  <select
+                    value={agentApplication.gender}
+                    onChange={(e) => setAgentApplication({ ...agentApplication, gender: e.target.value })}
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-xs sm:text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all cursor-pointer"
+                  >
+                    <option value="">Select Gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Prefer not to say / Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Date of Birth
+                  </label>
+                  <input
+                    type="date"
+                    value={agentApplication.birthdate}
+                    onChange={(e) => setAgentApplication({ ...agentApplication, birthdate: e.target.value })}
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-slate-50/40 px-3.5 text-xs sm:text-sm text-slate-900 focus:bg-white focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all"
+                  />
+                </div>
+
+                {/* Custom File Upload Box for Resume */}
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Resume / CV (PDF or Word, max 5 MB) <span className="text-red-500">*</span>
+                  </label>
+                  <label
+                    htmlFor="agent-resume-file"
+                    className={`relative flex flex-col items-center justify-center p-3.5 sm:p-5 rounded-xl border-2 border-dashed transition-all cursor-pointer ${
+                      agentResume
+                        ? "border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50/70"
+                        : "border-slate-300 bg-slate-50/60 hover:bg-blue-50/50 hover:border-blue-400"
+                    }`}
+                  >
+                    <input
+                      id="agent-resume-file"
+                      required
+                      type="file"
+                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      onChange={(e) => setAgentResume(e.target.files?.[0] || null)}
+                      className="sr-only"
+                    />
+                    {agentResume ? (
+                      <div className="flex items-center gap-3 w-full">
+                        <div className="h-10 w-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
+                          <FileText className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs sm:text-sm font-bold text-slate-900 truncate">{agentResume.name}</p>
+                          <p className="text-[11px] text-emerald-700 font-medium mt-0.5">
+                            {(agentResume.size / (1024 * 1024)).toFixed(2)} MB • File attached and ready
+                          </p>
+                        </div>
+                        <span className="text-xs font-bold text-blue-600 hover:text-blue-700 shrink-0 bg-white px-2.5 py-1 rounded-lg border border-blue-200 shadow-2xs">
+                          Change
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-center py-1">
+                        <div className="mx-auto h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mb-1.5">
+                          <UploadCloud className="h-5 w-5" />
+                        </div>
+                        <p className="text-xs sm:text-sm font-bold text-slate-800">
+                          Click to upload or drag &amp; drop your resume
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Accepted formats: PDF, DOC, or DOCX (max 5 MB)
+                        </p>
+                      </div>
+                    )}
+                  </label>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="mt-5 space-y-2">
+                <button
+                  type="submit"
+                  disabled={agentApplicationSending}
+                  className="h-12 w-full rounded-xl bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 text-white font-bold text-sm shadow-md shadow-blue-500/20 hover:from-blue-700 hover:to-indigo-800 active:scale-[0.99] transition-all disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {agentApplicationSending ? (
+                    <>
+                      <div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                      <span>Submitting Application to HedgeHomes...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="h-4 w-4" />
+                      <span>Submit Application to HedgeHomes</span>
+                    </>
+                  )}
+                </button>
+                <p className="text-center text-[11px] text-slate-500 flex items-center justify-center gap-1.5 pt-1">
+                  <ShieldCheck className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                  <span>Your submission is securely reviewed by HedgeHomes Realty &amp; Brokerage administration.</span>
+                </p>
+              </div>
             </motion.form>
           </div>
         )}
