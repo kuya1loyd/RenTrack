@@ -2547,28 +2547,28 @@ export default function LandingPage() {
                     <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
                     <div>
                       <p className="font-semibold text-slate-900 text-xs">PRC / RES Accreditation</p>
-                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5">Licensed Real Estate Broker, PRC registered Salesperson, or willing to be accredited under HedgeHomes Brokerage.</p>
+                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5">Licensed Broker, PRC Salesperson, or open to brokerage accreditation.</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-lg border border-blue-50 shadow-2xs">
                     <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
                     <div>
-                      <p className="font-semibold text-slate-900 text-xs">Valid Government-Issued ID</p>
-                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5">Primary ID (PRC ID, Driver&apos;s License, Passport, or UMID) required upon onboarding verification.</p>
+                      <p className="font-semibold text-slate-900 text-xs">Valid Government ID</p>
+                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5">PRC ID, Driver&apos;s License, Passport, or UMID.</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-lg border border-blue-50 shadow-2xs">
                     <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
                     <div>
-                      <p className="font-semibold text-slate-900 text-xs">Comprehensive Resume / CV</p>
-                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5">Detailed curriculum vitae showcasing educational background, sales track record, or rental experience.</p>
+                      <p className="font-semibold text-slate-900 text-xs">Resume / CV</p>
+                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5">Updated CV highlighting real estate or sales experience.</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2 bg-white/90 p-2 sm:p-2.5 rounded-lg border border-blue-50 shadow-2xs">
                     <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
                     <div>
-                      <p className="font-semibold text-slate-900 text-xs">Target Service Coverage</p>
-                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5">Active physical presence in our key service hubs: Cebu, Metro Manila, Davao, or Butuan.</p>
+                      <p className="font-semibold text-slate-900 text-xs">Service Coverage</p>
+                      <p className="text-[11px] text-slate-500 leading-tight mt-0.5">Active in Cebu, Metro Manila, Davao, or Butuan.</p>
                     </div>
                   </div>
                 </div>
