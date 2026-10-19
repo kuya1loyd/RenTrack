@@ -149,6 +149,43 @@ export default function TenantUnitsPage() {
     return 10000;
   };
 
+  const locationAgent = useMemo(() => {
+    if (!selectedProperty) return null;
+    const propLocation = String(selectedProperty.location || "").toLowerCase().trim();
+    const propAgentId = (selectedProperty as any).agentId || (selectedProperty as any).agent_id;
+
+    const REGIONS = [
+      { name: "Cebu", tokens: ["cebu", "mandaue", "lapu-lapu", "lapu lapu", "talisay", "consolacion", "minglanilla", "liloan", "cordova"] },
+      { name: "Butuan", tokens: ["butuan", "cabadbaran", "agusan"] },
+      { name: "Davao", tokens: ["davao", "tagum", "panabo", "samal"] },
+      { name: "Metro Manila", tokens: ["manila", "makati", "quezon", "taguig", "bgc", "pasig", "mandaluyong", "paranaque", "pasay", "alabang", "muntinlupa", "las pinas"] },
+      { name: "Cagayan de Oro", tokens: ["cagayan de oro", "cdo", "misamis"] },
+    ];
+
+    const propRegion = REGIONS.find((r) => r.tokens.some((token) => propLocation.includes(token)));
+
+    const matched = agents.filter((agent) => {
+      const agentLoc = String(agent.location || agent.address || "").toLowerCase().trim();
+      const agentRegion = REGIONS.find((r) => r.tokens.some((token) => agentLoc.includes(token)));
+
+      if (propRegion && agentRegion && propRegion.name !== agentRegion.name) {
+        return false;
+      }
+      if (propRegion && agentRegion && propRegion.name === agentRegion.name) {
+        return true;
+      }
+      if (agentLoc && propLocation && (propLocation.includes(agentLoc) || agentLoc.includes(propLocation))) {
+        return true;
+      }
+      if (propAgentId && agent.id === propAgentId && (!agentRegion || !propRegion || agentRegion.name === propRegion.name)) {
+        return true;
+      }
+      return false;
+    });
+
+    return matched[0] || null;
+  }, [selectedProperty, agents]);
+
   // Filtering & Sorting
   const filteredAndSortedProperties = useMemo(() => {
     let list = properties.filter((p) => {
@@ -782,75 +819,38 @@ export default function TenantUnitsPage() {
                   )}
 
                   {/* Agent in this Location */}
-                  {(() => {
-                    const propLocation = String(selectedProperty.location || "").toLowerCase().trim();
-                    const propAgentId = (selectedProperty as any).agentId || (selectedProperty as any).agent_id;
-
-                    const REGIONS = [
-                      { name: "Cebu", tokens: ["cebu", "mandaue", "lapu-lapu", "lapu lapu", "talisay", "consolacion", "minglanilla", "liloan", "cordova"] },
-                      { name: "Butuan", tokens: ["butuan", "cabadbaran", "agusan"] },
-                      { name: "Davao", tokens: ["davao", "tagum", "panabo", "samal"] },
-                      { name: "Metro Manila", tokens: ["manila", "makati", "quezon", "taguig", "bgc", "pasig", "mandaluyong", "paranaque", "pasay", "alabang", "muntinlupa", "las pinas"] },
-                      { name: "Cagayan de Oro", tokens: ["cagayan de oro", "cdo", "misamis"] },
-                    ];
-
-                    const propRegion = REGIONS.find((r) => r.tokens.some((token) => propLocation.includes(token)));
-
-                    const matched = agents.filter((agent) => {
-                      const agentLoc = String(agent.location || agent.address || "").toLowerCase().trim();
-                      const agentRegion = REGIONS.find((r) => r.tokens.some((token) => agentLoc.includes(token)));
-
-                      if (propRegion && agentRegion && propRegion.name !== agentRegion.name) {
-                        return false;
-                      }
-                      if (propRegion && agentRegion && propRegion.name === agentRegion.name) {
-                        return true;
-                      }
-                      if (agentLoc && propLocation && (propLocation.includes(agentLoc) || agentLoc.includes(propLocation))) {
-                        return true;
-                      }
-                      if (propAgentId && agent.id === propAgentId && (!agentRegion || !propRegion || agentRegion.name === propRegion.name)) {
-                        return true;
-                      }
-                      return false;
-                    });
-
-                    const locationAgent = matched[0] || null;
-                    if (!locationAgent) return null;
-
-                    return (
-                      <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[11px] text-blue-700 uppercase font-bold flex items-center gap-1">
-                            <Users className="h-3.5 w-3.5" />
-                            Agent in this Location
-                          </span>
-                          <span className="text-[11px] text-slate-500 flex items-center gap-1 truncate">
-                            <MapPin className="h-3 w-3 text-blue-600 shrink-0" />
-                            {locationAgent.location || selectedProperty.location}
-                          </span>
-                        </div>
-                        <div className="mt-2.5 flex items-center justify-between gap-3 bg-white p-2.5 rounded-lg border border-blue-100 shadow-2xs">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="h-9 w-9 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                              {locationAgent.name.slice(0, 2).toUpperCase()}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-slate-900 truncate">{locationAgent.name}</p>
-                              <p className="text-[11px] text-slate-500 truncate">{locationAgent.email}</p>
-                            </div>
-                          </div>
-                          <Link
-                            href={`/agents/${locationAgent.id}?propertyId=${encodeURIComponent(selectedProperty.id)}&propertyName=${encodeURIComponent(selectedProperty.name)}${currentUnit?.unitNumber ? `&unitNumber=${encodeURIComponent(currentUnit.unitNumber)}` : ""}&unitId=${encodeURIComponent(currentUnit?.id || "")}#message`}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shrink-0 shadow-2xs transition"
-                          >
-                            <MessageCircle className="h-3.5 w-3.5" />
-                            <span>Inquire</span>
-                          </Link>
-                        </div>
+                  {locationAgent && (
+                    <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-blue-700 uppercase font-bold flex items-center gap-1">
+                          <Users className="h-3.5 w-3.5" />
+                          Agent in this Location
+                        </span>
+                        <span className="text-[11px] text-slate-500 flex items-center gap-1 truncate">
+                          <MapPin className="h-3 w-3 text-blue-600 shrink-0" />
+                          {locationAgent.location || selectedProperty.location}
+                        </span>
                       </div>
-                    );
-                  })()}
+                      <div className="mt-2.5 flex items-center justify-between gap-3 bg-white p-2.5 rounded-lg border border-blue-100 shadow-2xs">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="h-9 w-9 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                            {locationAgent.name.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 truncate">{locationAgent.name}</p>
+                            <p className="text-[11px] text-slate-500 truncate">{locationAgent.email}</p>
+                          </div>
+                        </div>
+                        <Link
+                          href={`/agents/${locationAgent.id}?propertyId=${encodeURIComponent(selectedProperty.id)}&propertyName=${encodeURIComponent(selectedProperty.name)}${currentUnit?.unitNumber ? `&unitNumber=${encodeURIComponent(currentUnit.unitNumber)}` : ""}&unitId=${encodeURIComponent(currentUnit?.id || "")}#message`}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shrink-0 shadow-2xs transition"
+                        >
+                          <MessageCircle className="h-3.5 w-3.5" />
+                          <span>Inquire</span>
+                        </Link>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="pt-2 flex items-center justify-between border-t border-slate-100">
                     <div>
