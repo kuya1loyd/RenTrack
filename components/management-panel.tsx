@@ -10,12 +10,16 @@ export function ManagementBanner({
   title,
   description,
   icon,
+  actions,
+  children,
 }: {
   financial?: boolean;
   category?: string;
   title?: string;
   description?: string;
   icon?: React.ElementType;
+  actions?: ReactNode;
+  children?: ReactNode;
 }) {
   const Icon = icon || (financial ? CreditCard : Home);
   const defaultCategory = financial ? "Financial management" : "Property management";
@@ -30,6 +34,12 @@ export function ManagementBanner({
         <h1>{title || defaultTitle}</h1>
         <div>{description || defaultDescription}</div>
       </div>
+      {(actions || children) && (
+        <div className={styles.bannerActions}>
+          {actions}
+          {children}
+        </div>
+      )}
     </section>
   );
 }
