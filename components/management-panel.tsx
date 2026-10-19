@@ -43,6 +43,15 @@ export function UnitMetrics({ total, available, occupied, maintenance }: { total
   ]} />;
 }
 
+export function PropertyMetrics({ total, active, inactive, revenue }: { total: number; active: number; inactive: number; revenue: string }) {
+  return <ManagementMetrics metrics={[
+    { label: "Total Properties", value: total, note: "Registered in portfolio", icon: Building2, tone: "blue" },
+    { label: "Active Properties", value: active, note: `${total ? Math.round(active / total * 100) : 0}% active`, icon: CheckCircle2, tone: "green" },
+    { label: "Inactive Properties", value: inactive, note: `${total ? Math.round(inactive / total * 100) : 0}% inactive`, icon: Home, tone: "amber" },
+    { label: "Monthly Revenue", value: revenue, note: "Combined monthly revenue", icon: Wallet, tone: "cyan" },
+  ]} />;
+}
+
 export function FinancialMetrics({ collected, pending, outstanding, transactions, pendingCount, openCount }: { collected: string; pending: string; outstanding: string; transactions: number; pendingCount: number; openCount: number }) {
   return <ManagementMetrics metrics={[
     { label: "Total Collected", value: collected, note: "Verified paid transactions", icon: Wallet, tone: "green" },

@@ -68,7 +68,7 @@ export function resolveMoveOutTenant(identity: MoveOutIdentity, records: MoveOut
 }
 
 export function resolveMoveOutUnit(tenant: MoveOutTenantRow, identityIds: string[], units: MoveOutUnitRow[]) {
-  if (tenant.status === "inactive") return { unit: null, issue: "inactive" };
+  if (tenant.status === "inactive" || tenant.status === "archived") return { unit: null, issue: "inactive" };
   if (tenant.assignment_status === "rejected") return { unit: null, issue: "unassigned" };
   const linkedUnits = units.filter((unit) => unit.status === "occupied" && !!unit.tenant_id && identityIds.includes(unit.tenant_id));
   if (tenant.unit_id) {

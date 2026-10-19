@@ -22,7 +22,7 @@ import {
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { cn, formatDisplayId } from "@/lib/utils";
 
 export interface AgentIdInspectorModalProps {
   isOpen: boolean;
@@ -212,7 +212,7 @@ export function AgentIdInspectorModal({
               <div className="flex items-center gap-2">
                 <span className="font-bold text-gray-900 dark:text-white text-sm">{agent.name}</span>
                 <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
-                  Agent ID: #{agent.id.slice(0, 8)}
+                  Agent ID: #{formatDisplayId(agent.id)}
                 </Badge>
               </div>
               <p className="text-xs text-gray-500">

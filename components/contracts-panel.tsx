@@ -72,11 +72,20 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
   const [showRequestModal, setShowRequestModal] = useState(false);
 
   const visibleProperties = useMemo(() => mode === "agent"
-    ? properties.filter((property) => property.agentId === user?.id)
+    ? properties.filter((property) => property.agentId === user?.id || (property as any).agent_id === user?.id)
     : properties,
     [mode, properties, user?.id]);
-  const propertyUnits = useMemo(() => units.filter((unit) => unit.propertyId === propertyId), [units, propertyId]);
-  const propertyTenants = useMemo(() => tenants.filter((tenant) => propertyUnits.some((unit) => unit.id === tenant.unitId)), [tenants, propertyUnits]);
+  const propertyUnits = useMemo(() => units.filter((unit) => (unit.propertyId || (unit as any).property_id) === propertyId), [units, propertyId]);
+  const propertyTenants = useMemo(() => {
+    const matched = tenants.filter((tenant) => {
+      if (propertyUnits.some((unit) => unit.id === tenant.unitId)) return true;
+      const prop = properties.find((p) => p.id === propertyId);
+      if (prop && tenant.propertyName && prop.name.toLowerCase() === tenant.propertyName.toLowerCase()) return true;
+      if ((tenant as any).propertyId === propertyId || (tenant as any).property_id === propertyId) return true;
+      return false;
+    });
+    return matched.length > 0 ? matched : tenants;
+  }, [tenants, propertyUnits, propertyId, properties]);
   const visibleAgents = useMemo(() => {
     const property = properties.find((item) => item.id === propertyId);
     return property?.agentId ? agents.filter((agent) => agent.id === property.agentId) : agents;
@@ -251,26 +260,44 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
         icon={FileText}
       />
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
         {mode === "owner" ? (
           <Button
             type="button"
-            onClick={() => setShowOwnerSendModal(true)}
+            onClick={() => {
+              setRecipientType("agent");
+              setShowOwnerSendModal(true);
+            }}
             className="h-9 gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 px-4 text-xs font-semibold text-white shadow-sm"
           >
             <UploadCloud className="h-4 w-4" />
             Send a Contract
           </Button>
         ) : (
-          <Button
-            type="button"
-            onClick={() => setShowRequestModal(true)}
-            disabled={visibleProperties.length === 0}
-            className="h-9 gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 px-4 text-xs font-semibold text-white shadow-sm disabled:opacity-50"
-          >
-            <Send className="h-4 w-4" />
-            Request a Contract
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowRequestModal(true)}
+              disabled={visibleProperties.length === 0}
+              className="h-9 gap-1.5 rounded-lg border-blue-200 text-blue-700 hover:bg-blue-50 px-4 text-xs font-semibold shadow-sm disabled:opacity-50"
+            >
+              <Send className="h-4 w-4" />
+              Request a Contract
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setRecipientType("tenant");
+                setShowOwnerSendModal(true);
+              }}
+              disabled={visibleProperties.length === 0}
+              className="h-9 gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 px-4 text-xs font-semibold text-white shadow-sm disabled:opacity-50"
+            >
+              <UploadCloud className="h-4 w-4" />
+              Send a Contract
+            </Button>
+          </>
         )}
       </div>
 
@@ -317,11 +344,11 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
                     <td className="px-4 py-3"><Badge variant={statusVariant(contract.status)} className={cn("text-[10px] capitalize", contract.status === "rejected" && "text-slate-600")}>{contract.status === "rejected" ? "Declined" : contract.status}</Badge></td>
                     <td className="px-4 py-3"><div className="flex justify-end gap-2">
                       {contract.status === "sent" && <a href={`/api/data/contracts/${contract.id}/file`} className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-2.5 text-xs font-medium hover:bg-slate-50"><Download className="mr-1.5 h-3.5 w-3.5" />Download</a>}
-                      {mode === "owner" && contract.status === "requested" && <>
+                      {contract.status === "requested" && <>
                         <label className="inline-flex h-8 cursor-pointer items-center rounded-lg bg-blue-600 px-2.5 text-xs font-medium text-white hover:bg-blue-700"><UploadCloud className="mr-1.5 h-3.5 w-3.5" />Attach<input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" disabled={sending} onChange={(event) => sendRequestedContract(contract, event.target.files?.[0] || null)} /></label>
                         <Button variant="outline" size="sm" className="h-8" onClick={() => void rejectRequest(contract)} disabled={sending}><XCircle className="mr-1 h-3.5 w-3.5" />Decline</Button>
                       </>}
-                      {contract.status !== "sent" && !(mode === "owner" && contract.status === "requested") && <span className="text-slate-400">—</span>}
+                      {contract.status !== "sent" && contract.status !== "requested" && <span className="text-slate-400">—</span>}
                     </div></td>
                   </tr>;
                 })}
@@ -365,48 +392,71 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
           </Modal>
         </>
       )}
-      {mode === "owner" && (
-        <Modal
-          isOpen={showOwnerSendModal}
-          onClose={() => setShowOwnerSendModal(false)}
-          title="Send a contract"
-          description="Attach a PDF or Word document and choose who should receive it."
-          className="max-h-[90vh] max-w-2xl overflow-y-auto"
-        >
-          <form onSubmit={submitOwnerContract} className="grid gap-3 md:grid-cols-2">
-            <label className="grid gap-1.5 text-sm font-medium text-slate-700">Property
-              <select required value={propertyId} onChange={(event) => { setPropertyId(event.target.value); setAgentId(""); setTenantId(""); }} className="h-11 rounded-xl border border-border bg-white px-3 text-sm"><option value="">Select property</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select>
-            </label>
+      <Modal
+        isOpen={showOwnerSendModal}
+        onClose={() => setShowOwnerSendModal(false)}
+        title={mode === "owner" ? "Send a contract" : "Send a contract to tenant"}
+        description={mode === "owner" ? "Attach a PDF or Word document and choose who should receive it." : "Attach a PDF or Word document to issue to the tenant."}
+        className="max-h-[90vh] max-w-2xl overflow-y-auto"
+      >
+        <form onSubmit={submitOwnerContract} className="grid gap-3 md:grid-cols-2">
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700">Property
+            <select required value={propertyId} onChange={(event) => { setPropertyId(event.target.value); setAgentId(""); setTenantId(""); }} className="h-11 rounded-xl border border-border bg-white px-3 text-sm">
+              <option value="">Select property</option>
+              {visibleProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+            </select>
+          </label>
+          {mode === "owner" ? (
             <label className="grid gap-1.5 text-sm font-medium text-slate-700">Recipient
-              <select required value={recipientType} onChange={(event) => { setRecipientType(event.target.value as "agent" | "tenant"); setAgentId(""); setTenantId(""); }} aria-label="Send contract to" className="h-11 rounded-xl border border-border bg-white px-3 text-sm"><option value="agent">Send to agent</option><option value="tenant">Send directly to tenant</option></select>
+              <select required value={recipientType} onChange={(event) => { setRecipientType(event.target.value as "agent" | "tenant"); setAgentId(""); setTenantId(""); }} aria-label="Send contract to" className="h-11 rounded-xl border border-border bg-white px-3 text-sm">
+                <option value="agent">Send to agent</option>
+                <option value="tenant">Send directly to tenant</option>
+              </select>
             </label>
-            {recipientType === "agent" ? (
-              <>
-                <label className="grid gap-1.5 text-sm font-medium text-slate-700">Agent
-                  <select required value={agentId} onChange={(event) => setAgentId(event.target.value)} className="h-11 rounded-xl border border-border bg-white px-3 text-sm"><option value="">Select agent</option>{visibleAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select>
-                </label>
-                <label className="grid gap-1.5 text-sm font-medium text-slate-700">Tenant <span className="font-normal text-slate-500">Optional for property-wide contracts</span>
-                  <select value={tenantId} onChange={(event) => setTenantId(event.target.value)} className="h-11 rounded-xl border border-border bg-white px-3 text-sm"><option value="">General property contract</option>{propertyTenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name} · Unit {tenant.unitNumber || "—"}</option>)}</select>
-                </label>
-              </>
-            ) : (
-              <label className="grid gap-1.5 text-sm font-medium text-slate-700 md:col-span-2">Tenant
-                <select required value={tenantId} onChange={(event) => setTenantId(event.target.value)} className="h-11 rounded-xl border border-border bg-white px-3 text-sm"><option value="">Select tenant</option>{propertyTenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name} · Unit {tenant.unitNumber || "—"}</option>)}</select>
+          ) : (
+            <label className="grid gap-1.5 text-sm font-medium text-slate-700">Recipient
+              <div className="flex h-11 items-center rounded-xl border border-border bg-slate-50 px-3 text-sm font-semibold text-blue-700">
+                Direct to Tenant
+              </div>
+            </label>
+          )}
+          {mode === "owner" && recipientType === "agent" ? (
+            <>
+              <label className="grid gap-1.5 text-sm font-medium text-slate-700">Agent
+                <select required value={agentId} onChange={(event) => setAgentId(event.target.value)} className="h-11 rounded-xl border border-border bg-white px-3 text-sm">
+                  <option value="">Select agent</option>
+                  {visibleAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                </select>
               </label>
-            )}
-            <label className="grid gap-1.5 text-sm font-medium text-slate-700 md:col-span-2">Contract title
-              <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} aria-label="Contract title" placeholder="Contract title" className="h-11 rounded-xl border border-border bg-white px-3 text-sm" />
+              <label className="grid gap-1.5 text-sm font-medium text-slate-700">Tenant <span className="font-normal text-slate-500">Optional for property-wide contracts</span>
+                <select value={tenantId} onChange={(event) => setTenantId(event.target.value)} className="h-11 rounded-xl border border-border bg-white px-3 text-sm">
+                  <option value="">General property contract</option>
+                  {propertyTenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name} · Unit {tenant.unitNumber || "—"}</option>)}
+                </select>
+              </label>
+            </>
+          ) : (
+            <label className="grid gap-1.5 text-sm font-medium text-slate-700 md:col-span-2">Tenant
+              <select required value={tenantId} onChange={(event) => setTenantId(event.target.value)} className="h-11 rounded-xl border border-border bg-white px-3 text-sm">
+                <option value="">Select tenant</option>
+                {propertyTenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name} · Unit {tenant.unitNumber || "—"}</option>)}
+              </select>
             </label>
-            <label className="flex h-11 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border px-3 text-sm text-text-secondary md:col-span-2">
-              <UploadCloud className="h-4 w-4" /><span className="min-w-0 flex-1 truncate">{file?.name || "Choose PDF or Word contract (max 15 MB)"}</span><input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-            </label>
-            <div className="flex justify-end gap-2 pt-1 md:col-span-2">
-              <Button type="button" variant="outline" onClick={() => setShowOwnerSendModal(false)}>Cancel</Button>
-              <Button type="submit" disabled={sending || !properties.length || (recipientType === "agent" && !agents.length)}><Send className="mr-2 h-4 w-4" />{sending ? "Sending..." : recipientType === "tenant" ? "Send to tenant" : "Send to agent"}</Button>
-            </div>
-          </form>
-        </Modal>
-      )}
+          )}
+          <label className="grid gap-1.5 text-sm font-medium text-slate-700 md:col-span-2">Contract title
+            <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} aria-label="Contract title" placeholder="Contract title" className="h-11 rounded-xl border border-border bg-white px-3 text-sm" />
+          </label>
+          <label className="flex h-11 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border px-3 text-sm text-text-secondary md:col-span-2">
+            <UploadCloud className="h-4 w-4" /><span className="min-w-0 flex-1 truncate">{file?.name || "Choose PDF or Word contract (max 15 MB)"}</span><input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+          </label>
+          <div className="flex justify-end gap-2 pt-1 md:col-span-2">
+            <Button type="button" variant="outline" onClick={() => setShowOwnerSendModal(false)}>Cancel</Button>
+            <Button type="submit" disabled={sending || !visibleProperties.length || (recipientType === "agent" && !visibleAgents.length) || (recipientType === "tenant" && !tenantId)}>
+              <Send className="mr-2 h-4 w-4" />{sending ? "Sending..." : recipientType === "tenant" ? "Send to tenant" : "Send to agent"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

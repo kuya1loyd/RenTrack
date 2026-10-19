@@ -55,6 +55,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const senderEmail = cleanField(input.senderEmail, 254).toLowerCase();
     const senderPhone = cleanField(input.senderPhone, 40);
     const message = cleanField(input.message, MAX_MESSAGE_LENGTH);
+    const inputPropertyId = cleanField(input.propertyId, 128);
+    const inputPropertyName = cleanField(input.propertyName, 255);
+    const inputUnitNumber = cleanField(input.unitNumber || input.unitId, 64);
 
     if (!senderName || !senderEmail || !message || !EMAIL_PATTERN.test(senderEmail)) {
       return respond(request, { success: false, error: "Enter your name, a valid email address, and an inquiry message" }, 400);
@@ -79,14 +82,56 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       return respond(request, { success: false, error: "This Rent Manager does not have an email address for inquiries" }, 503);
     }
 
-    const tenantId = sessionUser?.role === "tenant" ? sessionUser.id : null;
+    // Resolve property ID and name
+    let resolvedPropertyId: string | null = null;
+    let resolvedPropertyName: string | null = inputPropertyName || null;
 
-    const subject = `RentTrack inquiry from ${senderName}`;
-    const text = `New Rent Manager Inquiry\n\nFrom: ${senderName}\nEmail: ${senderEmail}${senderPhone ? `\nPhone: ${senderPhone}` : ""}\n\nInquiry:\n${message}`;
+    if (inputPropertyId) {
+      const { data: prop } = await getAdminSupabase()
+        .from("properties")
+        .select("id, name")
+        .eq("id", inputPropertyId)
+        .maybeSingle();
+      if (prop) {
+        resolvedPropertyId = prop.id;
+        resolvedPropertyName = prop.name;
+      }
+    }
+
+    if (!resolvedPropertyId) {
+      const { data: allProps } = await getAdminSupabase().from("properties").select("id, name");
+      const propList = allProps || [];
+      if (inputPropertyName) {
+        const matched = propList.find((p: any) => p.name && p.name.toLowerCase() === inputPropertyName.toLowerCase());
+        if (matched) {
+          resolvedPropertyId = matched.id;
+          resolvedPropertyName = matched.name;
+        }
+      }
+      if (!resolvedPropertyId && message) {
+        const lowerMessage = message.toLowerCase();
+        const matched = propList.find((p: any) => p.name && lowerMessage.includes(p.name.toLowerCase()));
+        if (matched) {
+          resolvedPropertyId = matched.id;
+          resolvedPropertyName = matched.name;
+        }
+      }
+    }
+
+    const tenantId = sessionUser?.role === "tenant" ? sessionUser.id : null;
+    const unitHeader = inputUnitNumber ? `[Unit ${inputUnitNumber}] ` : "";
+    const fullMessageText = unitHeader && !message.includes(unitHeader.trim()) ? `${unitHeader}${message}` : message;
+
+    const subject = `RentTrack inquiry from ${senderName}${resolvedPropertyName ? ` for ${resolvedPropertyName}` : ""}`;
+    const propertyDetail = resolvedPropertyName
+      ? `\nProperty: ${resolvedPropertyName}${inputUnitNumber ? ` (Unit ${inputUnitNumber})` : ""}`
+      : inputUnitNumber ? `\nUnit: ${inputUnitNumber}` : "";
+
+    const text = `New Rent Manager Inquiry\n\nFrom: ${senderName}\nEmail: ${senderEmail}${senderPhone ? `\nPhone: ${senderPhone}` : ""}${propertyDetail}\n\nInquiry:\n${fullMessageText}`;
     const html = createRentTrackEmailTemplate({
       title: "New Rent Manager Inquiry",
-      body: `From: ${senderName}\nEmail: ${senderEmail}${senderPhone ? `\nPhone: ${senderPhone}` : ""}`,
-      messageBlock: message,
+      body: `From: ${senderName}\nEmail: ${senderEmail}${senderPhone ? `\nPhone: ${senderPhone}` : ""}${resolvedPropertyName ? `\nProperty: ${resolvedPropertyName}${inputUnitNumber ? ` (Unit ${inputUnitNumber})` : ""}` : ""}`,
+      messageBlock: fullMessageText,
       footerNote: "Reply directly to this email to contact the visitor.",
     });
     const emailResult = await sendSystemEmail({
@@ -104,8 +149,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     try {
       const { error } = await getAdminSupabase().from("chat_messages").insert({
         id: inquiryId,
-        text: message,
-        property_id: null,
+        text: fullMessageText,
+        property_id: resolvedPropertyId,
         sender_name: senderName,
         sender_email: senderEmail,
         sender_phone: senderPhone || null,
@@ -128,8 +173,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     try {
       await createNotification({
         userId: agent.id,
-        title: "New landing inquiry",
-        message: `${senderName} sent you a new landing inquiry.`,
+        title: resolvedPropertyName ? `New inquiry: ${resolvedPropertyName}` : "New landing inquiry",
+        message: `${senderName} inquired about ${resolvedPropertyName ? `${resolvedPropertyName}${inputUnitNumber ? ` (Unit ${inputUnitNumber})` : ""}` : "your property"}.`,
         type: "system",
       });
     } catch (error) {

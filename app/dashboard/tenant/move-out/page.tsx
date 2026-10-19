@@ -258,7 +258,7 @@ export default function TenantMoveOutPage() {
             <div className="flex flex-col sm:flex-row gap-2.5 shrink-0 w-full md:w-auto">
               <button
                 type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent("renttrack-open-messages"))}
+                onClick={() => window.dispatchEvent(new CustomEvent("renttrack-contact-landlord"))}
                 className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold shadow-xs transition-colors cursor-pointer"
               >
                 <MessageSquare className="h-4 w-4" />
@@ -561,7 +561,7 @@ export default function TenantMoveOutPage() {
 
               <button
                 type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent("renttrack-open-messages"))}
+                onClick={() => window.dispatchEvent(new CustomEvent("renttrack-contact-landlord"))}
                 className="w-full h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
               >
                 <MessageSquare className="h-3.5 w-3.5 text-blue-600" />

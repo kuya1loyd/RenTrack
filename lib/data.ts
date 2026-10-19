@@ -8,7 +8,7 @@ export interface Property {
   id: string;
   name: string;
   location: string;
-  type: "house" | "condominium";
+  type: "house" | "residential" | "building" | "condominium" | string;
   units: number;
   occupiedUnits: number;
   latitude?: number;
@@ -28,16 +28,19 @@ export interface Property {
 
 export interface Unit {
   id: string;
-  propertyId: string;
+  propertyId?: string;
   unitNumber: string;
   floor?: number;
   status: "occupied" | "vacant" | "maintenance";
   rentAmount: number;
+  type?: string;
+  condition?: string;
   tenantName?: string;
   tenantId?: string;
   leaseEnd?: string;
   imageUrl?: string;
   imageUrls?: string[];
+  address?: string;
 }
 
 export interface TenantRecord {
@@ -55,7 +58,7 @@ export interface TenantRecord {
   contractStart?: string;
   contractEnd?: string;
   rentAmount?: number;
-  status: "active" | "inactive";
+  status: "active" | "inactive" | "archived";
   assignmentStatus?: "pending" | "confirmed" | "rejected";
   createdBy?: string;
   assignedAgentId?: string;
@@ -102,6 +105,7 @@ export interface Payment {
   tenantId: string;
   tenantName: string;
   unitId: string;
+  unitNumber?: string;
   propertyName: string;
   amountPaid: number;
   amountDue: number;
@@ -320,7 +324,7 @@ export async function updateTenantVerification(tenantId: string, status: "approv
   return result.tenant || null;
 }
 
-export async function updateTenantStatus(tenantId: string, status: "active" | "inactive"): Promise<TenantRecord | null> {
+export async function updateTenantStatus(tenantId: string, status: "active" | "inactive" | "archived"): Promise<TenantRecord | null> {
   const result = await apiPatch("/api/data/tenants", { tenantId, status });
   return result.tenant || null;
 }
@@ -360,14 +364,38 @@ export async function verifyPayment(payment: Payment, verifiedBy: string, status
   if (status === "paid") {
     const amountDue = Number(payment.amountDue || 0);
     const amountPaid = Number(payment.amountPaid || 0);
-    const newBalance = Math.max(0, amountDue - amountPaid);
+    const prevBalance = Number(payment.balance !== undefined ? payment.balance : amountDue);
+    // AUTOMATICALLY DEDUCT RENT FROM BALANCE UPON OWNER APPROVAL
+    const newBalance = Math.max(0, prevBalance - amountPaid);
     const isFullyPaid = amountDue > 0 ? amountPaid >= amountDue : amountPaid > 0;
     updateData.balance = newBalance;
     updateData.status = isFullyPaid ? "paid" : "partial";
+    updateData.approvedAt = new Date().toISOString();
+    updateData.approvedBy = verifiedBy;
   } else {
-    updateData.status = "pending";
+    updateData.status = "rejected";
   }
   const result = await apiPatch("/api/data/payments", { id: payment.id, data: updateData });
+
+  if (result?.success && status === "paid" && payment.tenantId) {
+    try {
+      await addNotification({
+        userId: payment.tenantId,
+        title: "Payment Approved by Owner",
+        message: `Your payment of ₱${Number(payment.amountPaid || 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })} has been approved by the owner! ₱${Number(payment.amountPaid || 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })} was automatically deducted from your rent balance.`,
+        type: "payment",
+        read: false,
+      });
+    } catch {
+      // ignore notification error
+    }
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("payment-confirmed"));
+    window.dispatchEvent(new CustomEvent("renttrack-payment-updated"));
+  }
+
   return result.payment || null;
 }
 
@@ -487,7 +515,10 @@ export async function uploadMessageAttachment(file: File, type: "image" | "audio
 }
 
 export async function getAgents(): Promise<UserRecord[]> {
-  const result = await apiGet("/api/auth/users/agents");
+  let result = await apiGet("/api/agents");
+  if (!result.success || !Array.isArray(result.users)) {
+    result = await apiGet("/api/auth/users/agents");
+  }
   if (result.success && Array.isArray(result.users)) {
     return result.users.filter((user: UserRecord) => user.role === "agent");
   }
@@ -899,7 +930,7 @@ export async function getAgentStats(userId: string): Promise<{ properties: numbe
   );
 
   const propertyUnitIds = new Set(
-    units.filter((u) => agentPropertyIds.has(u.propertyId)).map((u) => u.id)
+    units.filter((u) => Boolean(u.propertyId && agentPropertyIds.has(u.propertyId))).map((u) => u.id)
   );
 
   const tenantIdsForAgent = new Set(
@@ -919,6 +950,8 @@ export interface ChatInquiry {
   id: string;
   text: string;
   propertyId?: string;
+  propertyName?: string;
+  unitNumber?: string;
   senderName: string;
   senderEmail: string;
   senderPhone?: string;

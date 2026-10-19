@@ -18,6 +18,13 @@ import {
   Check,
   Copy,
   ChevronDown,
+  QrCode,
+  Download,
+  Maximize2,
+  Loader2,
+  ShieldCheck,
+  CheckCircle2,
+  Sparkles,
 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -27,6 +34,8 @@ import {
   getTenants,
   getTenantPaymentSummary,
   safeParseJson,
+  addNotification,
+  notifyAdmins,
   Payment,
   TenantRecord,
 } from "@/lib/data";
@@ -49,7 +58,8 @@ export default function TenantPaymentsPage() {
   const [gcashRefNumber, setGcashRefNumber] = useState("");
   const [copiedGcashNumber, setCopiedGcashNumber] = useState(false);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
-  const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
+  const [isScanningReceipt, setIsScanningReceipt] = useState(false);
+  const [ocrDetected, setOcrDetected] = useState(false);
   const [desiredStart, setDesiredStart] = useState("");
   const [desiredEnd, setDesiredEnd] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
@@ -58,6 +68,7 @@ export default function TenantPaymentsPage() {
   // Modals
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
   const [viewingReceipt, setViewingReceipt] = useState<Payment | null>(null);
+  const [isQrExpanded, setIsQrExpanded] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -99,6 +110,23 @@ export default function TenantPaymentsPage() {
     };
   }, [user]);
 
+  // Handle Escape key navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (isQrExpanded) {
+          setIsQrExpanded(false);
+        } else if (isPaymentModalOpen && !isUploading) {
+          setIsPaymentModalOpen(false);
+        } else if (isLedgerModalOpen) {
+          setIsLedgerModalOpen(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isQrExpanded, isPaymentModalOpen, isUploading, isLedgerModalOpen]);
+
   const tenantPaymentSummary = user
     ? getTenantPaymentSummary(payments, user.id)
     : { totalPaid: 0, outstanding: 0, hasAwaitingConfirmation: false, waitingForConfirmation: null, hasConfirmedPayment: false };
@@ -125,7 +153,8 @@ export default function TenantPaymentsPage() {
     setPaymentMethod("gcash");
     setGcashRefNumber("");
     setReceiptFile(null);
-    setReceiptPreviewUrl(null);
+    setIsScanningReceipt(false);
+    setOcrDetected(false);
     setPaymentNotes("");
     setIsPaymentModalOpen(true);
   };
@@ -143,6 +172,49 @@ export default function TenantPaymentsPage() {
     }
   };
 
+  // Automatic Fast OCR Reader for Uploaded GCash Receipt
+  const handleReceiptUpload = async (file: File | null) => {
+    setReceiptFile(file);
+    if (!file) {
+      setOcrDetected(false);
+      setIsScanningReceipt(false);
+      return;
+    }
+
+    // If paying via GCash, scan for reference number (checks both mime type and file extension)
+    const isImageFile = (file.type && file.type.startsWith("image/")) || /\.(jpe?g|png|webp|bmp|gif|tiff)$/i.test(file.name);
+    if (paymentMethod === "gcash" && isImageFile) {
+      setIsScanningReceipt(true);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      try {
+        const ocrFormData = new FormData();
+        ocrFormData.append("file", file);
+        const res = await fetch("/api/ocr/extract-reference", {
+          method: "POST",
+          body: ocrFormData,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        const data = await safeParseJson(res);
+        if (data.success && data.referenceNumber) {
+          setGcashRefNumber(data.referenceNumber);
+          setOcrDetected(true);
+          toast.success(`GCash Reference Number detected: ${data.referenceNumber}`);
+        } else {
+          setOcrDetected(false);
+          toast.info("Receipt attached. You can confirm or enter the Reference Number below.");
+        }
+      } catch {
+        clearTimeout(timeoutId);
+        setOcrDetected(false);
+      } finally {
+        setIsScanningReceipt(false);
+      }
+    }
+  };
+
   const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amountNum = Number(paymentAmount);
@@ -150,17 +222,24 @@ export default function TenantPaymentsPage() {
       toast.error("Please enter a valid payment amount");
       return;
     }
-    if (paymentMethod === "gcash" && !gcashRefNumber.trim()) {
-      toast.error("Please enter your GCash Reference Number");
+
+    // If GCash, require either an uploaded receipt OR a manual reference number
+    if (paymentMethod === "gcash" && !gcashRefNumber.trim() && !receiptFile) {
+      toast.error("Please upload your GCash receipt screenshot or enter a Reference Number");
       return;
     }
+
     if (desiredStart && desiredEnd && new Date(desiredEnd) <= new Date(desiredStart)) {
       toast.error("End date must be after start date");
       return;
     }
     if (!user) return;
 
+    const isGcash = paymentMethod === "gcash";
+    const effectiveRefNumber = gcashRefNumber.trim() || `GC-${Date.now().toString().slice(-8)}`;
+
     setIsUploading(true);
+
     try {
       let uploadedReceiptUrl: string | undefined;
       if (receiptFile) {
@@ -194,7 +273,10 @@ export default function TenantPaymentsPage() {
 
       const compiledNotes = paymentNotes
         ? `${typeLabel}: ${paymentNotes}`
-        : `${typeLabel}${paymentMethod === "gcash" ? ` via GCash (Ref #${gcashRefNumber})` : " via Cash"}`;
+        : `${typeLabel}${paymentMethod === "gcash" ? ` via GCash (Ref #${effectiveRefNumber})` : " via Cash"}`;
+
+      // CRITICAL: Rent balance is NOT deducted yet while pending! It will automatically deduct once approved by the owner!
+      const currentBalance = paymentType === "regular" ? (rentAmount > 0 ? rentAmount : displayBalance) : displayBalance;
 
       const created = await addPayment({
         tenantId: user.id,
@@ -203,13 +285,13 @@ export default function TenantPaymentsPage() {
         propertyName: tenant?.propertyName || "",
         amountPaid: amountNum,
         amountDue: paymentType === "regular" ? rentAmount : amountNum,
-        balance: Math.max(0, (paymentType === "regular" ? rentAmount : displayBalance) - amountNum),
+        balance: currentBalance, // Keeps existing balance; owner approval automatically deducts!
         paymentDate: new Date().toISOString().split("T")[0],
         dueDate: dueDate.toISOString().split("T")[0],
-        status: "pending",
+        status: "pending", // Pending owner review & approval
         paymentMethod: paymentMethod === "gcash" ? "gcash" : "cash",
-        paymentMethodNote: paymentMethod === "gcash" ? `GCash Ref: ${gcashRefNumber}` : "Cash Payment",
-        gcashNumber: paymentMethod === "gcash" ? gcashRefNumber : undefined,
+        paymentMethodNote: paymentMethod === "gcash" ? `GCash Ref: ${effectiveRefNumber}` : "Cash Payment",
+        gcashNumber: paymentMethod === "gcash" ? effectiveRefNumber : undefined,
         stayStart: desiredStart || undefined,
         stayEnd: desiredEnd || undefined,
         notes: compiledNotes,
@@ -217,12 +299,73 @@ export default function TenantPaymentsPage() {
         createdBy: user.id,
       });
 
-      setPayments((current) => [created, ...current]);
+      // Automatic notifications: Forward receipt to Owner & Agent for approval
+      try {
+        await notifyAdmins({
+          title: "New Payment Receipt for Owner Approval",
+          message: `Tenant ${user.name} submitted a payment of ₱${amountNum.toLocaleString("en-PH", { minimumFractionDigits: 2 })} via ${paymentMethod === "gcash" ? "GCash" : "Cash"} for ${tenant?.propertyName || "Property"}${tenant?.unitNumber ? ` (Unit ${tenant.unitNumber})` : ""}. Please review and approve to deduct rent.`,
+          type: "payment",
+          read: false,
+        });
+
+        if (tenant?.assignedAgentId) {
+          await addNotification({
+            userId: tenant.assignedAgentId,
+            title: "Tenant Payment Submitted",
+            message: `Tenant ${user.name} submitted a payment of ₱${amountNum.toLocaleString("en-PH", { minimumFractionDigits: 2 })} for ${tenant?.propertyName || "Property"}. Forwarded to Owner for approval.`,
+            type: "payment",
+            read: false,
+          });
+        }
+
+        await addNotification({
+          userId: user.id,
+          title: "Payment Receipt Submitted",
+          message: `Your payment of ₱${amountNum.toLocaleString("en-PH", { minimumFractionDigits: 2 })} with receipt has been forwarded to the property owner and agent. Rent will be automatically deducted once the owner approves.`,
+          type: "payment",
+          read: false,
+        });
+      } catch (notifErr) {
+        console.warn("Notification dispatch notice:", notifErr);
+      }
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("renttrack-payment-submitted"));
+      }
+
+      const receiptToView: Payment = {
+        ...created,
+        id: created?.id || `pay_${Date.now()}`,
+        tenantName: user.name || tenant?.name || created?.tenantName || "Verified Tenant",
+        tenantId: user.id,
+        propertyName: tenant?.propertyName || created?.propertyName || "Rental Property",
+        unitNumber: tenant?.unitNumber || (created as any)?.unitNumber || (tenant?.unitId ? `Unit ${tenant.unitId}` : "Assigned Unit"),
+        unitId: tenant?.unitId || created?.unitId || "",
+        amountPaid: amountNum,
+        amountDue: created?.amountDue ?? (paymentType === "regular" ? rentAmount : amountNum),
+        balance: created?.balance ?? currentBalance,
+        paymentDate: created?.paymentDate || new Date().toISOString().split("T")[0],
+        dueDate: created?.dueDate || dueDate.toISOString().split("T")[0],
+        status: "pending",
+        paymentMethod: paymentMethod === "gcash" ? "gcash" : "cash",
+        paymentMethodNote: paymentMethod === "gcash" ? `GCash Ref: ${effectiveRefNumber}` : "Cash Payment",
+        gcashNumber: paymentMethod === "gcash" ? effectiveRefNumber : undefined,
+        stayStart: desiredStart || undefined,
+        stayEnd: desiredEnd || undefined,
+        notes: compiledNotes,
+        receiptUrl: uploadedReceiptUrl || created?.receiptUrl || undefined,
+        createdBy: user.id,
+      };
+
+      setPayments((current) => [receiptToView, ...current.filter((p) => p.id !== receiptToView.id)]);
+
+      // Close submission modal immediately
       setIsPaymentModalOpen(false);
 
-      // IMMEDIATELY OPEN REAL OFFICIAL RECEIPT
-      setViewingReceipt(created);
-      toast.success("Payment submitted successfully! Here is your official receipt.");
+      // Immediately display real official receipt
+      setViewingReceipt(receiptToView);
+
+      toast.success("Payment receipt submitted! Forwarded to owner & agent for approval.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to submit payment");
     } finally {
@@ -606,47 +749,52 @@ export default function TenantPaymentsPage() {
       {/* COMPACT PAYMENT SUBMISSION MODAL */}
       <AnimatePresence>
         {isPaymentModalOpen && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs overflow-y-auto cursor-pointer"
-            onClick={() => setIsPaymentModalOpen(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md my-auto rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden cursor-default"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Modal Header */}
-              <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
-                <div className="flex items-center gap-2.5">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
-                    <CreditCard className="h-4 w-4" />
-                  </span>
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900">
-                      Submit Payment
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Submit rent payment for record & receipt
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsPaymentModalOpen(false);
-                  }}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer z-50 pointer-events-auto"
-                  aria-label="Close payment modal"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            {/* Dark blur backdrop - non-interactive so scrolls and drags don't close modal */}
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs" aria-hidden="true" />
 
-              {/* Form Body - Sleek, Compact, Dropdown-based */}
-              <form onSubmit={handlePaymentSubmit} className="p-5 space-y-3.5">
+            <div className="min-h-full flex items-center justify-center p-3 sm:p-4">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="relative w-full max-w-lg my-auto rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden cursor-default max-h-[92vh] flex flex-col"
+              >
+                {/* Modal Header */}
+                <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/70 shrink-0">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
+                      <CreditCard className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">
+                        Submit Payment
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        Submit rent payment for record & receipt
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsPaymentModalOpen(false)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer z-50 pointer-events-auto"
+                    aria-label="Close payment modal"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {/* Form Body - Sleek, Dropdown-based, Scrollable */}
+                <form
+                  onSubmit={handlePaymentSubmit}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.target as HTMLElement)?.tagName === "INPUT") {
+                      e.preventDefault();
+                    }
+                  }}
+                  className="p-5 space-y-3.5 overflow-y-auto"
+                >
                 {/* 1. Payment Type DROPDOWN */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -754,15 +902,22 @@ export default function TenantPaymentsPage() {
                   </div>
                 </div>
 
-                {/* GCash Details Card & Inputs (Compact) */}
+                {/* GCash Details Card & QR Code Display */}
                 {paymentMethod === "gcash" && (
-                  <div className="space-y-2.5 p-3 rounded-xl border border-blue-200 bg-blue-50/50">
-                    <div className="flex items-center justify-between pb-2 border-b border-blue-200/80 text-xs">
-                      <div>
-                        <p className="font-bold text-blue-950">GCash: RentTrack Mgmt</p>
+                  <div className="space-y-3 p-3.5 rounded-2xl border border-blue-200 bg-gradient-to-b from-blue-50/80 to-blue-50/30 shadow-xs">
+                    {/* Header info */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-blue-200/80 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="h-6 px-2 rounded-md bg-blue-600 text-white font-extrabold text-[10px] tracking-wider flex items-center justify-center">
+                          GCASH
+                        </span>
+                        <div>
+                          <p className="font-bold text-blue-950 text-xs">Account: RentTrack Mgmt</p>
+                          <p className="text-[10px] text-blue-700">Official Merchant E-Wallet</p>
+                        </div>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-bold text-[11px] text-blue-950 bg-white px-2 py-0.5 rounded border border-blue-200">
+                        <span className="font-mono font-bold text-xs text-blue-950 bg-white px-2 py-1 rounded-lg border border-blue-200 shadow-2xs">
                           0917-892-4521
                         </span>
                         <button
@@ -773,57 +928,203 @@ export default function TenantPaymentsPage() {
                             toast.success("GCash number copied!");
                             setTimeout(() => setCopiedGcashNumber(false), 2000);
                           }}
-                          className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                         >
-                          {copiedGcashNumber ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
+                          {copiedGcashNumber ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                           <span>{copiedGcashNumber ? "Copied" : "Copy"}</span>
                         </button>
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-800 uppercase tracking-wider mb-1">
-                        GCash Reference Number <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. 1002 9841 8294"
-                        value={gcashRefNumber}
-                        onChange={(e) => setGcashRefNumber(e.target.value)}
-                        className="w-full h-9 px-3 rounded-lg border border-blue-300 bg-white text-xs font-mono font-semibold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                      />
+                    {/* QR Code Display Card */}
+                    <div className="bg-white rounded-xl border border-blue-200/90 p-3 sm:p-4 shadow-xs">
+                      <div className="flex flex-col sm:flex-row items-center gap-4">
+                        {/* QR Code Image with scan border & hover zoom */}
+                        <div className="relative group shrink-0">
+                          <div
+                            onClick={() => setIsQrExpanded(true)}
+                            className="relative w-40 h-40 sm:w-44 sm:h-44 rounded-xl border-2 border-blue-500/30 p-1.5 bg-white shadow-xs cursor-pointer hover:border-blue-600 hover:shadow-md transition-all flex items-center justify-center overflow-hidden"
+                            title="Click to view full QR code"
+                          >
+                            <img
+                              src="/images/qr.jpg"
+                              alt="RentTrack GCash InstaPay QR Code"
+                              className="w-full h-full object-contain rounded-lg"
+                            />
+                            <div className="absolute inset-0 bg-blue-950/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-xl backdrop-blur-2xs">
+                              <span className="px-2.5 py-1 rounded-lg bg-white/95 text-blue-950 text-[10px] font-bold shadow-xs flex items-center gap-1">
+                                <Maximize2 className="h-3 w-3 text-blue-600" />
+                                <span>Enlarge QR</span>
+                              </span>
+                            </div>
+                          </div>
+                          <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-blue-600 text-white text-[9px] font-bold tracking-wider uppercase shadow-xs whitespace-nowrap">
+                            InstaPay / QR Ph
+                          </span>
+                        </div>
+
+                        {/* QR Instructions & Actions */}
+                        <div className="flex-1 text-center sm:text-left space-y-2.5 min-w-0 w-full sm:w-auto">
+                          <div>
+                            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold">
+                              <QrCode className="h-3 w-3" />
+                              <span>Scan to Pay</span>
+                            </div>
+                            <h4 className="text-xs sm:text-sm font-bold text-slate-900 mt-1">
+                              Scan with GCash or any QR Ph app
+                            </h4>
+                            <p className="text-[11px] text-slate-500 leading-relaxed mt-0.5">
+                              Open your GCash app, tap <strong className="text-blue-900">QR</strong>, and scan this code or upload from your gallery.
+                            </p>
+                          </div>
+
+                          <div className="rounded-lg bg-blue-50/90 border border-blue-200/80 p-2 text-left">
+                            <div className="flex items-baseline justify-between text-xs">
+                              <span className="text-[11px] text-slate-600 font-medium">Exact Amount:</span>
+                              <span className="text-sm font-extrabold text-blue-950">
+                                ₱{Number(paymentAmount || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-0.5">
+                            <a
+                              href="/images/qr.jpg"
+                              download="RentTrack-GCash-QR.jpg"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-semibold shadow-xs transition-colors cursor-pointer"
+                            >
+                              <Download className="h-3 w-3" />
+                              <span>Save / Download QR</span>
+                            </a>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-800 uppercase tracking-wider mb-1">
-                        Upload Proof / Screenshot (Optional)
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0] || null;
-                          setReceiptFile(file);
-                          if (file && file.type.startsWith("image/")) {
-                            setReceiptPreviewUrl(URL.createObjectURL(file));
-                          } else {
-                            setReceiptPreviewUrl(null);
-                          }
-                        }}
-                        className="block w-full text-[11px] text-slate-600 file:mr-2.5 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-[11px] file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
-                      />
-                      {receiptPreviewUrl && (
-                        <div className="relative mt-1.5 h-24 w-full rounded-lg overflow-hidden border border-blue-200 bg-white">
-                          <Image
-                            src={receiptPreviewUrl}
-                            alt="Receipt Preview"
-                            fill
-                            unoptimized
-                            className="object-contain"
-                          />
+                    {/* Step guidance */}
+                    <div className="rounded-xl border border-blue-200/70 bg-white/80 p-2.5 text-[11px] space-y-1">
+                      <p className="font-bold text-slate-800 text-[11px]">How to complete payment:</p>
+                      <ol className="list-decimal list-inside space-y-1 text-slate-600 text-[10px]">
+                        <li>Scan or pay via GCash to recipient <strong>RentTrack Mgmt</strong>.</li>
+                        <li>Upload your payment screenshot below — <strong>the Reference Number will be automatically read!</strong></li>
+                        <li>Review and submit payment to generate your official electronic receipt.</li>
+                      </ol>
+                    </div>
+
+                    {/* 1. Upload GCash Receipt / Screenshot (Automatic OCR Reading, No Preview Box) */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-semibold text-slate-800 uppercase tracking-wider">
+                          Upload GCash Receipt Screenshot
+                        </label>
+                        {isScanningReceipt && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] text-blue-600 font-semibold normal-case animate-pulse">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Scanning receipt...
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setIsScanningReceipt(false)}
+                              className="text-[10px] text-slate-500 hover:text-slate-800 underline font-medium cursor-pointer"
+                            >
+                              Skip
+                            </button>
+                          </div>
+                        )}
+                        {ocrDetected && !isScanningReceipt && (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-bold normal-case bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                            <CheckCircle2 className="h-3 w-3" />
+                            Auto-read from receipt
+                          </span>
+                        )}
+                      </div>
+
+                      <div className={`relative border-2 border-dashed rounded-xl p-3.5 transition-colors text-center cursor-pointer ${
+                        receiptFile
+                          ? "border-emerald-300 bg-emerald-50/40 hover:bg-emerald-50/70"
+                          : "border-blue-200 hover:border-blue-400 bg-blue-50/40 hover:bg-blue-50/70"
+                      }`}>
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          onChange={(e) => handleReceiptUpload(e.target.files?.[0] || null)}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        />
+                        <div className="flex flex-col items-center justify-center gap-1 pointer-events-none">
+                          {receiptFile ? (
+                            <>
+                              <div className="h-8 w-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shadow-xs">
+                                <CheckCircle2 className="h-4 w-4" />
+                              </div>
+                              <p className="text-xs font-bold text-slate-900 truncate max-w-[280px]">
+                                {receiptFile.name}
+                              </p>
+                              <p className="text-[10px] text-emerald-700 font-medium">
+                                ✓ Receipt attached • Click or drop to replace
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="h-5 w-5 text-blue-600" />
+                              <p className="text-xs font-semibold text-slate-800">
+                                Click or drag GCash receipt screenshot here
+                              </p>
+                              <p className="text-[10px] text-slate-500">
+                                PNG or JPG • Reference Number will be automatically scanned
+                              </p>
+                            </>
+                          )}
                         </div>
-                      )}
+                      </div>
+                    </div>
+
+                    {/* 2. GCash Reference Number (Auto-read or manual, NO required asterisk) */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-semibold text-slate-800 uppercase tracking-wider">
+                          GCash Reference Number
+                        </label>
+                        {ocrDetected && (
+                          <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                            <Sparkles className="h-2.5 w-2.5" />
+                            Auto-read successfully
+                          </span>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Enter or auto-detect Reference No. (e.g. 1002 9841 8294)"
+                          value={gcashRefNumber}
+                          onChange={(e) => {
+                            setGcashRefNumber(e.target.value);
+                            setOcrDetected(false);
+                            if (isScanningReceipt) setIsScanningReceipt(false);
+                          }}
+                          className={`w-full h-10 px-3 pr-9 rounded-lg border text-xs font-mono font-semibold focus:outline-hidden focus:ring-2 transition-colors ${
+                            ocrDetected
+                              ? "border-emerald-400 bg-emerald-50/50 text-emerald-950 focus:ring-emerald-500"
+                              : "border-blue-300 bg-white text-slate-900 focus:ring-blue-500"
+                          }`}
+                        />
+                        {ocrDetected && (
+                          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-600 pointer-events-none">
+                            <CheckCircle2 className="h-4 w-4" />
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Upload receipt screenshot above to auto-detect, or type manually if preferred.
+                      </p>
+                    </div>
+
+                    {/* Approval Notice */}
+                    <div className="rounded-xl bg-blue-50/70 border border-blue-200/80 p-2.5 text-[11px] text-blue-950 flex items-start gap-2">
+                      <ShieldCheck className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                      <p>
+                        <strong>Approval Workflow:</strong> Your receipt is automatically routed to the property owner and assigned agent for review. Rent will be automatically deducted from your balance once approved by the owner.
+                      </p>
                     </div>
                   </div>
                 )}
@@ -872,119 +1173,193 @@ export default function TenantPaymentsPage() {
               </form>
             </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
+    </AnimatePresence>
 
       {/* PAYMENT LEDGER MODAL */}
       <AnimatePresence>
         {isLedgerModalOpen && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs cursor-pointer"
-            onClick={() => setIsLedgerModalOpen(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden cursor-default"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">Tenant Payment Ledger</h3>
-                  <p className="text-xs text-slate-500">Statement of rent charges, payments, and balance</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsLedgerModalOpen(false);
-                  }}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer z-50 pointer-events-auto"
-                  aria-label="Close ledger modal"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-5">
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50">
-                    <p className="text-[11px] font-semibold text-slate-500 uppercase">Monthly Rate</p>
-                    <p className="text-base font-bold text-slate-900 mt-1">{formatCurrency(rentAmount)}</p>
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-xs" aria-hidden="true" />
+            <div className="min-h-full flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="relative w-full max-w-2xl my-auto rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden cursor-default"
+              >
+                <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">Tenant Payment Ledger</h3>
+                    <p className="text-xs text-slate-500">Statement of rent charges, payments, and balance</p>
                   </div>
-                  <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50">
-                    <p className="text-[11px] font-semibold text-slate-500 uppercase">Total Paid</p>
-                    <p className="text-base font-bold text-emerald-600 mt-1">
-                      ₱{tenantPaymentSummary.totalPaid.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50">
-                    <p className="text-[11px] font-semibold text-slate-500 uppercase">Outstanding</p>
-                    <p className="text-base font-bold text-rose-600 mt-1">
-                      ₱{displayBalance.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                    </p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsLedgerModalOpen(false)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer z-50 pointer-events-auto"
+                    aria-label="Close ledger modal"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
                 </div>
 
-                <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-200">
-                  <div className="grid grid-cols-5 bg-slate-50 px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                    <div>Date</div>
-                    <div>Description</div>
-                    <div>Amount</div>
-                    <div>Status</div>
-                    <div className="text-right">Receipt</div>
-                  </div>
-                  {myPayments.length === 0 ? (
-                    <div className="py-8 text-center text-xs text-slate-400">No payment ledger records recorded.</div>
-                  ) : (
-                    <div className="divide-y divide-slate-100 text-xs">
-                      {myPayments.map((p) => (
-                        <div key={p.id} className="grid grid-cols-5 px-4 py-3 items-center">
-                          <div className="text-slate-700">{formatDate(p.paymentDate || "")}</div>
-                          <div className="text-slate-600 truncate">{p.notes || "Rent payment"}</div>
-                          <div className="font-semibold text-slate-900">{formatCurrency(p.amountPaid || 0)}</div>
-                          <div>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
-                                p.status === "paid"
-                                  ? "bg-emerald-50 text-emerald-700"
-                                  : "bg-amber-50 text-amber-700"
-                              }`}
-                            >
-                              {p.status || "pending"}
-                            </span>
-                          </div>
-                          <div className="text-right">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsLedgerModalOpen(false);
-                                setViewingReceipt(p);
-                              }}
-                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
-                            >
-                              <FileText className="h-3 w-3" /> View
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                <div className="p-6 space-y-5">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50">
+                      <p className="text-[11px] font-semibold text-slate-500 uppercase">Monthly Rate</p>
+                      <p className="text-base font-bold text-slate-900 mt-1">{formatCurrency(rentAmount)}</p>
                     </div>
-                  )}
-                </div>
+                    <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50">
+                      <p className="text-[11px] font-semibold text-slate-500 uppercase">Total Paid</p>
+                      <p className="text-base font-bold text-emerald-600 mt-1">
+                        ₱{tenantPaymentSummary.totalPaid.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50">
+                      <p className="text-[11px] font-semibold text-slate-500 uppercase">Outstanding</p>
+                      <p className="text-base font-bold text-rose-600 mt-1">
+                        ₱{displayBalance.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
 
-                <button
-                  type="button"
-                  onClick={() => setIsLedgerModalOpen(false)}
-                  className="w-full h-10 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
-                >
-                  Close Ledger
-                </button>
-              </div>
-            </motion.div>
+                  <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-200">
+                    <div className="grid grid-cols-5 bg-slate-50 px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                      <div>Date</div>
+                      <div>Description</div>
+                      <div>Amount</div>
+                      <div>Status</div>
+                      <div className="text-right">Receipt</div>
+                    </div>
+                    {myPayments.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-slate-400">No payment ledger records recorded.</div>
+                    ) : (
+                      <div className="divide-y divide-slate-100 text-xs">
+                        {myPayments.map((p) => (
+                          <div key={p.id} className="grid grid-cols-5 px-4 py-3 items-center">
+                            <div className="text-slate-700">{formatDate(p.paymentDate || "")}</div>
+                            <div className="text-slate-600 truncate">{p.notes || "Rent payment"}</div>
+                            <div className="font-semibold text-slate-900">{formatCurrency(p.amountPaid || 0)}</div>
+                            <div>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
+                                  p.status === "paid"
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : "bg-amber-50 text-amber-700"
+                                }`}
+                              >
+                                {p.status || "pending"}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsLedgerModalOpen(false);
+                                  setViewingReceipt(p);
+                                }}
+                                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+                              >
+                                <FileText className="h-3 w-3" /> View
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsLedgerModalOpen(false)}
+                    className="w-full h-10 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    Close Ledger
+                  </button>
+                </div>
+              </motion.div>
+            </div>
           </div>
         )}
       </AnimatePresence>
+
+      {/* ENLARGED QR CODE MODAL */}
+      <AnimatePresence>
+        {isQrExpanded && (
+          <div className="fixed inset-0 z-[70] overflow-y-auto">
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm" aria-hidden="true" />
+            <div className="min-h-full flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="relative max-w-sm w-full bg-white rounded-2xl shadow-2xl p-6 text-center space-y-4"
+              >
+                <button
+                  type="button"
+                  onClick={() => setIsQrExpanded(false)}
+                  className="absolute top-3 right-3 h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+                  aria-label="Close QR preview"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+
+                <div>
+                  <span className="inline-block px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold uppercase tracking-wider mb-1">
+                    Official Merchant QR Ph
+                  </span>
+                  <h3 className="text-base font-bold text-slate-900">RentTrack GCash Payment</h3>
+                  <p className="text-xs text-slate-500">Scan using GCash, Maya, or any QR Ph banking app</p>
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-2xl border-2 border-dashed border-blue-300 flex justify-center">
+                  <img
+                    src="/images/qr.jpg"
+                    alt="GCash QR Code"
+                    className="w-64 h-64 object-contain rounded-xl shadow-xs bg-white p-2"
+                  />
+                </div>
+
+                <div className="bg-blue-50/80 rounded-xl p-3 border border-blue-200/80 text-xs">
+                  <div className="flex justify-between font-semibold text-slate-700">
+                    <span>Merchant:</span>
+                    <span className="font-bold text-slate-950">RentTrack Mgmt</span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-slate-700 mt-1">
+                    <span>Mobile:</span>
+                    <span className="font-mono font-bold text-blue-900">0917-892-4521</span>
+                  </div>
+                  <div className="flex justify-between font-semibold text-slate-700 mt-1 pt-1 border-t border-blue-200/70">
+                    <span>Amount to pay:</span>
+                    <span className="font-bold text-blue-950">₱{Number(paymentAmount || 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <a
+                    href="/images/qr.jpg"
+                    download="RentTrack-GCash-QR.jpg"
+                    className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download Image</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setIsQrExpanded(false)}
+                    className="px-4 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+
 
       {/* REAL OFFICIAL RECEIPT MODAL */}
       <ReceiptModal

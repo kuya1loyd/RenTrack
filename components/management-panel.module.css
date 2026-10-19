@@ -9,11 +9,11 @@
 .bannerCopy h1 { color: #071f45; font-size: clamp(25px, 2.1vw, 32px); font-weight: 750; letter-spacing: -.035em; line-height: 1.2; }
 .bannerCopy > div { margin-top: 6px; font-size: 14px; line-height: 1.5; color: #3d5d90; }
 .bannerActions { position: relative; z-index: 2; margin-left: auto; align-self: center; display: flex; align-items: center; gap: 10px; }
-.toolbar { display: flex; min-width: 0; flex-wrap: wrap; align-items: end; gap: 12px; padding: 14px; border-radius: 12px; border: 1px solid #e2edfc; background: white; box-shadow: 0 2px 7px rgb(18 54 99 / 3%); }
-.search { position: relative; flex: 1 1 260px; min-width: 160px; }
-.search > svg { position: absolute; z-index: 1; left: 12px; top: 50%; width: 17px; height: 17px; transform: translateY(-50%); color: #6384b5; pointer-events: none; }
-.toolbar input, .toolbar select, .tableControls select { height: 42px; width: 100%; min-width: 0; border: 1px solid #dce8fa; border-radius: 8px; background: #fcfdff; color: #2d528b; font-size: 12px; outline: none; }
-.toolbar input { padding: 0 12px 0 38px; box-shadow: 0 2px 4px rgb(28 71 129 / 3%); }
+.toolbar { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px; border-radius: 12px; border: 1px solid #e2edfc; background: white; box-shadow: 0 2px 7px rgb(18 54 99 / 3%); }
+.search { position: relative; flex: 0 1 360px; width: 100%; max-width: 360px; min-width: 220px; }
+.search > svg { position: absolute; z-index: 1; left: 14px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); color: #6384b5; pointer-events: none; }
+.toolbar input, .toolbar select, .tableControls select { height: 44px; width: 100%; min-width: 0; border: 1px solid #dce8fa; border-radius: 8px; background: #fcfdff; color: #2d528b; font-size: 13px; outline: none; }
+.toolbar input { padding: 0 14px 0 42px; box-shadow: 0 2px 4px rgb(28 71 129 / 3%); }
 .toolbar input::placeholder { color: #6381b2; opacity: 1; }
 .toolbar select { padding: 0 28px 0 11px; }
 .toolbar input:focus-visible, .toolbar select:focus-visible, .tableControls select:focus-visible { border-color: #1674ff; box-shadow: 0 0 0 3px rgb(22 116 255 / 13%); }
@@ -21,10 +21,11 @@
 .filter > span { display: block; margin-bottom: 5px; font-size: 11px; font-weight: 600; color: #456b9e; }
 .filterCompact { position: relative; flex: 0 1 175px; min-width: 140px; }
 .filterCompact > span { position: absolute; z-index: 1; left: 11px; top: 6px; color: #42689b; font-size: 10px; font-weight: 600; pointer-events: none; }
-.filterCompact select { height: 46px; padding-top: 14px; }
-.toolbarActions { display: flex; align-items: center; gap: 8px; }
-.toolbarActions button { height: 42px; border-radius: 8px; padding-inline: 14px; font-size: 12px; }
-.reset { display: inline-flex; align-items: center; gap: 6px; border: 0; background: white; color: #0872ff; font-weight: 600; }
+.filterCompact select { height: 44px; padding-top: 14px; }
+.toolbarActions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.toolbarActions button { height: 44px; border-radius: 8px; padding-inline: 14px; font-size: 12px; }
+.reset { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #dce8fa; background: white; color: #0872ff; font-weight: 600; }
+.reset:hover { background: #f0f6ff; }
 .reset svg { width: 15px; height: 15px; }
 .export { display: inline-flex; align-items: center; gap: 7px; background: #0872ff !important; color: white !important; }
 .export:hover { background: #005bdf !important; }

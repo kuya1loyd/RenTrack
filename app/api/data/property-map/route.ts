@@ -46,6 +46,7 @@ export async function GET(request: NextRequest) {
 
     const unitsByProperty = new Map<string, any[]>();
     for (const unit of allUnits) {
+      if (!unit.propertyId) continue;
       const propertyUnits = unitsByProperty.get(unit.propertyId) || [];
       propertyUnits.push(unit);
       unitsByProperty.set(unit.propertyId, propertyUnits);
@@ -54,8 +55,11 @@ export async function GET(request: NextRequest) {
     const propertyByUnitId = new Map(allUnits.map((unit: any) => [unit.id, unit.propertyId]));
 
     const PHILIPPINE_CITY_COORDINATES: Record<string, { lat: number; lng: number }> = {
-      butuan: { lat: 8.9475, lng: 125.5406 },
+      mandaue: { lat: 10.3345, lng: 123.9312 },
+      lapulapu: { lat: 10.3114, lng: 123.9515 },
+      "lapu-lapu": { lat: 10.3114, lng: 123.9515 },
       cebu: { lat: 10.3157, lng: 123.8854 },
+      butuan: { lat: 8.9475, lng: 125.5406 },
       manila: { lat: 14.5995, lng: 120.9842 },
       davao: { lat: 7.1907, lng: 125.4553 },
       makati: { lat: 14.5547, lng: 121.0244 },
@@ -63,6 +67,13 @@ export async function GET(request: NextRequest) {
       taguig: { lat: 14.5176, lng: 121.0509 },
       pasig: { lat: 14.5764, lng: 121.0851 },
       mandaluyong: { lat: 14.5794, lng: 121.0359 },
+      paranaque: { lat: 14.4793, lng: 121.0198 },
+      pasay: { lat: 14.5378, lng: 121.0014 },
+      cagayan: { lat: 8.4542, lng: 124.6319 },
+      iloilo: { lat: 10.7202, lng: 122.5621 },
+      bacolod: { lat: 10.6765, lng: 122.9509 },
+      angeles: { lat: 15.1450, lng: 120.5887 },
+      baguio: { lat: 16.4023, lng: 120.5960 },
     };
 
     function resolveFallbackCoordinates(loc?: string): { lat: number; lng: number } {
@@ -70,7 +81,7 @@ export async function GET(request: NextRequest) {
       for (const [city, coords] of Object.entries(PHILIPPINE_CITY_COORDINATES)) {
         if (lower.includes(city)) return coords;
       }
-      return PHILIPPINE_CITY_COORDINATES.butuan;
+      return PHILIPPINE_CITY_COORDINATES.cebu;
     }
 
     const mappedProperties = properties.map((property: any) => {

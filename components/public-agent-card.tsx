@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Building2, CalendarDays, Check, MapPin, MessageCircle, ThumbsUp, UserRound, X, BriefcaseBusiness } from "lucide-react";
+import { ArrowRight, Building2, CalendarDays, Check, Mail, MapPin, MessageCircle, ThumbsUp, UserRound, X, BriefcaseBusiness } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import styles from "./public-agent-card.module.css";
 
@@ -200,6 +200,10 @@ export default function PublicAgentCard({
           </Heading>
           <p className={styles.compactRole}>Owner-Managed Agent</p>
         </div>
+        <Link href={`${profileHref}#message`} className={styles.compactInquire}>
+          <Mail aria-hidden="true" size={16} />
+          Inquire
+        </Link>
       </article>
     );
   }
@@ -284,8 +288,12 @@ export default function PublicAgentCard({
           disabled={authLoading}
         >
           <MessageCircle aria-hidden="true" size={18} />
-          <span>LET&apos;S CHAT</span>
+          <span>CHAT</span>
         </button>
+        <Link href={`${profileHref}#message`} className={styles.inquireButton} aria-label={`Inquire with ${agent.name}`}>
+          <Mail aria-hidden="true" size={17} />
+          <span>INQUIRE</span>
+        </Link>
       </div>
       {chatOpen && (
         <div

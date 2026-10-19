@@ -35,7 +35,11 @@ export default function SignupPage() {
         return;
       }
 
-      router.push(`/verify-otp?email=${encodeURIComponent(data.email || email)}`);
+      const params = new URLSearchParams({ email: data.email || email });
+      if (data.userId) params.set("userId", data.userId);
+      // Dev convenience: prefill the verification code when the API exposes it.
+      if (data.devOtp) params.set("otp", String(data.devOtp));
+      router.push(`/verify-otp?${params.toString()}`);
     } catch {
       setError("Unable to connect right now. Please try again.");
     } finally {

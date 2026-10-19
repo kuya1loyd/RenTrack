@@ -225,7 +225,7 @@ export default function PropertyLocationMap({ hideHeader = false }: { hideHeader
       ) : (
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="h-[min(68vh,680px)] min-h-105 w-full">
-            <MapContainer center={center} zoom={6} scrollWheelZoom className="h-full w-full">
+            <MapContainer key="property-location-map" center={center} zoom={6} scrollWheelZoom className="h-full w-full">
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 url="https://tile.openstreetmap.de/{z}/{x}/{y}.png"

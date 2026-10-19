@@ -26,7 +26,7 @@ import {
   getInquiries, updateInquiryStatus, safeParseJson, markAllMessagesRead,
   updateInquiryProperty, Property, Unit, TenantRecord, Payment, Conversation, ChatInquiry,
 } from "@/lib/data";
-import { cn, formatCurrency, formatDate, formatDateTime, getTimeAgo, getInitials } from "@/lib/utils";
+import { formatDisplayId, cn, formatCurrency, formatDate, formatDateTime, getTimeAgo, getInitials } from "@/lib/utils";
 import { downloadExcelReport, downloadPdfReport } from "@/lib/report-downloads";
 import { toast } from "sonner";
 import MessagingModal from "@/components/messaging-modal";
@@ -167,7 +167,7 @@ export default function AgentDashboard() {
         ? props.filter((property) => property.agentId === user.id || !property.agentId)
         : props;
       const assignedPropertyIds = new Set(assignedProperties.map((property) => property.id));
-      const assignedUnits = unitsData.filter((unit) => assignedPropertyIds.has(unit.propertyId));
+      const assignedUnits = unitsData.filter((unit) => Boolean(unit.propertyId && assignedPropertyIds.has(unit.propertyId)));
       setProperties(assignedProperties);
       setUnits(assignedUnits);
       setTenants(tenantsData);
@@ -177,7 +177,18 @@ export default function AgentDashboard() {
       );
       setPayments(filteredPayments);
       setConversations(convs);
-      const filteredInquiries = inquiriesData.filter((inq: any) => inq.agentId === user.id);
+      const filteredInquiries = inquiriesData
+        .filter((inq: any) => inq.agentId === user.id)
+        .map((inq: ChatInquiry) => {
+          if (!inq.propertyId) {
+            const lower = (inq.text || "").toLowerCase();
+            const matched = assignedProperties.find((p) => p.name && lower.includes(p.name.toLowerCase()));
+            if (matched) {
+              return { ...inq, propertyId: matched.id, propertyName: matched.name };
+            }
+          }
+          return inq;
+        });
       setInquiries(filteredInquiries);
       setInitialLoad(false);
       return filteredInquiries;
@@ -488,7 +499,7 @@ export default function AgentDashboard() {
       (tenantListFilter === "assisted" && tenant.isAssisted) ||
       (tenantListFilter === "active" && tenant.status === "active") ||
       (tenantListFilter === "pending" && tenant.assignmentStatus === "pending") ||
-      (tenantListFilter === "inactive" && tenant.status === "inactive") ||
+      (tenantListFilter === "inactive" && tenant.status !== "active") ||
       (tenantListFilter === "unassigned" && !tenant.unitId);
     return matchesSearch && matchesFilter;
   });
@@ -951,7 +962,7 @@ export default function AgentDashboard() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <Badge variant={tenant.status === "active" ? "success" : tenant.status === "inactive" ? "outline" : "warning"} className="text-[10px] capitalize">
+                            <Badge variant={tenant.status === "active" ? "success" : tenant.status === "inactive" ? "outline" : "secondary"} className="text-[10px] capitalize">
                               {tenant.status || "pending"}
                             </Badge>
                             <Button
@@ -1144,7 +1155,7 @@ export default function AgentDashboard() {
                   </label>
                   <label className={management.filterCompact}><span>Property type</span>
                     <select value={unitTypeFilter} onChange={(event) => setUnitTypeFilter(event.target.value)} aria-label="Filter units by property type">
-                      <option value="all">All types</option><option value="house">House</option><option value="condominium">Condominium</option>
+                      <option value="all">All types</option><option value="house">Properties</option><option value="condominium">Condominium</option>
                     </select>
                   </label>
                   <label className={management.filterCompact}><span>Status</span>
@@ -1311,8 +1322,9 @@ export default function AgentDashboard() {
                           <table className={management.table}>
                             <thead><tr><th>Unit Photo</th><th>Unit No.</th><th>Property</th><th>Property Type</th><th>Monthly Rent</th><th>Status</th><th>Tenant</th><th>Actions</th></tr></thead>
                             <tbody>{visibleUnitRows.map(({ property, unit }) => {
-                              const assignedTenant = tenants.find((tenant) => tenant.unitId === unit.id);
-                              const tenantName = unit.tenantName || assignedTenant?.name;
+                              const isOccupied = unit.status === "occupied";
+                              const assignedTenant = isOccupied ? tenants.find((tenant) => tenant.unitId === unit.id && tenant.status !== "archived" && tenant.status !== "inactive") : null;
+                              const tenantName = isOccupied ? (unit.tenantName || assignedTenant?.name) : null;
                               const unitImgs = unit.imageUrls?.length ? unit.imageUrls : unit.imageUrl ? [unit.imageUrl] : property.imageUrls?.length ? property.imageUrls : property.imageUrl ? [property.imageUrl] : [];
                               const propImgs = property.imageUrls?.length ? property.imageUrls : property.imageUrl ? [property.imageUrl] : [];
                               return <tr key={unit.id}>
@@ -1411,7 +1423,7 @@ export default function AgentDashboard() {
                       <option value="active">Active Leases ({activeTenants.length})</option>
                       <option value="pending">Pending Assignment ({pendingTenants.length})</option>
                       <option value="unassigned">Unassigned ({tenants.filter((t) => !t.unitId).length})</option>
-                      <option value="inactive">Past / Inactive ({tenants.filter((t) => t.status === "inactive").length})</option>
+                      <option value="inactive">Past / Archived ({tenants.filter((t) => t.status !== "active").length})</option>
                     </select>
 
                     <Button
@@ -1510,7 +1522,7 @@ export default function AgentDashboard() {
                                         }}
                                         className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 hover:text-blue-600 transition-colors bg-slate-50 px-2 py-0.5 rounded border border-slate-200"
                                       >
-                                        <span>#{tenant.id.slice(0, 8)}</span>
+                                        <span>#{formatDisplayId(tenant.id)}</span>
                                         <Copy className="h-2.5 w-2.5 text-slate-400" />
                                       </button>
                                     </td>
@@ -1616,7 +1628,7 @@ export default function AgentDashboard() {
                                     {/* Status */}
                                     <td className="px-3 py-3.5 whitespace-nowrap">
                                       <Badge
-                                        variant={tenant.status === "active" ? "success" : tenant.status === "inactive" ? "outline" : "warning"}
+                                        variant={tenant.status === "active" ? "success" : tenant.status === "inactive" ? "outline" : "secondary"}
                                         className="text-[11px] capitalize font-medium"
                                       >
                                         {tenant.status || "pending"}
@@ -2029,20 +2041,32 @@ export default function AgentDashboard() {
                                 {inq.senderPhone && <p className="mt-0.5 text-[10px] text-slate-500">{inq.senderPhone}</p>}
                               </td>
                               <td className="whitespace-nowrap px-4 py-3">
-                                <select
-                                  aria-label={`Inquiry about for ${inq.senderName}`}
-                                  aria-describedby="inquiry-category-help"
-                                  value={inq.propertyId || ""}
-                                  disabled={updatingInquiryType === inq.id}
-                                  onChange={(event) => void changeInquiryProperty(inq, event.target.value || null)}
-                                  className="max-w-44 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 disabled:opacity-60"
-                                >
-                                  <option value="">General</option>
-                                  {inq.propertyId && !properties.some((property) => property.id === inq.propertyId) && (
-                                    <option value={inq.propertyId}>Current property</option>
-                                  )}
-                                  {properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
-                                </select>
+                                <div className="flex flex-col gap-1">
+                                  <select
+                                    aria-label={`Inquiry about for ${inq.senderName}`}
+                                    aria-describedby="inquiry-category-help"
+                                    value={inq.propertyId || ""}
+                                    disabled={updatingInquiryType === inq.id}
+                                    onChange={(event) => void changeInquiryProperty(inq, event.target.value || null)}
+                                    className="max-w-48 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 disabled:opacity-60"
+                                  >
+                                    <option value="">General</option>
+                                    {inq.propertyId && !properties.some((property) => property.id === inq.propertyId) && (
+                                      <option value={inq.propertyId}>{inq.propertyName || "Current property"}</option>
+                                    )}
+                                    {properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+                                  </select>
+                                  {(() => {
+                                    const unit = inq.unitNumber || inq.text.match(/\[Unit\s+([^\]]+)\]/i)?.[1];
+                                    if (!unit) return null;
+                                    return (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/60 w-fit">
+                                        <Home className="h-2.5 w-2.5 text-blue-600" />
+                                        Unit {unit}
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
                               </td>
                               <td className="max-w-sm px-4 py-3">
                                 <p className="line-clamp-2 whitespace-pre-wrap text-slate-700">{inq.text}</p>
@@ -2076,25 +2100,37 @@ export default function AgentDashboard() {
                             </div>
                             <Badge variant={inq.status === "new" ? "default" : inq.status === "closed" ? "outline" : "info"} className="shrink-0 text-[10px] capitalize">{inq.status === "read" ? "In progress" : inq.status}</Badge>
                           </div>
-                          <div className="flex items-center justify-between gap-2 text-[10px] text-slate-500">
-                            <label className="flex min-w-0 items-center gap-1.5">
-                              <span className="shrink-0">Inquiry about</span>
-                              <select
-                                aria-label={`Inquiry about for ${inq.senderName}`}
-                                aria-describedby="inquiry-category-help"
-                                value={inq.propertyId || ""}
-                                disabled={updatingInquiryType === inq.id}
-                                onChange={(event) => void changeInquiryProperty(inq, event.target.value || null)}
-                                className="min-w-0 max-w-[150px] rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[10px] text-slate-700 disabled:opacity-60"
-                              >
-                                <option value="">General</option>
-                                {inq.propertyId && !properties.some((property) => property.id === inq.propertyId) && (
-                                  <option value={inq.propertyId}>Current property</option>
-                                )}
-                                {properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
-                              </select>
-                            </label>
-                            <span title={formatDateTime(inq.createdAt)}>{getTimeAgo(inq.createdAt)}</span>
+                          <div className="flex flex-col gap-1 text-[10px] text-slate-500">
+                            <div className="flex items-center justify-between gap-2">
+                              <label className="flex min-w-0 items-center gap-1.5">
+                                <span className="shrink-0 font-medium">Inquiry about</span>
+                                <select
+                                  aria-label={`Inquiry about for ${inq.senderName}`}
+                                  aria-describedby="inquiry-category-help"
+                                  value={inq.propertyId || ""}
+                                  disabled={updatingInquiryType === inq.id}
+                                  onChange={(event) => void changeInquiryProperty(inq, event.target.value || null)}
+                                  className="min-w-0 max-w-[150px] rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[10px] text-slate-700 disabled:opacity-60"
+                                >
+                                  <option value="">General</option>
+                                  {inq.propertyId && !properties.some((property) => property.id === inq.propertyId) && (
+                                    <option value={inq.propertyId}>{inq.propertyName || "Current property"}</option>
+                                  )}
+                                  {properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+                                </select>
+                              </label>
+                              <span title={formatDateTime(inq.createdAt)}>{getTimeAgo(inq.createdAt)}</span>
+                            </div>
+                            {(() => {
+                              const unit = inq.unitNumber || inq.text.match(/\[Unit\s+([^\]]+)\]/i)?.[1];
+                              if (!unit) return null;
+                              return (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/60 w-fit">
+                                  <Home className="h-2.5 w-2.5 text-blue-600" />
+                                  Unit {unit}
+                                </span>
+                              );
+                            })()}
                           </div>
                           <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-slate-700">{inq.text}</p>
                           {inq.replyText && <p className="line-clamp-2 text-[11px] text-blue-700">Reply: {inq.replyText}</p>}

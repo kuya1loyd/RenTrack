@@ -10,7 +10,8 @@ import {
   CheckCircle2, UserPlus, User,
   Eye, Download, X, Plus, Camera, Users, Trash2, ChevronDown,
   Shield, ShieldOff, LogOut, MoreVertical, Search, Building2, RotateCcw,
-  Copy, MoreHorizontal, Mail, MessageSquare, Phone, MapPinned,
+  Copy, MoreHorizontal, Mail, MessageSquare, Phone, MapPinned, MapPin, DoorOpen, Bed,
+  LayoutGrid, List, Wallet, History as HistoryIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import { cn, formatCurrency, formatDate, getInitials } from "@/lib/utils";
 import { downloadExcelReport, downloadPdfReport } from "@/lib/report-downloads";
 import { toast } from "sonner";
 import { Modal } from "@/components/ui/modal";
+import { TenancyHistoryModal } from "@/components/tenancy-history-modal";
 import MessagingModal from "@/components/messaging-modal";
 import ProfilePanel from "@/components/profile-panel";
 import CreateTenantModal from "@/components/create-tenant-modal";
@@ -41,6 +43,53 @@ import UnitImageCarousel from "@/components/unit-image-carousel";
 import ContractsPanel from "@/components/contracts-panel";
 import { ManagementBanner, UnitMetrics, UnitStatus, FinancialMetrics, PaymentStatus, ManagementPagination } from "@/components/management-panel";
 import management from "@/components/management-panel.module.css";
+
+function PropertyMetrics({ total, active, inactive, revenue }: { total: number; active: number; inactive: number; revenue: string }) {
+  return (
+    <section className={management.metrics} aria-label="Portfolio metrics">
+      <article className={management.metric}>
+        <span className={`${management.metricIcon} ${management.blue}`}><Building2 aria-hidden="true" /></span>
+        <div className={management.metricCopy}><p>Total Properties</p><strong>{total}</strong><small>Registered in portfolio</small></div>
+      </article>
+      <article className={management.metric}>
+        <span className={`${management.metricIcon} ${management.green}`}><CheckCircle2 aria-hidden="true" /></span>
+        <div className={management.metricCopy}><p>Active Properties</p><strong>{active}</strong><small>{total ? Math.round((active / total) * 100) : 0}% active</small></div>
+      </article>
+      <article className={management.metric}>
+        <span className={`${management.metricIcon} ${management.amber}`}><Home aria-hidden="true" /></span>
+        <div className={management.metricCopy}><p>Inactive Properties</p><strong>{inactive}</strong><small>{total ? Math.round((inactive / total) * 100) : 0}% inactive</small></div>
+      </article>
+      <article className={management.metric}>
+        <span className={`${management.metricIcon} ${management.cyan}`}><Wallet aria-hidden="true" /></span>
+        <div className={management.metricCopy}><p>Monthly Revenue</p><strong>{revenue}</strong><small>Combined monthly revenue</small></div>
+      </article>
+    </section>
+  );
+}
+
+function OccupancyMetrics({ totalUnits, rate, occupied, vacant, propertiesCount }: { totalUnits: number; rate: number; occupied: number; vacant: number; propertiesCount: number }) {
+  return (
+    <section className={management.metrics} aria-label="Occupancy metrics">
+      <article className={management.metric}>
+        <span className={`${management.metricIcon} ${management.blue}`}><Building2 aria-hidden="true" /></span>
+        <div className={management.metricCopy}><p>Monitored Properties</p><strong>{propertiesCount}</strong><small>{totalUnits} total units in care</small></div>
+      </article>
+      <article className={management.metric}>
+        <span className={`${management.metricIcon} ${management.cyan}`}><BarChart3 aria-hidden="true" /></span>
+        <div className={management.metricCopy}><p>Portfolio Occupancy</p><strong>{rate}%</strong><small>Live average occupancy</small></div>
+      </article>
+      <article className={management.metric}>
+        <span className={`${management.metricIcon} ${management.green}`}><CheckCircle2 aria-hidden="true" /></span>
+        <div className={management.metricCopy}><p>Occupied Units</p><strong>{occupied}</strong><small>{totalUnits ? Math.round((occupied / totalUnits) * 100) : 0}% capacity reached</small></div>
+      </article>
+      <article className={management.metric}>
+        <span className={`${management.metricIcon} ${management.amber}`}><DoorOpen aria-hidden="true" /></span>
+        <div className={management.metricCopy}><p>Available Vacancies</p><strong>{vacant}</strong><small>Ready for tenant assignment</small></div>
+      </article>
+    </section>
+  );
+}
+
 
 type Step = "overview" | "properties" | "units" | "assignments" | "agents" | "map" | "create-tenant" | "contracts" | "occupancy" | "payments" | "receivables" | "reports" | "financial" | "profile" | "move-out-requests";
 
@@ -76,6 +125,20 @@ const PROPERTY_CONDITIONS = [
 ];
 const AVAILABILITY_STATUSES = ["Available", "Occupied", "Reserved", "Under Maintenance"] as const;
 
+const PROPERTY_TYPES = [
+  { value: "house", label: "House / Villa" },
+  { value: "residential", label: "Residential Property" },
+  { value: "building", label: "Commercial / Building" },
+  { value: "condominium", label: "Condominium Complex" },
+];
+
+const UNIT_TYPES = [
+  { value: "condo", label: "Condominium Unit" },
+  { value: "dorm", label: "Dormitory Room" },
+  { value: "hotel", label: "Hotel Room" },
+  { value: "studio", label: "Studio Unit" },
+  { value: "apartment", label: "Apartment Unit" },
+];
 
 function FeaturePicker({ value, onChange }: { value: string[]; onChange: (features: string[]) => void }) {
   const toggleFeature = (feature: string) => {
@@ -118,13 +181,9 @@ export default function OwnerDashboard() {
   const [, setIsRefreshing] = useState(false);
   const [showCreateProperty, setShowCreateProperty] = useState(false);
   const [showAddUnit, setShowAddUnit] = useState(false);
-  const [newUnitForm, setNewUnitForm] = useState({ propertyId: "", unitNumber: "", floor: "", status: "vacant" as Unit["status"], rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
-  const [createStep, setCreateStep] = useState(1);
-  const [propertyForm, setPropertyForm] = useState({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", type: "house" as "house" | "condominium", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
-  const [unitsForm, setUnitsForm] = useState({ unitNumber: "", floor: "", status: "vacant" as "vacant" | "occupied" | "maintenance", rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
+  const [newUnitForm, setNewUnitForm] = useState({ propertyId: "", unitNumber: "", address: "", floor: "", type: "condo", condition: "", status: "vacant" as Unit["status"], rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
+  const [propertyForm, setPropertyForm] = useState({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house" as "house" | "residential" | "building" | "condominium", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
   const [isUploadingPropertyImage, setIsUploadingPropertyImage] = useState(false);
-  const [isUploadingUnitImage, setIsUploadingUnitImage] = useState(false);
-  const [termsForm, setTermsForm] = useState({ securityDeposit: "", advancePayment: "", duration: "12 months", paymentDueDate: "5th", rentalTerms: "" });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [reviewAssignment, setReviewAssignment] = useState<TenantRecord | null>(null);
   const [returnReason, setReturnReason] = useState("");
@@ -132,9 +191,9 @@ export default function OwnerDashboard() {
   const [viewingReport, setViewingReport] = useState<"rental" | "property" | null>(null);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
-  const [editPropertyForm, setEditPropertyForm] = useState({ name: "", location: "", latitude: "", longitude: "", type: "house" as "house" | "condominium", status: "active" as "active" | "inactive", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
+  const [editPropertyForm, setEditPropertyForm] = useState({ name: "", location: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house" as "house" | "residential" | "building" | "condominium", status: "active" as "active" | "inactive", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
   const [editUnitPropertyId, setEditUnitPropertyId] = useState<string | null>(null);
-  const [editUnitForm, setEditUnitForm] = useState({ unitNumber: "", floor: "", status: "vacant" as "vacant" | "occupied" | "maintenance", rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
+  const [editUnitForm, setEditUnitForm] = useState({ unitNumber: "", address: "", floor: "", type: "condo", condition: "", status: "vacant" as "vacant" | "occupied" | "maintenance", rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
   const [isUploadingEditPropertyImage, setIsUploadingEditPropertyImage] = useState(false);
   const [isUploadingEditUnitImage, setIsUploadingEditUnitImage] = useState(false);
   const [createTenantSubmitting, setCreateTenantSubmitting] = useState(false);
@@ -142,12 +201,25 @@ export default function OwnerDashboard() {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   // Data is fetched once into state; these UI filters operate on that cached data instantly.
   const [unitsView, setUnitsView] = useState<"properties" | "units" | "occupancy">("units");
-  const [unitPropertyFilter, setUnitPropertyFilter] = useState("all");
-  const [unitStatusFilter, setUnitStatusFilter] = useState("all");
+  const [propertySearch, setPropertySearch] = useState("");
+  const [propertyTypeFilter, setPropertyTypeFilter] = useState("all");
+  const [propertyStatusFilter, setPropertyStatusFilter] = useState("all");
+  const [propertySort, setPropertySort] = useState("name-asc");
+  const [propertyPage, setPropertyPage] = useState(1);
+  const [propertiesDisplayMode, setPropertiesDisplayMode] = useState<"table" | "grid">("table");
+
   const [unitSearch, setUnitSearch] = useState("");
-  const [unitTypeFilter, setUnitTypeFilter] = useState("all");
+  const [unitStatusFilter, setUnitStatusFilter] = useState("all");
   const [unitSort, setUnitSort] = useState("unit-asc");
   const [unitPage, setUnitPage] = useState(1);
+
+  const [occupancySearch, setOccupancySearch] = useState("");
+  const [occupancyFilter, setOccupancyFilter] = useState<"all" | "full" | "partial" | "vacant">("all");
+  const [occupancyTypeFilter, setOccupancyTypeFilter] = useState("all");
+  const [occupancySort, setOccupancySort] = useState("rate-desc");
+  const [occupancyPage, setOccupancyPage] = useState(1);
+  const [occupancyDisplayMode, setOccupancyDisplayMode] = useState<"grid" | "table">("table");
+  const [historyTarget, setHistoryTarget] = useState<{ unitId?: string; propertyId?: string; title: string } | null>(null);
   const [initialLoad, setInitialLoad] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [tenantFilter, setTenantFilter] = useState("all");
@@ -169,13 +241,9 @@ export default function OwnerDashboard() {
       const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
       const tabParam = params?.get("tab") || hash || customDetail?.tab;
 
-      if (tabParam === "properties" || tabParam === "units") {
-        setActiveTab("units");
-        setUnitsView("properties");
-      } else if (tabParam === "occupancy") {
-        setActiveTab("units");
-        setUnitsView("occupancy");
-      } else if (tabParam && ["overview", "units", "tenants", "assignments", "financial", "contracts", "messages", "profile", "map", "move-out-requests"].includes(tabParam)) {
+      if (tabParam === "properties" || tabParam === "units" || tabParam === "occupancy") {
+        setActiveTab(tabParam as Step);
+      } else if (tabParam && ["overview", "units", "properties", "occupancy", "tenants", "create-tenant", "agents", "assignments", "financial", "contracts", "messages", "profile", "map", "move-out-requests"].includes(tabParam)) {
         setActiveTab(tabParam as Step);
       }
     };
@@ -237,37 +305,19 @@ export default function OwnerDashboard() {
 
   const handleCreateProperty = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (createStep === 1) {
-      setCreateStep(2);
-      return;
-    }
-    if (createStep === 2) {
-      setCreateStep(3);
-      return;
-    }
-    if (createStep === 3) {
-      setCreateStep(4);
+    if (!propertyForm.name || !propertyForm.address || !propertyForm.city || !propertyForm.province) {
+      toast.error("Please fill in property name, address, city, and province");
       return;
     }
     setIsSubmitting(true);
     try {
-      if (Boolean(propertyForm.latitude) !== Boolean(propertyForm.longitude)) {
-        toast.error("Enter both latitude and longitude to map this property");
-        return;
-      }
-      if (!unitsForm.unitNumber || !unitsForm.rentAmount || Number(unitsForm.rentAmount) < 0) {
-        toast.error("Provide a unit number and a valid rental rate");
-        return;
-      }
-      const newProperty = await addProperty({
+      await addProperty({
         name: propertyForm.name,
         location: `${propertyForm.address}, ${propertyForm.city}, ${propertyForm.province}`,
         type: propertyForm.type,
-        latitude: propertyForm.latitude ? Number(propertyForm.latitude) : undefined,
-        longitude: propertyForm.longitude ? Number(propertyForm.longitude) : undefined,
-        units: 1,
+        units: 0,
         occupiedUnits: 0,
-        monthlyRevenue: 0,
+        monthlyRevenue: Number(propertyForm.monthlyRevenue) || 0,
         status: "active",
         imageUrl: propertyForm.imageUrl || undefined,
         imageUrls: propertyForm.imageUrls,
@@ -276,21 +326,9 @@ export default function OwnerDashboard() {
         availabilityStatus: propertyForm.availabilityStatus,
         agentId: propertyForm.agentId || undefined,
       }, user?.id || "");
-      await addUnit({
-        propertyId: newProperty.id,
-        unitNumber: unitsForm.unitNumber,
-        floor: unitsForm.floor ? Number(unitsForm.floor) : undefined,
-        status: unitsForm.status,
-        rentAmount: Number(unitsForm.rentAmount),
-        imageUrl: unitsForm.imageUrl || undefined,
-        imageUrls: unitsForm.imageUrls,
-      });
-      toast.success("Property created successfully!");
+      toast.success("Property created successfully! You can now add units to this property.");
       setShowCreateProperty(false);
-      setCreateStep(1);
-      setPropertyForm({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", type: "house", features: [], condition: "", availabilityStatus: "Available", imageUrl: "", imageUrls: [], agentId: "" });
-      setUnitsForm({ unitNumber: "", floor: "", status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
-      setTermsForm({ securityDeposit: "", advancePayment: "", duration: "12 months", paymentDueDate: "5th", rentalTerms: "" });
+      setPropertyForm({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house", features: [], condition: "", availabilityStatus: "Available", imageUrl: "", imageUrls: [], agentId: "" });
       await loadData();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create property");
@@ -405,41 +443,6 @@ export default function OwnerDashboard() {
     }
   };
 
-  const handleUnitImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-    setIsUploadingUnitImage(true);
-    try {
-      const urls = await Promise.all(files.map(async (file) => {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("type", "unit");
-        try {
-          const res = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: formData });
-          const result = await safeParseJson(res);
-          if (result.success && result.url) return result.url as string;
-          throw new Error(result.error || "Failed to upload image");
-        } catch {
-          return new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = () => resolve("");
-            reader.readAsDataURL(file);
-          });
-        }
-      }));
-      const validUrls = urls.filter(Boolean);
-      if (validUrls.length > 0) {
-        setUnitsForm((current) => ({ ...current, imageUrl: current.imageUrl || validUrls[0], imageUrls: [...current.imageUrls, ...validUrls] }));
-        toast.success(`${validUrls.length} unit image${validUrls.length === 1 ? "" : "s"} added`);
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to upload images");
-    } finally {
-      setIsUploadingUnitImage(false);
-      e.target.value = "";
-    }
-  };
 
   const handleRemoveEditUnitImage = async (imageUrl: string) => {
     setEditUnitForm((current) => {
@@ -530,6 +533,7 @@ export default function OwnerDashboard() {
       location: property.location,
       latitude: property.latitude?.toString() || "",
       longitude: property.longitude?.toString() || "",
+      monthlyRevenue: (property.monthlyRevenue || (property as any).rentAmount || "").toString(),
       type: property.type,
       status: property.status,
       features: property.features || [],
@@ -551,6 +555,7 @@ export default function OwnerDashboard() {
         location: property.location,
         latitude: property.latitude?.toString() || "",
         longitude: property.longitude?.toString() || "",
+        monthlyRevenue: (property.monthlyRevenue || (property as any).rentAmount || "").toString(),
         type: property.type,
         status: property.status,
         features: property.features || [],
@@ -563,12 +568,29 @@ export default function OwnerDashboard() {
     }
     setEditUnitForm({
       unitNumber: unit.unitNumber,
+      address: unit.address || property?.location || "",
       floor: unit.floor?.toString() || "",
+      type: unit.type || "condo",
+      condition: unit.condition || "",
       status: unit.status,
       rentAmount: unit.rentAmount.toString(),
       imageUrl: unit.imageUrl || "",
       imageUrls: unit.imageUrls || (unit.imageUrl ? [unit.imageUrl] : []),
     });
+  };
+
+  const handleAssignAgent = async (propertyId: string, agentId: string) => {
+    try {
+      const updated = await updateProperty(propertyId, { agentId: agentId || "" });
+      if (updated) {
+        setProperties((current) =>
+          current.map((p) => (p.id === propertyId ? { ...p, agentId: agentId || undefined } : p))
+        );
+        toast.success(agentId ? "Assigned agent updated" : "Agent unassigned");
+      }
+    } catch {
+      toast.error("Failed to update assigned agent");
+    }
   };
 
   const handleSaveProperty = async (e: React.FormEvent) => {
@@ -581,6 +603,7 @@ export default function OwnerDashboard() {
         location: editPropertyForm.location,
         latitude: editPropertyForm.latitude ? Number(editPropertyForm.latitude) : undefined,
         longitude: editPropertyForm.longitude ? Number(editPropertyForm.longitude) : undefined,
+        monthlyRevenue: editPropertyForm.monthlyRevenue ? Number(editPropertyForm.monthlyRevenue) : 0,
         type: editPropertyForm.type,
         status: editPropertyForm.status,
         features: editPropertyForm.features,
@@ -588,12 +611,13 @@ export default function OwnerDashboard() {
         availabilityStatus: editPropertyForm.availabilityStatus,
         imageUrl: editPropertyForm.imageUrl || undefined,
         imageUrls: editPropertyForm.imageUrls,
-        agentId: editPropertyForm.agentId || undefined,
+        agentId: editPropertyForm.agentId || "",
       });
       if (!updatedProperty) throw new Error("Failed to update property");
       setProperties(properties.map(p => p.id === editingProperty.id ? {
         ...p,
         ...editPropertyForm,
+        monthlyRevenue: editPropertyForm.monthlyRevenue ? Number(editPropertyForm.monthlyRevenue) : 0,
         latitude: editPropertyForm.latitude ? Number(editPropertyForm.latitude) : undefined,
         longitude: editPropertyForm.longitude ? Number(editPropertyForm.longitude) : undefined,
         agentId: editPropertyForm.agentId || undefined,
@@ -613,7 +637,7 @@ export default function OwnerDashboard() {
     try {
       if (delta > 0) {
         const nextNumber = `Unit ${propertyUnits.length + 1}`;
-        const unit = await addUnit({ propertyId: editingProperty.id, unitNumber: nextNumber, status: "vacant", rentAmount: 0 });
+        const unit = await addUnit({ propertyId: editingProperty.id, unitNumber: nextNumber, address: editingProperty.location || "", status: "vacant", rentAmount: 0 });
         setUnits((current) => [...current, unit]);
       } else {
         const removable = [...propertyUnits].reverse().find((unit) => unit.status === "vacant" && !unit.tenantId);
@@ -644,52 +668,35 @@ export default function OwnerDashboard() {
         toast.error("Unit number and monthly rent are required");
         return;
       }
-      const unitUpdate = updateUnit(editingUnit.id, {
+      const updatedUnitResult = await updateUnit(editingUnit.id, {
         unitNumber: editUnitForm.unitNumber,
+        address: editUnitForm.address || undefined,
         floor: editUnitForm.floor ? parseInt(editUnitForm.floor) : undefined,
+        type: editUnitForm.type || "condo",
+        condition: editUnitForm.condition || undefined,
         status: editUnitForm.status,
         rentAmount: Number(editUnitForm.rentAmount),
         imageUrl: editUnitForm.imageUrl || undefined,
         imageUrls: editUnitForm.imageUrls,
       });
-      const propertyUpdate = editUnitPropertyId ? updateProperty(editUnitPropertyId, {
-        name: editPropertyForm.name,
-        location: editPropertyForm.location,
-        latitude: editPropertyForm.latitude ? Number(editPropertyForm.latitude) : undefined,
-        longitude: editPropertyForm.longitude ? Number(editPropertyForm.longitude) : undefined,
-        type: editPropertyForm.type,
-        status: editPropertyForm.status,
-        features: editPropertyForm.features,
-        condition: editPropertyForm.condition || undefined,
-        availabilityStatus: editPropertyForm.availabilityStatus,
-        imageUrl: editPropertyForm.imageUrl || undefined,
-        imageUrls: editPropertyForm.imageUrls,
-      }) : Promise.resolve(null);
-      const [updatedUnitResult, updatedPropertyResult] = await Promise.all([unitUpdate, propertyUpdate]);
-      if (!updatedUnitResult || (editUnitPropertyId && !updatedPropertyResult)) throw new Error("Failed to update unit and property");
+      if (!updatedUnitResult) throw new Error("Failed to update unit");
       const updatedUnit: Unit = {
         ...editingUnit,
         unitNumber: editUnitForm.unitNumber,
+        address: editUnitForm.address || undefined,
         floor: editUnitForm.floor ? parseInt(editUnitForm.floor) : undefined,
+        type: editUnitForm.type || "condo",
+        condition: editUnitForm.condition || undefined,
         status: editUnitForm.status,
         rentAmount: Number(editUnitForm.rentAmount),
         imageUrl: editUnitForm.imageUrl || undefined,
         imageUrls: editUnitForm.imageUrls,
       };
       setUnits((current) => current.map((unit) => unit.id === updatedUnit.id ? updatedUnit : unit));
-      if (editUnitPropertyId) {
-        setProperties((current) => current.map((property) => property.id === editUnitPropertyId ? {
-          ...property,
-          ...editPropertyForm,
-          latitude: editPropertyForm.latitude ? Number(editPropertyForm.latitude) : undefined,
-          longitude: editPropertyForm.longitude ? Number(editPropertyForm.longitude) : undefined,
-          imageUrls: editPropertyForm.imageUrls,
-        } : property));
-      }
-      toast.success("Unit updated");
+      toast.success("Unit updated successfully");
       setEditingUnit(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to update unit and property");
+      toast.error(error instanceof Error ? error.message : "Failed to update unit");
     } finally {
       setIsSubmitting(false);
     }
@@ -704,13 +711,22 @@ export default function OwnerDashboard() {
       const hash = window.location.hash.replace("#", "");
       if (hash === "payments") {
         setActiveTab("financial");
+      } else if (hash === "properties" || hash === "units" || hash === "occupancy") {
+        setActiveTab(hash as Step);
       } else if (hash && flowSteps.some((s) => s.key === hash)) {
         setActiveTab(hash as Step);
       }
     };
     const handleOwnerTabChange = (event: Event) => {
-      const tab = flowSteps.find((step) => step.key === (event as CustomEvent<string>).detail);
-      if (tab) setActiveTab(tab.key);
+      const tabKey = (event as CustomEvent<string>).detail;
+      const tab = flowSteps.find((step) => step.key === tabKey);
+      if (tab) {
+        setActiveTab(tab.key);
+        if (tab.key === "units") {
+          setUnitSearch("");
+          setUnitStatusFilter("all");
+        }
+      }
     };
 
     readHash();
@@ -735,22 +751,18 @@ export default function OwnerDashboard() {
   const overduePayments = payments.filter((p) => p.status === "overdue");
   const normalizedUnitSearch = unitSearch.trim().toLowerCase();
   const filteredUnits = units.filter((unit) => {
-    const property = properties.find((item) => item.id === unit.propertyId);
-    const searchMatches = !normalizedUnitSearch || `${unit.unitNumber} ${unit.tenantName || ""} ${property?.name || ""} ${property?.location || ""}`.toLowerCase().includes(normalizedUnitSearch);
-    return searchMatches &&
-      (unitPropertyFilter === "all" || unit.propertyId === unitPropertyFilter) &&
-      (unitTypeFilter === "all" || property?.type === unitTypeFilter) &&
-      (unitStatusFilter === "all" || unit.status === unitStatusFilter);
+    const prop = properties.find((p) => p.id === unit.propertyId);
+    const searchable = `${unit.unitNumber} ${unit.tenantName || ""} ${unit.address || ""} ${prop?.name || ""} ${prop?.location || ""} ${unit.propertyName || ""}`.toLowerCase();
+    const searchMatches = !normalizedUnitSearch || searchable.includes(normalizedUnitSearch);
+    const statusMatches = unitStatusFilter === "all" || unit.status === unitStatusFilter;
+    return searchMatches && statusMatches;
   });
+  const normalizedPropertySearch = propertySearch.trim().toLowerCase();
   const filteredProperties = properties.filter((property) => {
-    const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
-    const searchMatches = !normalizedUnitSearch || `${property.name} ${property.location} ${propertyUnits.map((unit) => `${unit.unitNumber} ${unit.tenantName || ""}`).join(" ")}`.toLowerCase().includes(normalizedUnitSearch);
-    const statusMatches = unitStatusFilter === "all"
-      || propertyUnits.some((unit) => unit.status === unitStatusFilter)
-      || (unitStatusFilter === "vacant" && (property.availabilityStatus === "Available" || property.status === "active"))
-      || (unitStatusFilter === "occupied" && property.availabilityStatus === "Occupied")
-      || (unitStatusFilter === "maintenance" && property.availabilityStatus === "Under Maintenance");
-    return searchMatches && statusMatches && (unitTypeFilter === "all" || property.type === unitTypeFilter) && (unitPropertyFilter === "all" || property.id === unitPropertyFilter);
+    const searchMatches = !normalizedPropertySearch || `${property.name} ${property.location}`.toLowerCase().includes(normalizedPropertySearch);
+    const typeMatches = propertyTypeFilter === "all" || property.type === propertyTypeFilter;
+    const statusMatches = propertyStatusFilter === "all" || property.status === propertyStatusFilter;
+    return searchMatches && typeMatches && statusMatches;
   });
   const filteredTenants = tenants.filter((tenant) =>
     (tenantFilter === "all" || tenant.status === tenantFilter) &&
@@ -759,12 +771,62 @@ export default function OwnerDashboard() {
   const sortedUnits = [...filteredUnits].sort((a, b) => {
     if (unitSort === "rent-desc") return b.rentAmount - a.rentAmount;
     if (unitSort === "rent-asc") return a.rentAmount - b.rentAmount;
-    if (unitSort === "property") return (properties.find((property) => property.id === a.propertyId)?.name || "").localeCompare(properties.find((property) => property.id === b.propertyId)?.name || "");
+    if (unitSort === "status") {
+      const order: Record<string, number> = { vacant: 1, maintenance: 2, occupied: 3 };
+      return (order[a.status] || 99) - (order[b.status] || 99);
+    }
     const comparison = a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true });
     return unitSort === "unit-desc" ? -comparison : comparison;
   });
   const currentUnitPage = Math.min(unitPage, Math.max(1, Math.ceil(sortedUnits.length / 10)));
   const visibleUnits = sortedUnits.slice((currentUnitPage - 1) * 10, currentUnitPage * 10);
+
+  const sortedProperties = [...filteredProperties].sort((a, b) => {
+    if (propertySort === "location-asc") return (a.location || "").localeCompare(b.location || "");
+    if (propertySort === "location-desc") return (b.location || "").localeCompare(a.location || "");
+    if (propertySort === "revenue-desc") return (b.monthlyRevenue || 0) - (a.monthlyRevenue || 0);
+    if (propertySort === "revenue-asc") return (a.monthlyRevenue || 0) - (b.monthlyRevenue || 0);
+    const comp = a.name.localeCompare(b.name);
+    return propertySort === "name-desc" ? -comp : comp;
+  });
+  const currentPropertyPage = Math.min(propertyPage, Math.max(1, Math.ceil(sortedProperties.length / 10)));
+  const visibleProperties = sortedProperties.slice((currentPropertyPage - 1) * 10, currentPropertyPage * 10);
+
+  const normalizedOccupancySearch = occupancySearch.trim().toLowerCase();
+  const filteredOccupancyProperties = properties.filter((property) => {
+    const propertyUnits = units.filter((u) => u.propertyId === property.id);
+    const occupied = propertyUnits.filter((u) => u.status === "occupied").length;
+    const rate = propertyUnits.length ? Math.round((occupied / propertyUnits.length) * 100) : 0;
+    const searchMatches = !normalizedOccupancySearch || `${property.name} ${property.location || ""}`.toLowerCase().includes(normalizedOccupancySearch);
+    const typeMatches = occupancyTypeFilter === "all" || property.type === occupancyTypeFilter;
+    const statusMatches =
+      occupancyFilter === "all"
+        ? true
+        : occupancyFilter === "full"
+          ? rate === 100
+          : occupancyFilter === "partial"
+            ? rate > 0 && rate < 100
+            : rate === 0;
+    return searchMatches && typeMatches && statusMatches;
+  });
+
+  const sortedOccupancyProperties = [...filteredOccupancyProperties].sort((a, b) => {
+    const aUnits = units.filter((u) => u.propertyId === a.id);
+    const bUnits = units.filter((u) => u.propertyId === b.id);
+    const aOcc = aUnits.filter((u) => u.status === "occupied").length;
+    const bOcc = bUnits.filter((u) => u.status === "occupied").length;
+    const aRate = aUnits.length ? Math.round((aOcc / aUnits.length) * 100) : 0;
+    const bRate = bUnits.length ? Math.round((bOcc / bUnits.length) * 100) : 0;
+
+    if (occupancySort === "rate-asc") return aRate - bRate;
+    if (occupancySort === "rate-desc") return bRate - aRate;
+    if (occupancySort === "units-desc") return bUnits.length - aUnits.length;
+    return a.name.localeCompare(b.name);
+  });
+
+  const currentOccupancyPage = Math.min(occupancyPage, Math.max(1, Math.ceil(sortedOccupancyProperties.length / 8)));
+  const visibleOccupancyProperties = sortedOccupancyProperties.slice((currentOccupancyPage - 1) * 8, currentOccupancyPage * 8);
+
   const filteredPayments = payments.filter((payment) => {
     const date = new Date(payment.paymentDate);
     const today = new Date();
@@ -789,7 +851,9 @@ export default function OwnerDashboard() {
   const currentFinancialPage = Math.min(financialPage, Math.max(1, Math.ceil(filteredPayments.length / 10)));
   const visibleFinancialPayments = sortedFinancialPayments.slice((currentFinancialPage - 1) * 10, currentFinancialPage * 10);
 
-  useEffect(() => { setUnitPage(1); }, [unitSearch, unitPropertyFilter, unitStatusFilter, unitTypeFilter, unitSort]);
+  useEffect(() => { setUnitPage(1); }, [unitSearch, unitStatusFilter, unitSort]);
+  useEffect(() => { setPropertyPage(1); }, [propertySearch, propertyStatusFilter, propertyTypeFilter, propertySort]);
+  useEffect(() => { setOccupancyPage(1); }, [occupancySearch, occupancyFilter, occupancyTypeFilter, occupancySort]);
   useEffect(() => { setFinancialPage(1); }, [financialSearch, financialStatusFilter, financialMethodFilter, financialUnitFilter, financialDateRange, financialSort]);
 
   const filteredMoveOutRequests = useMemo(() => {
@@ -846,7 +910,7 @@ export default function OwnerDashboard() {
   const agentIds = Array.from(new Set(properties.map((property) => property.agentId).filter((agentId): agentId is string => Boolean(agentId))));
   const agentCommissions = agentIds.reduce<Record<string, { name: string; collected: number; commission: number; rate: number }>>((summary, agentId) => {
     const propertyIds = new Set(properties.filter((property) => property.agentId === agentId).map((property) => property.id));
-    const unitIds = new Set(units.filter((unit) => propertyIds.has(unit.propertyId)).map((unit) => unit.id));
+    const unitIds = new Set(units.filter((unit) => Boolean(unit.propertyId && propertyIds.has(unit.propertyId))).map((unit) => unit.id));
     const tenantIds = new Set(tenants.filter((tenant) => unitIds.has(tenant.unitId || "")).map((tenant) => tenant.id));
     const collected = payments
       .filter((payment) => payment.status === "paid" && tenantIds.has(payment.tenantId))
@@ -861,12 +925,69 @@ export default function OwnerDashboard() {
     return summary;
   }, {});
 
+  const downloadPropertiesExport = () => {
+    const rows: Array<Array<string | number>> = [
+      ["Property Name", "Address / Location", "Occupied Units", "Vacant Units", "Assigned Agent", "Status"],
+      ...sortedProperties.map((property) => {
+        const propUnits = units.filter((u) => u.propertyId === property.id);
+        const occ = propUnits.filter((u) => u.status === "occupied").length;
+        const vac = propUnits.filter((u) => u.status === "vacant").length;
+        const assignedAgent = agents.find((a) => a.id === property.agentId);
+        const agentDisplay = assignedAgent
+          ? `${assignedAgent.name}${assignedAgent.address ? ` (${assignedAgent.address})` : ""}`
+          : "Unassigned";
+        return [
+          property.name,
+          property.location,
+          occ,
+          vac,
+          agentDisplay,
+          property.status,
+        ];
+      }),
+    ];
+    downloadExcelReport(`owner-properties-${new Date().toISOString().slice(0, 10)}.xls`, [{ name: "Properties", rows }]);
+  };
+
   const downloadUnitsExport = () => {
     const rows: Array<Array<string | number>> = [
-      ["Unit No.", "Property", "Property type", "Monthly rent", "Status", "Tenant"],
-      ...sortedUnits.map((unit) => { const property = properties.find((item) => item.id === unit.propertyId); return [unit.unitNumber, property?.name || "", property?.type || "", unit.rentAmount, unit.status === "vacant" ? "Available" : unit.status === "occupied" ? "Occupied" : "Under Maintenance", unit.tenantName || tenants.find((tenant) => tenant.unitId === unit.id)?.name || ""]; }),
+      ["Unit No.", "Address", "Property type", "Monthly rent", "Status", "Tenant"],
+      ...sortedUnits.map((unit) => {
+        const property = properties.find((item) => item.id === unit.propertyId);
+        return [
+          unit.unitNumber,
+          unit.address || property?.location || property?.name || "",
+          property?.type || "",
+          unit.rentAmount,
+          unit.status === "vacant" ? "Available" : unit.status === "occupied" ? "Occupied" : "Under Maintenance",
+          unit.tenantName || tenants.find((tenant) => tenant.unitId === unit.id)?.name || "",
+        ];
+      }),
     ];
     downloadExcelReport(`owner-units-${new Date().toISOString().slice(0, 10)}.xls`, [{ name: "Units", rows }]);
+  };
+
+  const downloadOccupancyExport = () => {
+    const rows: Array<Array<string | number>> = [
+      ["Property Name", "Address / Location", "Property Type", "Total Units", "Occupied Units", "Vacant Units", "Occupancy Rate (%)", "Status"],
+      ...sortedOccupancyProperties.map((property) => {
+        const propUnits = units.filter((u) => u.propertyId === property.id);
+        const occ = propUnits.filter((u) => u.status === "occupied").length;
+        const vac = propUnits.filter((u) => u.status === "vacant").length;
+        const rate = propUnits.length ? Math.round((occ / propUnits.length) * 100) : 0;
+        return [
+          property.name,
+          property.location || "—",
+          property.type === "condominium" ? "Condominium" : "Residential House",
+          propUnits.length,
+          occ,
+          vac,
+          `${rate}%`,
+          property.status,
+        ];
+      }),
+    ];
+    downloadExcelReport(`owner-occupancy-${new Date().toISOString().slice(0, 10)}.xls`, [{ name: "Occupancy", rows }]);
   };
 
   const downloadFinancialExport = () => {
@@ -892,46 +1013,56 @@ export default function OwnerDashboard() {
 
   const openAddProperty = () => {
     setShowCreateProperty(true);
-    setCreateStep(1);
   };
 
   const openAddUnit = () => {
-    if (properties.length === 0) {
-      setShowCreateProperty(true);
-      setCreateStep(1);
-      return;
-    }
-    setNewUnitForm((current) => ({
-      ...current,
-      propertyId: unitPropertyFilter !== "all" ? unitPropertyFilter : properties[0].id,
-    }));
+    const defaultProp = properties[0];
+
+    setNewUnitForm({
+      propertyId: defaultProp?.id || "",
+      unitNumber: "",
+      address: defaultProp?.location || "",
+      floor: "",
+      type: "condo",
+      condition: "",
+      status: "vacant",
+      rentAmount: "",
+      imageUrl: "",
+      imageUrls: [],
+    });
     setShowAddUnit(true);
   };
 
   const handleAddUnit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!newUnitForm.propertyId || !newUnitForm.unitNumber || Number(newUnitForm.rentAmount) < 0) {
-      toast.error("Choose a property and provide the unit details");
+    if (!newUnitForm.unitNumber.trim() || !newUnitForm.address.trim() || Number(newUnitForm.rentAmount) < 0) {
+      toast.error("Please provide unit number, address, and rent amount");
       return;
     }
     setIsSubmitting(true);
     try {
       const newUnit = await addUnit({
-        propertyId: newUnitForm.propertyId,
-        unitNumber: newUnitForm.unitNumber,
+        propertyId: newUnitForm.propertyId || undefined,
+        unitNumber: newUnitForm.unitNumber.trim(),
+        address: newUnitForm.address.trim(),
         floor: newUnitForm.floor ? Number(newUnitForm.floor) : undefined,
+        type: newUnitForm.type || "condo",
+        condition: newUnitForm.condition || undefined,
         status: newUnitForm.status,
         rentAmount: Number(newUnitForm.rentAmount),
         imageUrl: newUnitForm.imageUrl || undefined,
         imageUrls: newUnitForm.imageUrls,
       });
       setUnits((current) => [...current, newUnit]);
-      setProperties((current) => current.map((property) => property.id === newUnitForm.propertyId ? { ...property, units: property.units + 1 } : property));
+      if (newUnitForm.propertyId) {
+        setProperties((current) => current.map((property) => property.id === newUnitForm.propertyId ? { ...property, units: property.units + 1 } : property));
+      }
       setShowAddUnit(false);
-      setNewUnitForm({ propertyId: "", unitNumber: "", floor: "", status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
-      toast.success("Rental unit added");
+      setNewUnitForm({ propertyId: "", unitNumber: "", address: "", floor: "", type: "condo", condition: "", status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
+      toast.success("Unit added successfully");
+      await loadData();
     } catch {
-      toast.error("Failed to add rental unit");
+      toast.error("Failed to add unit");
     } finally {
       setIsSubmitting(false);
     }
@@ -950,9 +1081,9 @@ export default function OwnerDashboard() {
           />
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5 sm:gap-3">
             {[
-              { label: "Properties", value: properties.length, icon: Home, tone: "blue", tab: "units" as const, view: "properties" as const },
-              { label: "Available units", value: availableUnits.length, icon: Home, tone: "emerald", tab: "units" as const, view: "units" as const },
-              { label: "Occupied units", value: occupiedUnits.length, icon: ClipboardCheck, tone: "cyan", tab: "units" as const, view: "occupancy" as const },
+              { label: "Properties", value: properties.length, icon: Building2, tone: "blue", tab: "properties" as const },
+              { label: "Available units", value: availableUnits.length, icon: ClipboardCheck, tone: "emerald", tab: "units" as const },
+              { label: "Occupied units", value: occupiedUnits.length, icon: BarChart3, tone: "cyan", tab: "occupancy" as const },
               { label: "Pending approvals", value: pendingAssignments.length, icon: Clock, tone: "amber", tab: "assignments" as const },
               { label: "Pending payments", value: pendingPayments.length, icon: CreditCard, tone: "rose", tab: "financial" as const },
             ].map((stat) => (
@@ -961,10 +1092,9 @@ export default function OwnerDashboard() {
                 type="button"
                 onClick={() => {
                   setActiveTab(stat.tab);
-                  if ("view" in stat && stat.view) setUnitsView(stat.view);
                   window.location.hash = stat.tab;
                 }}
-                className="rounded-lg border border-[#dce8f5] bg-white p-3 text-left shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:p-4"
+                className="rounded-lg border border-[#dce8f5] bg-white p-3 text-left shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition-colors hover:border-blue-200 hover:bg-blue-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:p-4 cursor-pointer"
               >
                 <span className="flex items-center justify-between gap-2">
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{stat.label}</span>
@@ -989,21 +1119,20 @@ export default function OwnerDashboard() {
               </CardHeader>
               <CardContent className="divide-y divide-slate-100 p-0">
                 {properties.slice(0, 5).map((property) => {
-                  const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
                   return (
-                    <button key={property.id} type="button" onClick={() => { setActiveTab("units"); setUnitsView("properties"); window.location.hash = "units"; }} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
+                    <button key={property.id} type="button" onClick={() => { setActiveTab("properties"); window.location.hash = "properties"; }} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 cursor-pointer">
                       <UnitImageCarousel
                         images={property.imageUrls || (property.imageUrl ? [property.imageUrl] : [])}
                         alt={property.name}
                         title={property.name}
-                        subtitle={`${property.location} • ${propertyUnits.length} units`}
+                        subtitle={property.location || ""}
                         className="h-12 w-16 shrink-0 rounded-md border border-slate-200 cursor-pointer"
                         imageClassName="group-hover:scale-100"
                       />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-xs font-semibold text-slate-900">{property.name}</span>
                         <span className="mt-0.5 block truncate text-[10px] text-slate-500">{property.location}</span>
-                        <span className="mt-1 block text-[10px] text-slate-500">{propertyUnits.length} units • {propertyUnits.filter((unit) => unit.status === "vacant").length} available • Added {formatDate(property.createdAt)}</span>
+                        <span className="mt-1 block text-[10px] text-slate-500">{property.type === "condominium" ? "Condominium" : "Residential House"} • Added {formatDate(property.createdAt)}</span>
                       </span>
                       <Badge variant={property.status === "active" ? "success" : "outline"} className="shrink-0 text-[10px] capitalize">{property.status}</Badge>
                     </button>
@@ -1038,178 +1167,845 @@ export default function OwnerDashboard() {
         </motion.div>
       )}
 
-      {/* RENTAL UNITS & PROPERTIES */}
-      {(activeTab === "units" || (activeTab as string) === "properties") && (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={management.page}>
-          <ManagementBanner />
-          <div className={management.toolbar}>
-            <label className={management.search}><Search aria-hidden="true" /><input type="search" value={unitSearch} onChange={(event) => setUnitSearch(event.target.value)} placeholder="Search by unit number, property, or tenant..." aria-label="Search properties, units, or tenants" /></label>
-            <label className={management.filterCompact}><span>Property</span><select aria-label="Filter by property" value={unitPropertyFilter} onChange={(event) => setUnitPropertyFilter(event.target.value)}><option value="all">All properties</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></label>
-            <label className={management.filterCompact}><span>Property type</span><select aria-label="Filter by property type" value={unitTypeFilter} onChange={(event) => setUnitTypeFilter(event.target.value)}><option value="all">All types</option><option value="house">House</option><option value="condominium">Condominium</option></select></label>
-            <label className={management.filterCompact}><span>Status</span><select aria-label="Filter by unit status" value={unitStatusFilter} onChange={(event) => setUnitStatusFilter(event.target.value)}><option value="all">All statuses</option><option value="vacant">Available</option><option value="occupied">Occupied</option><option value="maintenance">Under Maintenance</option></select></label>
-            <div className={management.toolbarActions}><button type="button" className={management.reset} onClick={() => { setUnitSearch(""); setUnitPropertyFilter("all"); setUnitStatusFilter("all"); setUnitTypeFilter("all"); }}><RotateCcw aria-hidden="true" />Reset</button><Button onClick={downloadUnitsExport} className={management.export}><Download className="h-4 w-4" />Export</Button></div>
-          </div>
-          <UnitMetrics total={units.length} available={availableUnits.length} occupied={occupiedUnits.length} maintenance={units.filter((unit) => unit.status === "maintenance").length} />
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className={management.tabs} aria-label="Portfolio view">{(["units", "properties", "occupancy"] as const).map((view) => <button key={view} type="button" aria-pressed={unitsView === view} onClick={() => setUnitsView(view)} className="capitalize">{view}</button>)}</div>
-            <Button
-              onClick={openAddProperty}
-              className="h-9 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer shadow-xs transition-colors"
-            >
-              <Plus className="mr-1.5 h-4 w-4" />
-              Add Properties &amp; Units
-            </Button>
-          </div>
-          {unitsView === "properties" && (
-            initialLoad ? (
-              <div className={management.empty} role="status">Loading properties...</div>
-            ) : loadError ? (
-              <div className={management.empty} role="alert">
-                <strong>Unable to load your properties</strong>
-                <Button variant="outline" onClick={() => void loadData()}>Try again</Button>
+      {/* RENTAL UNITS PAGE */}
+      {activeTab === "units" && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={cn(management.page, "space-y-6")}>
+          <ManagementBanner
+            category="Units Management"
+            title="Rental Units"
+            description="Browse, filter, and manage individual rental units across your portfolio."
+            icon={ClipboardCheck}
+            actions={
+              <Button
+                onClick={openAddUnit}
+                className="h-9 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer shadow-xs transition-colors flex items-center gap-1.5 px-3.5"
+              >
+                <Plus className="h-4 w-4" />
+                Add Unit
+              </Button>
+            }
+          />
+
+          <section id="units-section" className="space-y-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <span>Rental Units</span>
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                  {filteredUnits.length} {filteredUnits.length === 1 ? "unit" : "units"}
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">Browse, filter, and manage individual units across your portfolio.</p>
+            </div>
+
+            <div className={management.toolbar}>
+              <label className={management.search}>
+                <Search aria-hidden="true" />
+                <input
+                  type="search"
+                  value={unitSearch}
+                  onChange={(event) => setUnitSearch(event.target.value)}
+                  placeholder="Search units by unit number, address, or tenant..."
+                  aria-label="Search units"
+                />
+              </label>
+              <label className={management.filterCompact}>
+                <span>Status</span>
+                <select aria-label="Filter by unit status" value={unitStatusFilter} onChange={(event) => setUnitStatusFilter(event.target.value)}>
+                  <option value="all">All statuses</option>
+                  <option value="vacant">Available</option>
+                  <option value="occupied">Occupied</option>
+                  <option value="maintenance">Under Maintenance</option>
+                </select>
+              </label>
+              <div className={management.toolbarActions}>
+                <button type="button" className={management.reset} onClick={() => { setUnitSearch(""); setUnitStatusFilter("all"); }}>
+                  <RotateCcw aria-hidden="true" />Reset
+                </button>
+                <Button onClick={downloadUnitsExport} className={management.export}>
+                  <Download className="h-4 w-4" />Export
+                </Button>
+                <Button
+                  onClick={openAddUnit}
+                  className="h-11 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer shadow-xs transition-colors flex items-center gap-1.5 px-3.5"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Unit
+                </Button>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {filteredProperties.map((property) => {
-                  const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
-                  const assignedAgent = agents.find((a) => a.id === property.agentId);
-                  const propImgs = property.imageUrls?.length ? property.imageUrls : property.imageUrl ? [property.imageUrl] : [];
-                  return (
-                    <Card key={property.id} className="overflow-hidden group hover:shadow-md transition-shadow">
-                      <div className="relative h-48 w-full bg-slate-100 overflow-hidden border-b border-border">
-                        <UnitImageCarousel
-                          images={propImgs}
-                          alt={property.name}
-                          title={property.name}
-                          subtitle={`${property.location} • ${propertyUnits.length} units`}
-                          className="h-full w-full rounded-none border-0"
-                          imageClassName="object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                        <div className="absolute top-3 right-3 z-10 pointer-events-none">
-                          <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize backdrop-blur-md bg-white/90 shadow-2xs">
-                            {property.status}
-                          </Badge>
-                        </div>
-                        <div className="absolute top-3 left-3 z-10 pointer-events-none">
-                          <span className="inline-flex items-center gap-1 rounded-md bg-slate-900/75 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-xs">
-                            <Camera className="h-3 w-3" />
-                            {propImgs.length} photo{propImgs.length === 1 ? "" : "s"}
-                          </span>
-                        </div>
-                      </div>
-                      <CardContent className="p-5">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="truncate text-lg font-semibold">{property.name}</h3>
-                              {assignedAgent ? (
-                                <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
-                                  Agent: {assignedAgent.name}
+            </div>
+
+            <UnitMetrics
+              total={units.length}
+              available={availableUnits.length}
+              occupied={occupiedUnits.length}
+              maintenance={units.filter((unit) => unit.status === "maintenance").length}
+            />
+
+            <div className={management.tablePanel} aria-label="Rental units">
+              <div className={management.tableHeader}>
+                <h3 className={management.tableTitle}>Units List</h3>
+                <div className={management.tableControls}>
+                  <select value={unitSort} onChange={(event) => setUnitSort(event.target.value)} aria-label="Sort units">
+                    <option value="unit-asc">Sort by: Unit No. (A-Z)</option>
+                    <option value="unit-desc">Unit No. (Z-A)</option>
+                    <option value="rent-asc">Rent (Lowest first)</option>
+                    <option value="rent-desc">Rent (Highest first)</option>
+                    <option value="status">Status (Available first)</option>
+                  </select>
+                </div>
+              </div>
+              {initialLoad ? (
+                <div className={management.empty} role="status">Loading units...</div>
+              ) : loadError ? (
+                <div className={management.empty} role="alert">
+                  <strong>Unable to load your portfolio</strong>
+                  <Button variant="outline" onClick={() => void loadData()}>Try again</Button>
+                </div>
+              ) : filteredUnits.length === 0 ? (
+                <div className={management.empty}>
+                  <Home aria-hidden="true" />
+                  <strong>{units.length ? "No units match these filters" : "No units yet"}</strong>
+                  <p>{units.length ? "Adjust your search or reset the filters to see your units." : "Add a property and its units to start managing your portfolio."}</p>
+                  <div className="flex items-center justify-center gap-2 mt-2">
+                    {units.length > 0 && (
+                      <Button variant="outline" onClick={() => { setUnitSearch(""); setUnitStatusFilter("all"); }}>
+                        <RotateCcw className="mr-1 h-4 w-4" />Reset filters
+                      </Button>
+                    )}
+                    <Button variant={units.length > 0 ? "ghost" : "outline"} onClick={openAddUnit}>
+                      <Plus className="mr-1 h-4 w-4" />Add unit
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className={management.tableScroll}>
+                    <table className={management.table}>
+                      <thead>
+                        <tr>
+                          <th>Unit Photo</th>
+                          <th>Unit No.</th>
+                          <th>Address</th>
+                          <th>Type</th>
+                          <th>Monthly Rent</th>
+                          <th>Status</th>
+                          <th>Tenant</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleUnits.map((unit) => {
+                          const property = properties.find((item) => item.id === unit.propertyId);
+                          const isOccupied = unit.status === "occupied";
+                          const assignedTenant = isOccupied ? tenants.find((tenant) => tenant.unitId === unit.id && tenant.status !== "archived" && tenant.status !== "inactive") : null;
+                          const tenantName = isOccupied ? (unit.tenantName || assignedTenant?.name) : null;
+                          const unitImgs = unit.imageUrls?.length ? unit.imageUrls : unit.imageUrl ? [unit.imageUrl] : property?.imageUrls?.length ? property.imageUrls : property?.imageUrl ? [property.imageUrl] : [];
+                          return (
+                            <tr key={unit.id}>
+                              <td>
+                                <UnitImageCarousel
+                                  images={unitImgs}
+                                  alt={`Unit ${unit.unitNumber}`}
+                                  title={`Unit ${unit.unitNumber}`}
+                                  subtitle={`${unit.address || property?.location || ""} • Floor ${unit.floor ?? "—"} • ${formatCurrency(unit.rentAmount)}/mo`}
+                                  className="h-10 w-14 shrink-0 rounded-md border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
+                                  imageClassName="group-hover:scale-100"
+                                />
+                              </td>
+                              <td className="font-semibold">{unit.unitNumber}</td>
+                              <td>
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-4 w-4 text-blue-600 shrink-0" />
+                                  <span className="text-sm font-medium text-slate-800 truncate max-w-[200px]" title={unit.address || property?.location || "—"}>
+                                    {unit.address || property?.location || "—"}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="capitalize">{property?.type || "—"}</td>
+                              <td className="whitespace-nowrap tabular-nums">{formatCurrency(unit.rentAmount)}</td>
+                              <td><UnitStatus status={unit.status} /></td>
+                              <td>{tenantName ? <span className={management.tenantCell}><User aria-hidden="true" />{tenantName}</span> : "—"}</td>
+                              <td>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button size="icon" variant="ghost" aria-label={`Actions for unit ${unit.unitNumber}`} className="h-8 w-8 text-blue-700">
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onSelect={() => handleEditUnit(unit)} icon={<Eye className="h-4 w-4" />}>
+                                      Edit unit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => setHistoryTarget({ unitId: unit.id, title: `Tenancy history · ${unit.unitNumber}` })} icon={<HistoryIcon className="h-4 w-4" />}>
+                                      Tenancy history
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => handleDeleteUnit(unit)} icon={<Trash2 className="h-4 w-4" />} className="text-red-600">
+                                      Delete unit
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <ManagementPagination page={currentUnitPage} total={filteredUnits.length} noun="units" onPageChange={setUnitPage} />
+                </>
+              )}
+            </div>
+          </section>
+        </motion.div>
+      )}
+
+      {/* PROPERTIES PAGE */}
+      {activeTab === "properties" && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={cn(management.page, "space-y-6")}>
+          <ManagementBanner
+            category="Property Portfolio"
+            title="Properties"
+            description="Browse, filter, and manage registered properties across your portfolio."
+            icon={Building2}
+            actions={
+              <Button
+                onClick={openAddProperty}
+                className="h-9 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer shadow-xs transition-colors flex items-center gap-1.5 px-3.5"
+              >
+                <Plus className="h-4 w-4" />
+                Add Property
+              </Button>
+            }
+          />
+
+          <section id="properties-section" className="space-y-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <span>Properties List</span>
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                  {filteredProperties.length} {filteredProperties.length === 1 ? "property" : "properties"}
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">Browse, filter, and manage your property portfolio.</p>
+            </div>
+
+            <div className={management.toolbar}>
+              <label className={management.search}>
+                <Search aria-hidden="true" />
+                <input
+                  type="search"
+                  value={propertySearch}
+                  onChange={(event) => setPropertySearch(event.target.value)}
+                  placeholder="Search properties by name or address..."
+                  aria-label="Search properties"
+                />
+              </label>
+              <label className={management.filterCompact}>
+                <span>Property type</span>
+                <select aria-label="Filter by property type" value={propertyTypeFilter} onChange={(event) => setPropertyTypeFilter(event.target.value)}>
+                  <option value="all">All types</option>
+                  <option value="house">House / Residential</option>
+                  <option value="condominium">Condominium</option>
+                </select>
+              </label>
+              <label className={management.filterCompact}>
+                <span>Status</span>
+                <select aria-label="Filter by property status" value={propertyStatusFilter} onChange={(event) => setPropertyStatusFilter(event.target.value)}>
+                  <option value="all">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </label>
+              <div className={management.toolbarActions}>
+                <button type="button" className={management.reset} onClick={() => { setPropertySearch(""); setPropertyTypeFilter("all"); setPropertyStatusFilter("all"); }}>
+                  <RotateCcw aria-hidden="true" />Reset
+                </button>
+                <Button onClick={downloadPropertiesExport} className={management.export}>
+                  <Download className="h-4 w-4" />Export
+                </Button>
+                <Button
+                  onClick={openAddProperty}
+                  className="h-11 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer shadow-xs transition-colors flex items-center gap-1.5 px-3.5"
+                >
+                  <Building2 className="h-4 w-4" />
+                  Add Property
+                </Button>
+              </div>
+            </div>
+
+            <PropertyMetrics
+              total={properties.length}
+              active={properties.filter(p => p.status === "active").length}
+              inactive={properties.filter(p => p.status === "inactive").length}
+              revenue={formatCurrency(properties.reduce((sum, p) => sum + (p.monthlyRevenue || 0), 0))}
+            />
+
+            <div className={management.tablePanel} aria-label="Properties">
+              <div className={management.tableHeader}>
+                <h3 className={management.tableTitle}>Properties List</h3>
+                <div className={management.tableControls}>
+                  <select value={propertySort} onChange={(event) => setPropertySort(event.target.value)} aria-label="Sort properties">
+                    <option value="name-asc">Sort by: Name (A-Z)</option>
+                    <option value="name-desc">Name (Z-A)</option>
+                    <option value="location-asc">Location (A-Z)</option>
+                    <option value="location-desc">Location (Z-A)</option>
+                    <option value="revenue-desc">Highest Revenue</option>
+                    <option value="revenue-asc">Lowest Revenue</option>
+                  </select>
+                </div>
+              </div>
+              {initialLoad ? (
+                <div className={management.empty} role="status">Loading properties...</div>
+              ) : loadError ? (
+                <div className={management.empty} role="alert">
+                  <strong>Unable to load your properties</strong>
+                  <Button variant="outline" onClick={() => void loadData()}>Try again</Button>
+                </div>
+              ) : filteredProperties.length === 0 ? (
+                <div className={management.empty}>
+                  <Building2 aria-hidden="true" />
+                  <strong>{properties.length ? "No properties match these filters" : "No properties yet"}</strong>
+                  <p>{properties.length ? "Adjust your search or reset the filters to see your properties." : "Click below to register your first property."}</p>
+                  <Button variant="outline" onClick={openAddProperty}><Plus className="mr-1 h-4 w-4" />Add property</Button>
+                </div>
+              ) : propertiesDisplayMode === "table" ? (
+                <>
+                  <div className={management.tableScroll}>
+                    <table className={management.table}>
+                      <thead>
+                        <tr>
+                          <th>Property Photo</th>
+                          <th>Property Name</th>
+                          <th>Address</th>
+                          <th>Property Type</th>
+                          <th>Monthly Revenue</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleProperties.map((property) => {
+                          const propRevenue = property.monthlyRevenue || 0;
+                          const propImgs = property.imageUrls?.length ? property.imageUrls : property.imageUrl ? [property.imageUrl] : [];
+                          return (
+                            <tr key={property.id}>
+                              <td>
+                                <UnitImageCarousel
+                                  images={propImgs}
+                                  alt={property.name}
+                                  title={property.name}
+                                  subtitle={property.location || ""}
+                                  className="h-10 w-14 shrink-0 rounded-md border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
+                                  imageClassName="group-hover:scale-100"
+                                />
+                              </td>
+                              <td className="font-semibold">{property.name}</td>
+                              <td>
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-4 w-4 text-blue-600 shrink-0" />
+                                  <span className="text-sm font-medium text-slate-800 truncate max-w-[200px]" title={property.location}>
+                                    {property.location || "—"}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="capitalize text-slate-700 font-medium">
+                                {property.type === "condominium" ? "Condominium" : "Residential House"}
+                              </td>
+                              <td className="font-semibold text-slate-900 tabular-nums">
+                                {formatCurrency(propRevenue)}
+                              </td>
+                              <td>
+                                <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize">
+                                  {property.status}
                                 </Badge>
-                              ) : (
-                                <Badge variant="outline" className="text-[10px] text-slate-500 border-slate-200">
-                                  All Agents
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="mt-1 line-clamp-2 text-sm text-text-secondary">{property.location}</p>
+                              </td>
+                              <td>
+                                <div className="flex items-center justify-end pr-2">
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button size="icon" variant="ghost" aria-label={`Actions for ${property.name}`} className="h-8 w-8 text-blue-700">
+                                        <MoreVertical className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem onSelect={() => handleEditProperty(property)} icon={<Eye className="h-4 w-4" />}>
+                                        Edit property
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onSelect={() => setHistoryTarget({ propertyId: property.id, title: `Tenancy history · ${property.name}` })} icon={<HistoryIcon className="h-4 w-4" />}>
+                                        Tenancy history
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onSelect={() => handleDeleteProperty(property)} icon={<Trash2 className="h-4 w-4" />} className="text-red-600">
+                                        Delete property
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <ManagementPagination page={currentPropertyPage} total={filteredProperties.length} noun="properties" onPageChange={setPropertyPage} />
+                </>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 p-4">
+                  {filteredProperties.map((property) => {
+                    const propImgs = property.imageUrls?.length ? property.imageUrls : property.imageUrl ? [property.imageUrl] : [];
+                    return (
+                      <Card key={property.id} className="overflow-hidden group hover:shadow-md transition-shadow">
+                        <div className="relative h-48 w-full bg-slate-100 overflow-hidden border-b border-border">
+                          <UnitImageCarousel
+                            images={propImgs}
+                            alt={property.name}
+                            title={property.name}
+                            subtitle={property.location || ""}
+                            className="h-full w-full rounded-none border-0"
+                            imageClassName="object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          <div className="absolute top-3 right-3 z-10 pointer-events-none">
+                            <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize backdrop-blur-md bg-white/90 shadow-2xs">
+                              {property.status}
+                            </Badge>
                           </div>
-                          <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize">{property.status}</Badge>
+                          <div className="absolute top-3 left-3 z-10 pointer-events-none">
+                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-900/75 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-xs">
+                              <Camera className="h-3 w-3" />
+                              {propImgs.length} photo{propImgs.length === 1 ? "" : "s"}
+                            </span>
+                          </div>
                         </div>
-                        <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-surface-secondary p-3 text-center text-sm">
-                          <div><p className="font-bold">{propertyUnits.length}</p><p className="text-xs text-text-tertiary">Units</p></div>
-                          <div><p className="font-bold text-blue-600">{propertyUnits.filter((unit) => unit.status === "occupied").length}</p><p className="text-xs text-text-tertiary">Occupied</p></div>
-                          <div><p className="font-bold text-green-600">{propertyUnits.filter((unit) => unit.status === "vacant").length}</p><p className="text-xs text-text-tertiary">Vacant</p></div>
-                        </div>
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <Button size="sm" variant="outline" onClick={() => { setNewUnitForm((current) => ({ ...current, propertyId: property.id })); setShowAddUnit(true); }}><Plus className="mr-1 h-3.5 w-3.5" />Add Unit</Button>
-                          <Button size="sm" variant="outline" onClick={() => handleEditProperty(property)}><Eye className="mr-1 h-3.5 w-3.5" />Edit</Button>
-                          <Button size="sm" variant="destructive" onClick={() => handleDeleteProperty(property)}><Trash2 className="mr-1 h-3.5 w-3.5" />Delete</Button>
-                        </div>
-                        {propertyUnits.length > 0 && (
-                          <div className="mt-4 space-y-2 border-t border-border pt-3">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">Units</p>
-                            {propertyUnits.slice(0, 4).map((unit) => (
-                              <div key={unit.id} className="flex items-center justify-between gap-3 text-sm">
-                                <span className="truncate">Unit {unit.unitNumber}</span>
-                                <Badge variant={unit.status === "vacant" ? "success" : unit.status === "occupied" ? "outline" : "warning"} className="capitalize">{unit.status}</Badge>
+                        <CardContent className="p-5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="truncate text-lg font-semibold">{property.name}</h3>
+                                <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700 border-slate-200 capitalize">
+                                  {property.type === "condominium" ? "Condominium" : "House / Residential"}
+                                </Badge>
                               </div>
-                            ))}
-                            {propertyUnits.length > 4 && <p className="text-xs text-text-tertiary">and {propertyUnits.length - 4} more</p>}
+                              <p className="mt-1 line-clamp-2 text-sm text-text-secondary">{property.location}</p>
+                            </div>
+                            <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize">{property.status}</Badge>
                           </div>
+                          <div className="mt-4 rounded-xl bg-surface-secondary p-3 text-sm flex items-center justify-between">
+                            <div>
+                              <p className="text-xs text-text-tertiary font-medium">Monthly Revenue</p>
+                              <p className="font-bold text-slate-900">{formatCurrency(property.monthlyRevenue || 0)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-text-tertiary font-medium">Type</p>
+                              <p className="font-semibold text-slate-700 capitalize">{property.type === "condominium" ? "Condominium" : "Residential"}</p>
+                            </div>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <Button size="sm" variant="outline" onClick={() => handleEditProperty(property)}><Eye className="mr-1 h-3.5 w-3.5" />Edit</Button>
+                            <Button size="sm" variant="destructive" onClick={() => handleDeleteProperty(property)}><Trash2 className="mr-1 h-3.5 w-3.5" />Delete</Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                  {filteredProperties.length === 0 && (
+                    <Card className="col-span-full">
+                      <CardContent className="p-12 text-center">
+                        <Home className="mx-auto mb-3 h-10 w-10 text-text-tertiary" />
+                        <p className="font-medium text-text-secondary">{properties.length ? "No matching properties" : "No properties yet"}</p>
+                        <p className="mt-1 text-sm text-text-tertiary">{properties.length ? "Try another search or filter." : "Click below to register your first property."}</p>
+                        {properties.length === 0 && (
+                          <Button className="mt-4" onClick={openAddProperty}>
+                            <Plus className="mr-1 h-4 w-4" /> Add Property
+                          </Button>
                         )}
                       </CardContent>
                     </Card>
-                  );
-                })}
-                {filteredProperties.length === 0 && (
-                  <Card className="col-span-full">
-                    <CardContent className="p-12 text-center">
-                      <Home className="mx-auto mb-3 h-10 w-10 text-text-tertiary" />
-                      <p className="font-medium text-text-secondary">{properties.length ? "No matching properties" : "No properties yet"}</p>
-                      <p className="mt-1 text-sm text-text-tertiary">{properties.length ? "Try another search or filter." : "Click below to register your first property."}</p>
-                      {properties.length === 0 && (
-                        <Button className="mt-4" onClick={openAddProperty}>
-                          <Plus className="mr-1 h-4 w-4" /> Add Property
-                        </Button>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            )
-          )}
-          {unitsView === "units" && <section className={management.tablePanel} aria-label="Rental units">
-            <div className={management.tableHeader}>
-              <h2 className={management.tableTitle}>Units <span className={management.count}>{filteredUnits.length} units</span></h2>
-              <div className={management.tableControls}><select value={unitSort} onChange={(event) => setUnitSort(event.target.value)} aria-label="Sort units"><option value="unit-asc">Sort by: Unit No. (A-Z)</option><option value="unit-desc">Unit No. (Z-A)</option><option value="property">Property (A-Z)</option><option value="rent-asc">Rent (Lowest first)</option><option value="rent-desc">Rent (Highest first)</option></select></div>
+                  )}
+                </div>
+              )}
             </div>
-            {initialLoad ? <div className={management.empty} role="status">Loading units...</div>
-              : loadError ? <div className={management.empty} role="alert"><strong>Unable to load your portfolio</strong><Button variant="outline" onClick={() => void loadData()}>Try again</Button></div>
-                : filteredUnits.length === 0 ? <div className={management.empty}><Home aria-hidden="true" /><strong>{units.length ? "No units match these filters" : "No units yet"}</strong><p>{units.length ? "Adjust your search or reset the filters to see your units." : "Add a property and its units to start managing your portfolio."}</p><Button variant="outline" onClick={openAddUnit}><Plus className="mr-1 h-4 w-4" />Add unit</Button></div>
-                  : <><div className={management.tableScroll}><table className={management.table}>
-                    <thead><tr><th>Unit Photo</th><th>Unit No.</th><th>Property</th><th>Property Type</th><th>Monthly Rent</th><th>Status</th><th>Tenant</th><th>Actions</th></tr></thead>
-                    <tbody>{visibleUnits.map((unit) => {
-                      const property = properties.find((item) => item.id === unit.propertyId);
-                      const tenantName = unit.tenantName || tenants.find((tenant) => tenant.unitId === unit.id)?.name;
-                      const unitImgs = unit.imageUrls?.length ? unit.imageUrls : unit.imageUrl ? [unit.imageUrl] : property?.imageUrls?.length ? property.imageUrls : property?.imageUrl ? [property.imageUrl] : [];
-                      const propImgs = property?.imageUrls?.length ? property.imageUrls : property?.imageUrl ? [property.imageUrl] : [];
-                      return <tr key={unit.id}><td>
-                        <UnitImageCarousel
-                          images={unitImgs}
-                          alt={`Unit ${unit.unitNumber}`}
-                          title={`Unit ${unit.unitNumber} - ${property?.name || "Property"}`}
-                          subtitle={`${property?.location || ""} • Floor ${unit.floor ?? "—"} • ${formatCurrency(unit.rentAmount)}/mo`}
-                          className="h-10 w-14 shrink-0 rounded-md border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
-                          imageClassName="group-hover:scale-100"
-                        />
-                      </td><td className="font-semibold">{unit.unitNumber}</td><td>
-                        <div className="flex items-center gap-2.5">
-                          <UnitImageCarousel
-                            images={propImgs}
-                            alt={property?.name || "Property"}
-                            title={property?.name || "Property"}
-                            subtitle={property?.location || ""}
-                            className="h-9 w-12 shrink-0 rounded-md border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
-                            imageClassName="group-hover:scale-100"
-                          />
-                          <div className="min-w-0">
-                            <span className={management.propertyCell}>
-                              <Building2 aria-hidden="true" className="shrink-0" />
-                              <span className="truncate max-w-[130px]">{property?.name || "Unlinked property"}</span>
-                            </span>
-                            {property?.location && <span className="block text-[10px] text-slate-500 truncate max-w-[140px] pl-5">{property.location}</span>}
+          </section>
+        </motion.div>
+      )}
+
+      {/* OCCUPANCY OVERVIEW PAGE */}
+      {activeTab === "occupancy" && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={cn(management.page, "space-y-6")}>
+          <ManagementBanner
+            category="Portfolio Health"
+            title="Occupancy Overview"
+            description="Real-time availability, tenant occupancy, and unit progress tracks across your property portfolio."
+            icon={BarChart3}
+            actions={
+              <Button
+                onClick={downloadOccupancyExport}
+                className="h-9 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer shadow-xs transition-colors flex items-center gap-1.5 px-3.5"
+              >
+                <Download className="h-4 w-4" />
+                Export Report
+              </Button>
+            }
+          />
+
+          <section id="occupancy-section" className="space-y-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <span>Property Occupancy Breakdown</span>
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                  {filteredOccupancyProperties.length} {filteredOccupancyProperties.length === 1 ? "property" : "properties"}
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">Real-time availability, capacity trackers, and tenant occupancy per property.</p>
+            </div>
+
+            <div className={management.toolbar}>
+              <label className={management.search}>
+                <Search aria-hidden="true" />
+                <input
+                  type="search"
+                  value={occupancySearch}
+                  onChange={(event) => setOccupancySearch(event.target.value)}
+                  placeholder="Search occupancy by property name or location..."
+                  aria-label="Search occupancy"
+                />
+              </label>
+              <label className={management.filterCompact}>
+                <span>Occupancy</span>
+                <select aria-label="Filter by occupancy" value={occupancyFilter} onChange={(event) => setOccupancyFilter(event.target.value as any)}>
+                  <option value="all">All occupancies</option>
+                  <option value="full">100% Fully Occupied</option>
+                  <option value="partial">Partially Occupied</option>
+                  <option value="vacant">0% Vacant</option>
+                </select>
+              </label>
+              <label className={management.filterCompact}>
+                <span>Property type</span>
+                <select aria-label="Filter by property type" value={occupancyTypeFilter} onChange={(event) => setOccupancyTypeFilter(event.target.value)}>
+                  <option value="all">All types</option>
+                  <option value="house">House / Residential</option>
+                  <option value="condominium">Condominium</option>
+                </select>
+              </label>
+              <div className={management.toolbarActions}>
+                <button type="button" className={management.reset} onClick={() => { setOccupancySearch(""); setOccupancyFilter("all"); setOccupancyTypeFilter("all"); }}>
+                  <RotateCcw aria-hidden="true" />Reset
+                </button>
+                <Button onClick={downloadOccupancyExport} className={management.export}>
+                  <Download className="h-4 w-4" />Export
+                </Button>
+              </div>
+            </div>
+
+            <OccupancyMetrics
+              totalUnits={units.length}
+              rate={units.length ? Math.round((occupiedUnits.length / units.length) * 100) : 0}
+              occupied={occupiedUnits.length}
+              vacant={availableUnits.length}
+              propertiesCount={properties.length}
+            />
+
+            <div className={management.tablePanel} aria-label="Property Occupancy">
+              <div className={management.tableHeader}>
+                <h3 className={management.tableTitle}>Portfolio Breakdown</h3>
+                <div className={management.tableControls}>
+                  <select value={occupancySort} onChange={(event) => setOccupancySort(event.target.value)} aria-label="Sort occupancy">
+                    <option value="rate-desc">Sort by: Highest Occupancy</option>
+                    <option value="rate-asc">Lowest Occupancy</option>
+                    <option value="name-asc">Property Name (A-Z)</option>
+                    <option value="units-desc">Most Units</option>
+                  </select>
+                </div>
+              </div>
+
+              {initialLoad ? (
+                <div className={management.empty} role="status">Loading occupancy data...</div>
+              ) : loadError ? (
+                <div className={management.empty} role="alert">
+                  <strong>Unable to load occupancy data</strong>
+                  <Button variant="outline" onClick={() => void loadData()}>Try again</Button>
+                </div>
+              ) : filteredOccupancyProperties.length === 0 ? (
+                <div className={management.empty}>
+                  <Building2 aria-hidden="true" />
+                  <strong>{properties.length ? "No properties match these occupancy filters" : "No properties yet"}</strong>
+                  <p>{properties.length ? "Adjust your search or reset the filters to see occupancy." : "Register properties and units to monitor portfolio occupancy."}</p>
+                </div>
+              ) : occupancyDisplayMode === "table" ? (
+                <>
+                  <div className={management.tableScroll}>
+                    <table className={management.table}>
+                      <thead>
+                        <tr>
+                          <th>Property Photo</th>
+                          <th>Property Name</th>
+                          <th>Location</th>
+                          <th>Type</th>
+                          <th>Total Units</th>
+                          <th>Occupied</th>
+                          <th>Vacant</th>
+                          <th>Occupancy Rate</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleOccupancyProperties.map((property) => {
+                          const propertyUnits = units.filter((u) => u.propertyId === property.id);
+                          const occupied = propertyUnits.filter((u) => u.status === "occupied").length;
+                          const vacant = propertyUnits.filter((u) => u.status === "vacant").length;
+                          const rate = propertyUnits.length ? Math.round((occupied / propertyUnits.length) * 100) : 0;
+                          const propImgs = property.imageUrls?.length ? property.imageUrls : property.imageUrl ? [property.imageUrl] : [];
+
+                          return (
+                            <tr key={property.id}>
+                              <td>
+                                <UnitImageCarousel
+                                  images={propImgs}
+                                  alt={property.name}
+                                  title={property.name}
+                                  subtitle={property.location || ""}
+                                  className="h-10 w-14 shrink-0 rounded-md border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
+                                  imageClassName="group-hover:scale-100"
+                                />
+                              </td>
+                              <td className="font-semibold text-slate-900">{property.name}</td>
+                              <td>
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-4 w-4 text-blue-600 shrink-0" />
+                                  <span className="text-sm font-medium text-slate-800 truncate max-w-[200px]" title={property.location}>
+                                    {property.location || "—"}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="capitalize text-slate-700 font-medium">
+                                {property.type === "condominium" ? "Condominium" : "Residential House"}
+                              </td>
+                              <td className="font-semibold tabular-nums">{propertyUnits.length}</td>
+                              <td className="text-blue-700 font-semibold tabular-nums">{occupied}</td>
+                              <td className="text-emerald-700 font-semibold tabular-nums">{vacant}</td>
+                              <td>
+                                <div className="flex items-center gap-2 min-w-[120px]">
+                                  <div className="h-2 w-16 overflow-hidden rounded-full bg-slate-100">
+                                    <div
+                                      className={`h-full rounded-full ${
+                                        rate === 100
+                                          ? "bg-emerald-500"
+                                          : rate >= 60
+                                          ? "bg-blue-600"
+                                          : rate > 0
+                                          ? "bg-amber-500"
+                                          : "bg-slate-300"
+                                      }`}
+                                      style={{ width: `${rate}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-xs font-bold tabular-nums text-slate-800">{rate}%</span>
+                                </div>
+                              </td>
+                              <td>
+                                <Badge
+                                  className={`shrink-0 font-bold text-xs px-2.5 py-0.5 rounded-full border ${
+                                    rate === 100
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                      : rate >= 60
+                                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                                      : rate > 0
+                                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                                      : "bg-slate-50 text-slate-600 border-slate-200"
+                                  }`}
+                                >
+                                  {rate === 100 ? "Full" : rate > 0 ? `${rate}% Active` : "Vacant"}
+                                </Badge>
+                              </td>
+                              <td>
+                                <div className="flex items-center justify-end gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setHistoryTarget({ propertyId: property.id, title: `Tenancy history · ${property.name}` })}
+                                    className="h-8 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                  >
+                                    <HistoryIcon className="mr-1 h-3.5 w-3.5" />History
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setUnitSearch(property.name);
+                                      setActiveTab("units");
+                                      window.location.hash = "units";
+                                    }}
+                                    className="h-8 text-xs font-semibold text-blue-700 hover:bg-blue-50 border-blue-200"
+                                  >
+                                    View Units
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <ManagementPagination page={currentOccupancyPage} total={filteredOccupancyProperties.length} noun="properties" onPageChange={setOccupancyPage} />
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-4">
+                    {visibleOccupancyProperties.map((property) => {
+                      const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
+                      const occupied = propertyUnits.filter((unit) => unit.status === "occupied").length;
+                      const vacant = propertyUnits.filter((unit) => unit.status === "vacant").length;
+                      const maintenance = propertyUnits.filter((unit) => unit.status === "maintenance").length;
+                      const rate = propertyUnits.length ? Math.round((occupied / propertyUnits.length) * 100) : 0;
+                      const propImgs = property.imageUrls?.length ? property.imageUrls : property.imageUrl ? [property.imageUrl] : [];
+
+                      return (
+                        <div
+                          key={property.id}
+                          className="group relative rounded-2xl border border-slate-200/90 bg-white p-5 hover:border-blue-300 hover:shadow-md transition-all duration-200"
+                        >
+                          <div className="flex items-start gap-4">
+                            <UnitImageCarousel
+                              images={propImgs}
+                              alt={property.name}
+                              title={property.name}
+                              subtitle={property.location || ""}
+                              className="h-16 w-20 shrink-0 rounded-xl border border-slate-200 shadow-2xs"
+                              imageClassName="group-hover:scale-105"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <h3 className="truncate font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
+                                  {property.name}
+                                </h3>
+                                <Badge
+                                  className={`shrink-0 font-bold text-xs px-2.5 py-0.5 rounded-full border ${
+                                    rate === 100
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                      : rate >= 60
+                                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                                      : rate > 0
+                                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                                      : "bg-slate-50 text-slate-600 border-slate-200"
+                                  }`}
+                                >
+                                  {rate}% Occupied
+                                </Badge>
+                              </div>
+                              <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-500 truncate">
+                                <MapPin className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                                <span className="truncate">{property.location || "Location not specified"}</span>
+                              </div>
+                              <div className="mt-1.5 flex items-center gap-2">
+                                <Badge variant="outline" className="text-[10px] font-semibold text-slate-600 bg-slate-50 border-slate-200 capitalize">
+                                  {property.type === "condominium" ? "Condominium" : "Residential House"}
+                                </Badge>
+                                <span className="text-[11px] text-slate-400 font-medium">
+                                  {propertyUnits.length} total {propertyUnits.length === 1 ? "unit" : "units"}
+                                </span>
+                              </div>
+                            </div>
                           </div>
+
+                          {/* Progress Track */}
+                          <div className="mt-4">
+                            <div className="flex items-center justify-between text-xs font-semibold mb-1.5">
+                              <span className="text-slate-600">Occupancy Progress</span>
+                              <span className="text-slate-900 font-bold">{occupied} of {propertyUnits.length} units</span>
+                            </div>
+                            <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100 p-0.5">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  rate === 100
+                                    ? "bg-gradient-to-r from-emerald-500 to-teal-500"
+                                    : rate >= 60
+                                    ? "bg-gradient-to-r from-blue-500 to-indigo-600"
+                                    : rate > 0
+                                    ? "bg-gradient-to-r from-amber-400 to-orange-500"
+                                    : "bg-transparent"
+                                }`}
+                                style={{ width: `${rate}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Stat chips */}
+                          <div className="mt-3.5 flex flex-wrap items-center gap-2 text-xs">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-50 font-semibold text-blue-700">
+                              <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
+                              {occupied} Occupied
+                            </span>
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 font-semibold text-emerald-700">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                              {vacant} Vacant
+                            </span>
+                            {maintenance > 0 && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-50 font-semibold text-amber-700">
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                {maintenance} Maintenance
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Individual Units Pills */}
+                          {propertyUnits.length > 0 && (
+                            <div className="mt-4 pt-3 border-t border-slate-100">
+                              <div className="flex items-center justify-between gap-2 mb-2">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Unit Breakdown</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setUnitSearch(property.name);
+                                    setActiveTab("units");
+                                    window.location.hash = "units";
+                                  }}
+                                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+                                >
+                                  View all in Units &rarr;
+                                </button>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {propertyUnits.slice(0, 8).map((unit) => (
+                                  <span
+                                    key={unit.id}
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border ${
+                                      unit.status === "occupied"
+                                        ? "bg-blue-50/60 text-blue-700 border-blue-200/80"
+                                        : unit.status === "vacant"
+                                        ? "bg-emerald-50/60 text-emerald-700 border-emerald-200/80"
+                                        : "bg-amber-50/60 text-amber-700 border-amber-200/80"
+                                    }`}
+                                  >
+                                    <span
+                                      className={`h-1.5 w-1.5 rounded-full ${
+                                        unit.status === "occupied"
+                                          ? "bg-blue-600"
+                                          : unit.status === "vacant"
+                                          ? "bg-emerald-600"
+                                          : "bg-amber-500"
+                                      }`}
+                                    />
+                                    Unit {unit.unitNumber}
+                                  </span>
+                                ))}
+                                {propertyUnits.length > 8 && (
+                                  <span className="text-[11px] font-semibold text-slate-400 self-center">
+                                    +{propertyUnits.length - 8} more
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </td><td className="capitalize">{property?.type || "—"}</td><td className="whitespace-nowrap tabular-nums">{formatCurrency(unit.rentAmount)}</td><td><UnitStatus status={unit.status} /></td><td>{tenantName ? <span className={management.tenantCell}><User aria-hidden="true" />{tenantName}</span> : "—"}</td><td>
-                        <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon" variant="ghost" aria-label={`Actions for unit ${unit.unitNumber}`} className="h-8 w-8 text-blue-700"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => handleEditUnit(unit)} icon={<Eye className="h-4 w-4" />}>Edit unit and property</DropdownMenuItem><DropdownMenuItem onSelect={() => handleDeleteUnit(unit)} icon={<Trash2 className="h-4 w-4" />} className="text-red-600">Delete unit</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
-                      </td></tr>;
-                    })}</tbody>
-                  </table></div><ManagementPagination page={currentUnitPage} total={filteredUnits.length} noun="units" onPageChange={setUnitPage} /></>}
-          </section>}
-          {unitsView === "occupancy" && <Card><CardHeader><CardTitle className="text-lg">Occupancy summary</CardTitle><CardDescription>Filtered unit availability by property</CardDescription></CardHeader><CardContent className="space-y-3">
-            {filteredProperties.map((property) => { const propertyUnits = filteredUnits.filter((unit) => unit.propertyId === property.id); const occupied = propertyUnits.filter((unit) => unit.status === "occupied").length; const rate = propertyUnits.length ? Math.round((occupied / propertyUnits.length) * 100) : 0; return <div key={property.id} className="rounded-xl border border-border p-4"><div className="flex justify-between gap-4"><div><p className="font-medium">{property.name}</p><p className="text-xs text-text-secondary">{occupied} of {propertyUnits.length} units occupied</p></div><p className="font-bold text-blue-600">{rate}%</p></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${rate}%` }} /></div></div>; })}
-          </CardContent></Card>}
+                      );
+                    })}
+                  </div>
+                  <ManagementPagination page={currentOccupancyPage} total={filteredOccupancyProperties.length} noun="properties" onPageChange={setOccupancyPage} />
+                </>
+              )}
+            </div>
+          </section>
         </motion.div>
       )}
 
@@ -1592,94 +2388,6 @@ export default function OwnerDashboard() {
           <ContractsPanel mode="owner" />
         </motion.div>
       )}
-      {/* OCCUPANCY */}
-      {activeTab === "occupancy" && (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-          <ManagementBanner
-            category="OCCUPANCY MANAGEMENT"
-            title="Occupancy & Leases"
-            description="Monitor unit occupancy rates, vacant inventory, and tenancy breakdown across all properties."
-            icon={Home}
-          />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-            <Card>
-              <CardContent className="min-h-[140px] p-6">
-                <p className="text-sm font-medium text-text-secondary mb-2">Total Units</p>
-                <p className="text-3xl font-bold text-foreground">{units.length}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="min-h-[140px] p-6">
-                <p className="text-sm font-medium text-text-secondary mb-2">Available</p>
-                <p className="text-3xl font-bold text-green-600">{availableUnits.length}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="min-h-[140px] p-6">
-                <p className="text-sm font-medium text-text-secondary mb-2">Occupied</p>
-                <p className="text-3xl font-bold text-blue-600">{occupiedUnits.length}</p>
-              </CardContent>
-            </Card>
-          </div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Occupancy by Property</CardTitle>
-              <CardDescription>Unit status breakdown</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  {properties.map((property) => {
-                    const propertyUnits = units.filter((u) => u.propertyId === property.id);
-                    const vacant = propertyUnits.filter((u) => u.status === "vacant");
-                    const occupied = propertyUnits.filter((u) => u.status === "occupied");
-                    return (
-                      <div key={property.id} onClick={() => setSelectedProperty(property)} className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-colors ${selectedProperty?.id === property.id ? "border-blue-500 bg-blue-50" : "border-border hover:bg-surface-secondary"}`}>
-                        <div>
-                          <p className="text-base font-medium text-foreground">{property.name}</p>
-                          <p className="text-sm text-text-secondary">{property.location}</p>
-                        </div>
-                        <div className="flex items-center gap-4 text-sm">
-                          <span className="text-green-600 font-medium">{vacant.length} available</span>
-                          <span className="text-blue-600 font-medium">{occupied.length} occupied</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {properties.length === 0 && <p className="text-center py-8 text-text-secondary">No properties yet</p>}
-                </div>
-                {selectedProperty ? (
-                  <div className="border border-border rounded-xl p-4">
-                    <h4 className="text-base font-semibold text-foreground mb-3">{selectedProperty.name} - Units</h4>
-                    <div className="space-y-2">
-                      {(() => {
-                        const propertyUnits = units.filter((u) => u.propertyId === selectedProperty.id);
-                        if (propertyUnits.length === 0) return <p className="text-sm text-text-tertiary">No units registered</p>;
-                        return propertyUnits.map((unit) => {
-                          const tenant = tenants.find((t) => t.unitId === unit.id || t.unitNumber === unit.unitNumber);
-                          return (
-                            <div key={unit.id} className="flex items-center justify-between p-3 rounded-lg bg-surface-secondary">
-                              <div>
-                                <span className="text-sm font-medium">Unit {unit.unitNumber}</span>
-                                {tenant && <span className="text-xs text-text-secondary ml-2">({tenant.name})</span>}
-                              </div>
-                              <Badge variant={unit.status === "vacant" ? "success" : unit.status === "occupied" ? "outline" : "warning"} className="text-xs capitalize">{unit.status}</Badge>
-                            </div>
-                          );
-                        });
-                      })()}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="border border-dashed border-border rounded-xl flex items-center justify-center p-8">
-                    <p className="text-sm text-text-tertiary">Select a property to view its units</p>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
 
       {/* PAYMENTS */}
       {activeTab === "payments" && (
@@ -2012,238 +2720,382 @@ export default function OwnerDashboard() {
         />
       )}
 
-      {/* Add Unit Modal */}
+      {/* Add Condominium Room / Unit Modal */}
       {showAddUnit && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowAddUnit(false)} />
-          <form onSubmit={handleAddUnit} className="relative w-full max-w-lg rounded-2xl border border-border bg-white p-6 shadow-2xl">
-            <div className="mb-5 flex items-start justify-between"><div><h3 className="text-lg font-semibold">Add Rental Unit</h3><p className="text-sm text-text-secondary">Add another unit to an existing property.</p></div><button type="button" onClick={() => setShowAddUnit(false)} className="rounded-lg p-2 hover:bg-surface-secondary"><X className="h-4 w-4" /></button></div>
-            <div className="space-y-4"><div><label className="mb-1.5 block text-sm font-medium">Property *</label><select required value={newUnitForm.propertyId} onChange={(event) => setNewUnitForm({ ...newUnitForm, propertyId: event.target.value })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"><option value="">Select a property</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></div><div className="grid grid-cols-2 gap-3"><div><label className="mb-1.5 block text-sm font-medium">Unit number *</label><Input required value={newUnitForm.unitNumber} onChange={(event) => setNewUnitForm({ ...newUnitForm, unitNumber: event.target.value })} placeholder="101" /></div><div><label className="mb-1.5 block text-sm font-medium">Floor</label><Input type="number" min="0" value={newUnitForm.floor} onChange={(event) => setNewUnitForm({ ...newUnitForm, floor: event.target.value })} placeholder="1" /></div></div><div className="grid grid-cols-2 gap-3"><div><label className="mb-1.5 block text-sm font-medium">Monthly rent *</label><Input required type="number" min="0" value={newUnitForm.rentAmount} onChange={(event) => setNewUnitForm({ ...newUnitForm, rentAmount: event.target.value })} placeholder="15000" /></div><div><label className="mb-1.5 block text-sm font-medium">Status</label><select value={newUnitForm.status} onChange={(event) => setNewUnitForm({ ...newUnitForm, status: event.target.value as Unit["status"] })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"><option value="vacant">Vacant</option><option value="occupied">Occupied</option><option value="maintenance">Maintenance</option></select></div></div><div><label className="mb-1.5 block text-sm font-medium">Unit photos</label><Input type="file" accept="image/*" multiple onChange={async (event) => { const files = Array.from(event.target.files || []); if (!files.length) return; try { const urls = await Promise.all(files.map(async (file) => { const upload = new FormData(); upload.append("file", file); upload.append("type", "unit"); try { const response = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: upload }); const result = await safeParseJson(response); if (result.success && result.url) return result.url as string; throw new Error(result.error || "Upload failed"); } catch { return new Promise<string>((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result as string); reader.onerror = () => resolve(""); reader.readAsDataURL(file); }); } })); const validUrls = urls.filter(Boolean); setNewUnitForm((current) => ({ ...current, imageUrl: current.imageUrl || validUrls[0], imageUrls: [...current.imageUrls, ...validUrls] })); event.target.value = ""; toast.success(`${validUrls.length} image${validUrls.length === 1 ? "" : "s"} added`); } catch (error) { toast.error(error instanceof Error ? error.message : "Upload failed"); } }} /></div>{newUnitForm.imageUrls.length > 0 && <div className="flex flex-wrap gap-2">{newUnitForm.imageUrls.map((url, index) => <Image key={`${url}-${index}`} src={url} alt={`Preview ${index + 1}`} width={64} height={64} unoptimized className="h-16 w-16 rounded-lg object-cover" />)}</div>}</div>
-            <div className="mt-6 flex justify-end gap-3"><Button type="button" variant="outline" onClick={() => setShowAddUnit(false)}>Cancel</Button><Button type="submit" disabled={isSubmitting}>{isSubmitting ? "Adding..." : "Add Unit"}</Button></div>
+          <form onSubmit={handleAddUnit} className="relative w-full max-w-lg rounded-2xl border border-indigo-100 bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="mb-5 flex items-start justify-between border-b border-border pb-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shrink-0">
+                  <DoorOpen className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-foreground">Add Unit</h3>
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px]">
+                      Rental Unit
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-text-secondary">Add an individual rental unit and enter its address and details.</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setShowAddUnit(false)} className="rounded-lg p-2 text-text-secondary hover:text-foreground hover:bg-surface-secondary">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Associated Property (Optional) */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Associated Property (Optional)</label>
+                <select
+                  value={newUnitForm.propertyId}
+                  onChange={(event) => {
+                    const pId = event.target.value;
+                    const p = properties.find((item) => item.id === pId);
+                    setNewUnitForm((curr) => ({
+                      ...curr,
+                      propertyId: pId,
+                      address: curr.address ? curr.address : (p?.location || ""),
+                    }));
+                  }}
+                  className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm text-foreground focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Standalone Unit (No Property)</option>
+                  {properties.map((property) => (
+                    <option key={property.id} value={property.id}>
+                      {property.name} ({property.location})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Unit Address */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Unit Address *</label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
+                  <Input
+                    required
+                    value={newUnitForm.address}
+                    onChange={(event) => setNewUnitForm({ ...newUnitForm, address: event.target.value })}
+                    placeholder="e.g. Mandaue, Cebu, Mindanao"
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+
+              {/* Unit Number & Floor */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">Unit Number *</label>
+                  <Input
+                    required
+                    value={newUnitForm.unitNumber}
+                    onChange={(event) => setNewUnitForm({ ...newUnitForm, unitNumber: event.target.value })}
+                    placeholder="e.g. Unit 40, 102-A"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">Floor Level</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={newUnitForm.floor}
+                    onChange={(event) => setNewUnitForm({ ...newUnitForm, floor: event.target.value })}
+                    placeholder="e.g. 4"
+                  />
+                </div>
+              </div>
+
+              {/* Monthly Rent */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Monthly Rent (₱) *</label>
+                <Input
+                  required
+                  type="number"
+                  min="0"
+                  value={newUnitForm.rentAmount}
+                  onChange={(event) => setNewUnitForm({ ...newUnitForm, rentAmount: event.target.value })}
+                  placeholder="e.g. 15000"
+                />
+              </div>
+
+              {/* Classification & Unit Condition */}
+              <div className="rounded-xl border border-border bg-surface-secondary/40 p-4">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">Classification &amp; Unit Condition</p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">Unit Type</label>
+                    <select
+                      value={newUnitForm.type}
+                      onChange={(event) => setNewUnitForm({ ...newUnitForm, type: event.target.value })}
+                      className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"
+                    >
+                      {UNIT_TYPES.map((t) => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">Unit Condition</label>
+                    <select
+                      value={newUnitForm.condition}
+                      onChange={(event) => setNewUnitForm({ ...newUnitForm, condition: event.target.value })}
+                      className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"
+                    >
+                      <option value="">Select condition...</option>
+                      {PROPERTY_CONDITIONS.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">Unit Status</label>
+                    <select
+                      value={newUnitForm.status}
+                      onChange={(event) => setNewUnitForm({ ...newUnitForm, status: event.target.value as Unit["status"] })}
+                      className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"
+                    >
+                      <option value="vacant">Vacant (Available)</option>
+                      <option value="occupied">Occupied</option>
+                      <option value="maintenance">Under Maintenance</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Unit Photos */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Unit Interior Photos</label>
+                <div className="flex flex-col gap-3">
+                  <label className="inline-flex w-fit items-center gap-2 px-4 py-2 rounded-xl border border-blue-200 bg-blue-50/50 text-blue-700 cursor-pointer hover:bg-blue-50 transition-colors">
+                    <Camera className="h-4 w-4" />
+                    <span className="text-sm font-medium">{newUnitForm.imageUrls.length ? "Add More Unit Photos" : "Upload Unit Photos"}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={async (event) => {
+                        const files = Array.from(event.target.files || []);
+                        if (!files.length) return;
+                        try {
+                          const urls = await Promise.all(
+                            files.map(async (file) => {
+                              const upload = new FormData();
+                              upload.append("file", file);
+                              upload.append("type", "unit");
+                              try {
+                                const response = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: upload });
+                                const result = await safeParseJson(response);
+                                if (result.success && result.url) return result.url as string;
+                                throw new Error(result.error || "Upload failed");
+                              } catch {
+                                return new Promise<string>((resolve) => {
+                                  const reader = new FileReader();
+                                  reader.onload = () => resolve(reader.result as string);
+                                  reader.onerror = () => resolve("");
+                                  reader.readAsDataURL(file);
+                                });
+                              }
+                            })
+                          );
+                          const validUrls = urls.filter(Boolean);
+                          setNewUnitForm((current) => ({
+                            ...current,
+                            imageUrl: current.imageUrl || validUrls[0],
+                            imageUrls: [...current.imageUrls, ...validUrls],
+                          }));
+                          event.target.value = "";
+                          toast.success(`${validUrls.length} unit photo${validUrls.length === 1 ? "" : "s"} added`);
+                        } catch (error) {
+                          toast.error(error instanceof Error ? error.message : "Upload failed");
+                        }
+                      }}
+                    />
+                  </label>
+                  {newUnitForm.imageUrls.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {newUnitForm.imageUrls.map((url, index) => (
+                        <div key={`${url}-${index}`} className="relative group">
+                          <Image
+                            src={url}
+                            alt={`Unit preview ${index + 1}`}
+                            width={64}
+                            height={64}
+                            unoptimized
+                            className="h-16 w-16 rounded-lg object-cover border border-border"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = newUnitForm.imageUrls.filter((_, i) => i !== index);
+                              setNewUnitForm({ ...newUnitForm, imageUrls: updated, imageUrl: updated[0] || "" });
+                            }}
+                            className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow-md hover:bg-red-600 transition-colors"
+                            title="Remove photo"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-border">
+              <Button type="button" variant="outline" onClick={() => setShowAddUnit(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting} className="bg-blue-600 text-white hover:bg-blue-700 font-medium">
+                {isSubmitting ? "Adding Unit..." : "Add Unit"}
+              </Button>
+            </div>
           </form>
         </div>
       )}
 
-      {/* Create Property Modal */}
+      {/* Create Property / Building Modal */}
       {showCreateProperty && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { setShowCreateProperty(false); setCreateStep(1); }} />
-          <div className="relative w-full max-w-2xl rounded-2xl border border-border bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="border-b border-border px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">Add Property &amp; Units</h3>
-                  <p className="text-sm text-text-secondary">Register a property and set up its rental units together</p>
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowCreateProperty(false)} />
+          <div className="relative w-full max-w-2xl rounded-2xl border border-blue-100 bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 z-10 border-b border-border bg-white px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shrink-0">
+                  <Building2 className="h-5 w-5" />
                 </div>
-                <button onClick={() => { setShowCreateProperty(false); setCreateStep(1); }} className="h-8 w-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-surface-secondary transition-colors">
-                  <X className="h-4 w-4" />
-                </button>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-foreground">Add Property / Building</h3>
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px]">
+                      Building &amp; Estate
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-text-secondary">Register an entire building, condominium development, or property in a city.</p>
+                </div>
               </div>
+              <button onClick={() => setShowCreateProperty(false)} className="h-8 w-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-surface-secondary transition-colors">
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            <form onSubmit={handleCreateProperty} className="p-6 space-y-4">
-              {createStep === 1 && (
-                <div className="space-y-5">
-                  <div><h4 className="text-base font-semibold text-foreground">Property Details</h4><p className="mt-1 text-sm text-text-secondary">Start with the property&apos;s location and type.</p></div>
+
+            <form onSubmit={handleCreateProperty} className="p-6 space-y-5">
+              {/* Building Name & Location */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Property / Building Name *</label>
+                  <Input value={propertyForm.name} onChange={(e) => setPropertyForm({ ...propertyForm, name: e.target.value })} placeholder="e.g. J Tower Residence, Avida Towers Riala" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Street Address *</label>
+                  <Input value={propertyForm.address} onChange={(e) => setPropertyForm({ ...propertyForm, address: e.target.value })} placeholder="e.g. A.S. Fortuna St, Mandaue City" required />
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="block text-sm font-medium mb-1.5">Property Name *</label>
-                    <Input value={propertyForm.name} onChange={(e) => setPropertyForm({ ...propertyForm, name: e.target.value })} required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5">Address *</label>
-                    <Input value={propertyForm.address} onChange={(e) => setPropertyForm({ ...propertyForm, address: e.target.value })} required />
-                  </div>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-sm font-medium mb-1.5">City *</label>
-                      <Input value={propertyForm.city} onChange={(e) => setPropertyForm({ ...propertyForm, city: e.target.value })} required />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1.5">Province *</label>
-                      <Input value={propertyForm.province} onChange={(e) => setPropertyForm({ ...propertyForm, province: e.target.value })} required />
-                    </div>
+                    <label className="block text-sm font-medium mb-1.5">City *</label>
+                    <Input value={propertyForm.city} onChange={(e) => setPropertyForm({ ...propertyForm, city: e.target.value })} placeholder="e.g. Mandaue City / Cebu City" required />
                   </div>
                   <div>
-                    <p className="mb-2 text-sm font-medium">Map coordinates <span className="font-normal text-text-secondary">(optional)</span></p>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div>
-                        <label className="mb-1.5 block text-xs text-text-secondary">Latitude</label>
-                        <Input type="number" step="any" min="-90" max="90" value={propertyForm.latitude} onChange={(e) => setPropertyForm({ ...propertyForm, latitude: e.target.value })} placeholder="e.g. 8.9475" />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block text-xs text-text-secondary">Longitude</label>
-                        <Input type="number" step="any" min="-180" max="180" value={propertyForm.longitude} onChange={(e) => setPropertyForm({ ...propertyForm, longitude: e.target.value })} placeholder="e.g. 125.5406" />
-                      </div>
-                    </div>
-                    <p className="mt-1.5 text-xs text-text-secondary">Enter both coordinates to place a marker on the property map.</p>
+                    <label className="block text-sm font-medium mb-1.5">Province *</label>
+                    <Input value={propertyForm.province} onChange={(e) => setPropertyForm({ ...propertyForm, province: e.target.value })} placeholder="e.g. Cebu" required />
                   </div>
-                  <div className="rounded-xl border border-border bg-surface-secondary/40 p-4">
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">Classification & availability</p>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                      <div>
-                        <label className="block text-sm font-medium mb-1.5">Property Type</label>
-                        <select value={propertyForm.type} onChange={(e) => setPropertyForm({ ...propertyForm, type: e.target.value as "house" | "condominium" })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm">
-                          <option value="house">House</option><option value="condominium">Condominium</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1.5">Current Property Condition</label>
-                        <select value={propertyForm.condition} onChange={(e) => setPropertyForm({ ...propertyForm, condition: e.target.value })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm">
-                          <option value="">Select condition...</option>
-                          {PROPERTY_CONDITIONS.map((condition) => <option key={condition} value={condition}>{condition}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1.5">Availability Status</label>
-                        <select value={propertyForm.availabilityStatus} onChange={(e) => setPropertyForm({ ...propertyForm, availabilityStatus: e.target.value as typeof AVAILABILITY_STATUSES[number] })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm">
-                          {AVAILABILITY_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-border bg-surface-secondary/40 p-4">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">Assigned Real Estate Agent</p>
-                    <select
-                      value={propertyForm.agentId || ""}
-                      onChange={(e) => setPropertyForm({ ...propertyForm, agentId: e.target.value })}
-                      className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"
-                    >
-                      <option value="">All / Unassigned (All agents can manage &amp; assign units)</option>
-                      {agents.map((agent) => (
-                        <option key={agent.id} value={agent.id}>
-                          {agent.name} ({agent.email})
-                        </option>
+                </div>
+              </div>
+
+              {/* Classification & Availability */}
+              <div className="rounded-xl border border-border bg-surface-secondary/40 p-4">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">Classification &amp; Property Condition</p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">Property Type</label>
+                    <select value={propertyForm.type} onChange={(e) => setPropertyForm({ ...propertyForm, type: e.target.value as any })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm">
+                      {PROPERTY_TYPES.map((pt) => (
+                        <option key={pt.value} value={pt.value}>{pt.label}</option>
                       ))}
                     </select>
-                    <p className="mt-1.5 text-xs text-text-secondary">
-                      Assign a specific agent or leave unassigned so any of your registered agents can manage units for this property.
-                    </p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1.5">Property Features</label>
-                    <FeaturePicker value={propertyForm.features} onChange={(features) => setPropertyForm({ ...propertyForm, features })} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5">Property Image</label>
-                    <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border bg-surface-secondary cursor-pointer hover:bg-surface-tertiary transition-colors">
-                        <Camera className="h-4 w-4" />
-                        <span className="text-sm">{propertyForm.imageUrl ? "Change Image" : "Upload Image"}</span>
-                        <input type="file" accept="image/*" multiple className="hidden" onChange={handlePropertyImageUpload} disabled={isUploadingPropertyImage} />
-                      </label>
-                      {isUploadingPropertyImage && <span className="text-xs text-text-secondary">Uploading...</span>}
-                      {propertyForm.imageUrls.length > 0 && <div className="flex flex-wrap gap-2">{propertyForm.imageUrls.map((url, index) => <Image key={`${url}-${index}`} src={url} alt={`Property preview ${index + 1}`} width={80} height={80} unoptimized className="h-20 w-20 rounded-lg object-cover border border-border" />)}</div>}
-                    </div>
-                  </div>
-                </div>
-              )}
-              {createStep === 2 && (
-                <div className="space-y-4">
-                  <h4 className="text-base font-medium text-foreground">Set Up Rental Units</h4>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5">Unit Number *</label>
-                    <Input value={unitsForm.unitNumber} onChange={(e) => setUnitsForm({ ...unitsForm, unitNumber: e.target.value })} required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5">Floor</label>
-                    <Input type="number" value={unitsForm.floor} onChange={(e) => setUnitsForm({ ...unitsForm, floor: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5">Unit Status</label>
-                    <select value={unitsForm.status} onChange={(e) => setUnitsForm({ ...unitsForm, status: e.target.value as any })} className="h-10 px-3 rounded-xl border border-border bg-surface-secondary text-sm">
-                      <option value="vacant">Vacant</option>
-                      <option value="occupied">Occupied</option>
-                      <option value="maintenance">Maintenance</option>
+                    <label className="block text-sm font-medium mb-1.5">Property Condition</label>
+                    <select value={propertyForm.condition} onChange={(e) => setPropertyForm({ ...propertyForm, condition: e.target.value })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm">
+                      <option value="">Select condition...</option>
+                      {PROPERTY_CONDITIONS.map((condition) => <option key={condition} value={condition}>{condition}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1.5">Unit Image</label>
-                    <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border bg-surface-secondary cursor-pointer hover:bg-surface-tertiary transition-colors">
-                        <Camera className="h-4 w-4" />
-                        <span className="text-sm">{unitsForm.imageUrl ? "Change Image" : "Upload Image"}</span>
-                        <input type="file" accept="image/*" multiple className="hidden" onChange={handleUnitImageUpload} disabled={isUploadingUnitImage} />
-                      </label>
-                      {isUploadingUnitImage && <span className="text-xs text-text-secondary">Uploading...</span>}
-                      {unitsForm.imageUrls.length > 0 && <div className="flex flex-wrap gap-2">{unitsForm.imageUrls.map((url, index) => <Image key={`${url}-${index}`} src={url} alt={`Unit preview ${index + 1}`} width={80} height={80} unoptimized className="h-20 w-20 rounded-lg object-cover border border-border" />)}</div>}
+                    <label className="block text-sm font-medium mb-1.5">Property Status</label>
+                    <select value={propertyForm.availabilityStatus} onChange={(e) => setPropertyForm({ ...propertyForm, availabilityStatus: e.target.value as typeof AVAILABILITY_STATUSES[number] })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm">
+                      {AVAILABILITY_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Monthly Rent / Amount */}
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Monthly Rent (₱)</label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={propertyForm.monthlyRevenue}
+                  onChange={(e) => setPropertyForm({ ...propertyForm, monthlyRevenue: e.target.value })}
+                  placeholder="e.g. 15000"
+                />
+              </div>
+
+
+              {/* Building Amenities */}
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Building Amenities &amp; Facilities</label>
+                <FeaturePicker value={propertyForm.features} onChange={(features) => setPropertyForm({ ...propertyForm, features })} />
+              </div>
+
+              {/* Building Exterior Photos */}
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Building &amp; Facade Photos</label>
+                <div className="flex flex-col gap-3">
+                  <label className="inline-flex w-fit items-center gap-2 px-4 py-2 rounded-xl border border-blue-200 bg-blue-50/50 text-blue-700 cursor-pointer hover:bg-blue-50 transition-colors">
+                    <Camera className="h-4 w-4" />
+                    <span className="text-sm font-medium">{propertyForm.imageUrls.length ? "Add More Building Photos" : "Upload Building Photos"}</span>
+                    <input type="file" accept="image/*" multiple className="hidden" onChange={handlePropertyImageUpload} disabled={isUploadingPropertyImage} />
+                  </label>
+                  {isUploadingPropertyImage && <span className="text-xs text-text-secondary">Uploading...</span>}
+                  {propertyForm.imageUrls.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {propertyForm.imageUrls.map((url, index) => (
+                        <div key={`${url}-${index}`} className="relative group">
+                          <Image src={url} alt={`Property preview ${index + 1}`} width={80} height={80} unoptimized className="h-20 w-20 rounded-lg object-cover border border-border" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = propertyForm.imageUrls.filter((_, i) => i !== index);
+                              setPropertyForm({ ...propertyForm, imageUrls: updated, imageUrl: updated[0] || "" });
+                            }}
+                            className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow-md hover:bg-red-600 transition-colors"
+                            title="Remove photo"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  </div>
+                  )}
                 </div>
-              )}
-              {createStep === 3 && (
-                <div className="space-y-4">
-                  <h4 className="text-base font-medium text-foreground">Rental Rate and Terms</h4>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5">Monthly Rental Rate (₱) *</label>
-                    <Input type="number" value={unitsForm.rentAmount} onChange={(e) => setUnitsForm({ ...unitsForm, rentAmount: e.target.value })} required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5">Security Deposit (₱)</label>
-                    <Input type="number" value={termsForm.securityDeposit} onChange={(e) => setTermsForm({ ...termsForm, securityDeposit: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5">Advance Payment (₱)</label>
-                    <Input type="number" value={termsForm.advancePayment} onChange={(e) => setTermsForm({ ...termsForm, advancePayment: e.target.value })} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium mb-1.5">Rental Duration</label>
-                      <select value={termsForm.duration} onChange={(e) => setTermsForm({ ...termsForm, duration: e.target.value })} className="h-10 px-3 rounded-xl border border-border bg-surface-secondary text-sm">
-                        <option value="6 months">6 Months</option>
-                        <option value="12 months">12 Months</option>
-                        <option value="24 months">24 Months</option>
-                        <option value="monthly">Monthly</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1.5">Payment Due Date</label>
-                      <select value={termsForm.paymentDueDate} onChange={(e) => setTermsForm({ ...termsForm, paymentDueDate: e.target.value })} className="h-10 px-3 rounded-xl border border-border bg-surface-secondary text-sm">
-                        <option value="1st">1st of month</option>
-                        <option value="5th">5th of month</option>
-                        <option value="10th">10th of month</option>
-                        <option value="15th">15th of month</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5">Rental Terms</label>
-                    <textarea value={termsForm.rentalTerms} onChange={(e) => setTermsForm({ ...termsForm, rentalTerms: e.target.value })} className="w-full h-24 px-3 py-2 rounded-xl border border-border bg-surface-secondary text-sm resize-none" />
-                  </div>
-                </div>
-              )}
-              {createStep === 4 && (
-                <div className="space-y-4">
-                  <h4 className="text-base font-medium text-foreground">Review Property</h4>
-                  <div className="p-4 rounded-xl border border-border space-y-2">
-                    <p className="text-sm"><span className="font-medium">Name:</span> {propertyForm.name}</p>
-                    <p className="text-sm"><span className="font-medium">Address:</span> {propertyForm.address}, {propertyForm.city}, {propertyForm.province}</p>
-                    <p className="text-sm"><span className="font-medium">Type:</span> {propertyForm.type}</p>
-                    <p className="text-sm"><span className="font-medium">Features:</span> {propertyForm.features.length ? propertyForm.features.join(", ") : "None selected"}</p>
-                    <p className="text-sm"><span className="font-medium">Condition:</span> {propertyForm.condition || "Not specified"}</p>
-                    <p className="text-sm"><span className="font-medium">Availability:</span> {propertyForm.availabilityStatus}</p>
-                    <p className="text-sm"><span className="font-medium">Unit:</span> {unitsForm.unitNumber} (Floor {unitsForm.floor || "N/A"})</p>
-                    <p className="text-sm"><span className="font-medium">Rent:</span> {formatCurrency(Number(unitsForm.rentAmount) || 0)}/mo</p>
-                    <p className="text-sm"><span className="font-medium">Deposit:</span> {formatCurrency(Number(termsForm.securityDeposit) || 0)}</p>
-                    <p className="text-sm"><span className="font-medium">Duration:</span> {termsForm.duration}</p>
-                  </div>
-                </div>
-              )}
-              {createStep === 5 && (
-                <div className="text-center py-8">
-                  <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-3" />
-                  <p className="text-lg font-medium text-foreground">Property Created Successfully!</p>
-                  <p className="text-sm text-text-secondary mt-1">You can now manage units and assign tenants</p>
-                </div>
-              )}
-              <div className="flex gap-3 pt-2">
-                {createStep < 5 && (
-                  <>
-                    <Button type="button" variant="outline" onClick={() => setCreateStep(Math.max(1, createStep - 1))} disabled={createStep === 1}>Back</Button>
-                    <Button type="submit" disabled={isSubmitting} className="flex-1">{createStep === 4 ? (isSubmitting ? "Adding..." : "Add Property & Units") : "Next"}</Button>
-                  </>
-                )}
-                {createStep === 5 && (
-                  <Button type="button" onClick={() => { setShowCreateProperty(false); setCreateStep(1); }} className="flex-1">Done</Button>
-                )}
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-border">
+                <Button type="button" variant="outline" onClick={() => setShowCreateProperty(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isSubmitting} className="bg-blue-600 text-white hover:bg-blue-700 font-medium">
+                  {isSubmitting ? "Registering..." : "Add Property"}
+                </Button>
               </div>
             </form>
           </div>
@@ -2469,19 +3321,30 @@ export default function OwnerDashboard() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium mb-1.5">Type</label>
-                  <select value={editPropertyForm.type} onChange={(e) => setEditPropertyForm({ ...editPropertyForm, type: e.target.value as "house" | "condominium" })} className="h-10 px-3 rounded-xl border border-border bg-surface-secondary text-sm">
-                    <option value="house">House</option>
-                    <option value="condominium">Condominium</option>
+                  <label className="block text-sm font-medium mb-1.5">Property Type</label>
+                  <select value={editPropertyForm.type} onChange={(e) => setEditPropertyForm({ ...editPropertyForm, type: e.target.value as any })} className="h-10 px-3 rounded-xl border border-border bg-surface-secondary text-sm w-full">
+                    {PROPERTY_TYPES.map((pt) => (
+                      <option key={pt.value} value={pt.value}>{pt.label}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1.5">Status</label>
-                  <select value={editPropertyForm.status} onChange={(e) => setEditPropertyForm({ ...editPropertyForm, status: e.target.value as "active" | "inactive" })} className="h-10 px-3 rounded-xl border border-border bg-surface-secondary text-sm">
+                  <label className="block text-sm font-medium mb-1.5">Listing Status</label>
+                  <select value={editPropertyForm.status} onChange={(e) => setEditPropertyForm({ ...editPropertyForm, status: e.target.value as "active" | "inactive" })} className="h-10 px-3 rounded-xl border border-border bg-surface-secondary text-sm w-full">
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Monthly Rent (₱)</label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={editPropertyForm.monthlyRevenue}
+                  onChange={(e) => setEditPropertyForm({ ...editPropertyForm, monthlyRevenue: e.target.value })}
+                  placeholder="e.g. 15000"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5">Property Features</label>
@@ -2489,36 +3352,18 @@ export default function OwnerDashboard() {
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium mb-1.5">Current Property Condition</label>
+                  <label className="block text-sm font-medium mb-1.5">Property Condition</label>
                   <select value={editPropertyForm.condition} onChange={(e) => setEditPropertyForm({ ...editPropertyForm, condition: e.target.value })} className="h-10 w-full rounded-xl border border-border bg-surface-secondary px-3 text-sm">
                     <option value="">Select condition...</option>
                     {PROPERTY_CONDITIONS.map((condition) => <option key={condition} value={condition}>{condition}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1.5">Availability Status</label>
+                  <label className="block text-sm font-medium mb-1.5">Property Status</label>
                   <select value={editPropertyForm.availabilityStatus} onChange={(e) => setEditPropertyForm({ ...editPropertyForm, availabilityStatus: e.target.value as typeof AVAILABILITY_STATUSES[number] })} className="h-10 w-full rounded-xl border border-border bg-surface-secondary px-3 text-sm">
                     {AVAILABILITY_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
                   </select>
                 </div>
-              </div>
-              <div className="rounded-xl border border-border bg-surface-secondary/40 p-4">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">Assigned Real Estate Agent</p>
-                <select
-                  value={editPropertyForm.agentId || ""}
-                  onChange={(e) => setEditPropertyForm({ ...editPropertyForm, agentId: e.target.value })}
-                  className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"
-                >
-                  <option value="">All / Unassigned (All agents can manage &amp; assign units)</option>
-                  {agents.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name} ({agent.email})
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1.5 text-xs text-text-secondary">
-                  Choose which agent manages this property and its units, or leave unassigned for all agents.
-                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5">Number of Units</label>
@@ -2595,69 +3440,22 @@ export default function OwnerDashboard() {
               </button>
             </div>
             <form onSubmit={handleSaveUnit} className="p-6 space-y-4">
-              <div className="rounded-xl border border-border bg-surface-secondary/40 p-4">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">Property details</p>
-                <div className="space-y-3">
-                  <div><label className="block text-sm font-medium mb-1.5">Property Name *</label><Input value={editPropertyForm.name} onChange={(e) => setEditPropertyForm({ ...editPropertyForm, name: e.target.value })} required /></div>
-                  <div><label className="block text-sm font-medium mb-1.5">Property Location *</label><Input value={editPropertyForm.location} onChange={(e) => setEditPropertyForm({ ...editPropertyForm, location: e.target.value })} required /></div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div><label className="block text-sm font-medium mb-1.5">Property Type</label><select value={editPropertyForm.type} onChange={(e) => setEditPropertyForm({ ...editPropertyForm, type: e.target.value as "house" | "condominium" })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"><option value="house">House</option><option value="condominium">Condominium</option></select></div>
-                    <div><label className="block text-sm font-medium mb-1.5">Availability</label><select value={editPropertyForm.availabilityStatus} onChange={(e) => setEditPropertyForm({ ...editPropertyForm, availabilityStatus: e.target.value as typeof AVAILABILITY_STATUSES[number] })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm">{AVAILABILITY_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</select></div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div><label className="block text-sm font-medium mb-1.5">Condition</label><select value={editPropertyForm.condition} onChange={(e) => setEditPropertyForm({ ...editPropertyForm, condition: e.target.value })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"><option value="">Select condition...</option>{PROPERTY_CONDITIONS.map((condition) => <option key={condition} value={condition}>{condition}</option>)}</select></div>
-                    <div><label className="block text-sm font-medium mb-1.5">Record Status</label><select value={editPropertyForm.status} onChange={(e) => setEditPropertyForm({ ...editPropertyForm, status: e.target.value as "active" | "inactive" })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
-                  </div>
-                  <div><label className="block text-sm font-medium mb-1.5">Features</label><FeaturePicker value={editPropertyForm.features} onChange={(features) => setEditPropertyForm({ ...editPropertyForm, features })} /></div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5">Property Image</label>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-border bg-white px-4 py-2 hover:bg-surface-secondary">
-                        <Camera className="h-4 w-4" />
-                        <span className="text-sm">Add Property Images</span>
-                        <input type="file" accept="image/*" multiple className="hidden" disabled={isUploadingEditPropertyImage} onChange={async (event) => {
-                          const files = Array.from(event.target.files || []);
-                          if (!files.length) return;
-                          setIsUploadingEditPropertyImage(true);
-                          try {
-                            const urls = await Promise.all(files.map(async (file) => {
-                              const uploadData = new FormData();
-                              uploadData.append("file", file);
-                              uploadData.append("type", "property");
-                              try {
-                                const response = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: uploadData });
-                                const result = await safeParseJson(response);
-                                if (result.success && result.url) return result.url as string;
-                                throw new Error(result.error || "Failed to upload image");
-                              } catch {
-                                return new Promise<string>((resolve) => {
-                                  const reader = new FileReader();
-                                  reader.onload = () => resolve(reader.result as string);
-                                  reader.onerror = () => resolve("");
-                                  reader.readAsDataURL(file);
-                                });
-                              }
-                            }));
-                            const validUrls = urls.filter(Boolean);
-                            setEditPropertyForm((current) => ({ ...current, imageUrl: current.imageUrl || validUrls[0], imageUrls: Array.from(new Set([...current.imageUrls, ...validUrls])) }));
-                            toast.success(`${validUrls.length} property image${validUrls.length === 1 ? "" : "s"} attached`);
-                          } catch (error) {
-                            toast.error(error instanceof Error ? error.message : "Failed to upload images");
-                          } finally {
-                            setIsUploadingEditPropertyImage(false);
-                            event.target.value = "";
-                          }
-                        }} />
-                      </label>
-                      {isUploadingEditPropertyImage && <span className="text-xs text-text-secondary">Uploading...</span>}
-                      {editPropertyForm.imageUrls.map((url, index) => <div key={`${url}-${index}`} className="relative"><Image src={url} alt={`Property preview ${index + 1}`} width={80} height={80} unoptimized className="h-20 w-20 rounded-lg border border-border object-cover" /><button type="button" onClick={() => void handleRemoveEditPropertyImage(url)} aria-label={`Remove property image ${index + 1}`} className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white"><X className="h-3 w-3" /></button></div>)}
-                    </div>
-                  </div>
-                </div>
-              </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5">Unit Number *</label>
                 <Input value={editUnitForm.unitNumber} onChange={(e) => setEditUnitForm({ ...editUnitForm, unitNumber: e.target.value })} required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Unit Address *</label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
+                  <Input
+                    required
+                    value={editUnitForm.address}
+                    onChange={(e) => setEditUnitForm({ ...editUnitForm, address: e.target.value })}
+                    placeholder="e.g. Mandaue, Cebu, Mindanao"
+                    className="pl-9"
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -2665,17 +3463,53 @@ export default function OwnerDashboard() {
                   <Input type="number" value={editUnitForm.floor} onChange={(e) => setEditUnitForm({ ...editUnitForm, floor: e.target.value })} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1.5">Status</label>
-                  <select value={editUnitForm.status} onChange={(e) => setEditUnitForm({ ...editUnitForm, status: e.target.value as "vacant" | "occupied" | "maintenance" })} className="h-10 px-3 rounded-xl border border-border bg-surface-secondary text-sm">
-                    <option value="vacant">Vacant</option>
-                    <option value="occupied">Occupied</option>
-                    <option value="maintenance">Maintenance</option>
-                  </select>
+                  <label className="block text-sm font-medium mb-1.5">Monthly Rent (₱) *</label>
+                  <Input type="number" min="0" value={editUnitForm.rentAmount} onChange={(e) => setEditUnitForm({ ...editUnitForm, rentAmount: e.target.value })} required />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Monthly Rent (₱) *</label>
-                <Input type="number" min="0" value={editUnitForm.rentAmount} onChange={(e) => setEditUnitForm({ ...editUnitForm, rentAmount: e.target.value })} required />
+
+              {/* Classification & Unit Condition */}
+              <div className="rounded-xl border border-border bg-surface-secondary/40 p-4">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">Classification &amp; Unit Condition</p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">Unit Type</label>
+                    <select
+                      value={editUnitForm.type}
+                      onChange={(e) => setEditUnitForm({ ...editUnitForm, type: e.target.value })}
+                      className="h-10 px-3 rounded-xl border border-border bg-white text-sm w-full"
+                    >
+                      {UNIT_TYPES.map((t) => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">Unit Condition</label>
+                    <select
+                      value={editUnitForm.condition}
+                      onChange={(e) => setEditUnitForm({ ...editUnitForm, condition: e.target.value })}
+                      className="h-10 px-3 rounded-xl border border-border bg-white text-sm w-full"
+                    >
+                      <option value="">Select condition...</option>
+                      {PROPERTY_CONDITIONS.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">Unit Status</label>
+                    <select
+                      value={editUnitForm.status}
+                      onChange={(e) => setEditUnitForm({ ...editUnitForm, status: e.target.value as "vacant" | "occupied" | "maintenance" })}
+                      className="h-10 px-3 rounded-xl border border-border bg-white text-sm w-full"
+                    >
+                      <option value="vacant">Vacant</option>
+                      <option value="occupied">Occupied</option>
+                      <option value="maintenance">Maintenance</option>
+                    </select>
+                  </div>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5">Unit Image</label>
@@ -2746,6 +3580,14 @@ export default function OwnerDashboard() {
           submitting={createTenantSubmitting}
         />
       )}
+
+      <TenancyHistoryModal
+        isOpen={!!historyTarget}
+        onClose={() => setHistoryTarget(null)}
+        title={historyTarget?.title || "Tenancy history"}
+        unitId={historyTarget?.unitId}
+        propertyId={historyTarget?.propertyId}
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyLoginOtp, initDatabase, findUserByEmail, findUserById, logAudit, updateUser, getAllUsers, createNotification } from "@/lib/db";
 import { withSecurityHeaders, withCorsHeaders, validateApiRequest, getClientIp } from "@/lib/api-security";
 import { checkVerifyRateLimit, clearVerifyRateLimit, VERIFY_LOCKOUT_DURATION_MS } from "@/lib/auth-security";
+import { regenerateSession } from "@/lib/security";
 
 export async function POST(request: NextRequest) {
   try {
@@ -100,8 +101,10 @@ export async function POST(request: NextRequest) {
       success: true,
       verified: true,
       user: safeUser,
-      message: "Account verified successfully! You can now log in.",
+      message: "Account verified successfully!",
     });
+    // Auto sign-in: a freshly verified account gets an authenticated session.
+    regenerateSession(response, resolvedUserId);
     return withSecurityHeaders(withCorsHeaders(request, response));
   } catch (error) {
     console.error("Verify signup OTP error:", error);

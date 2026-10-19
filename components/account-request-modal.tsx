@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { X, UserPlus, Mail, Phone, MapPin, Shield, Eye, EyeOff, Lock } from "lucide-react";
+import { X, UserPlus, Mail, Phone, MapPin, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -20,11 +20,9 @@ export default function AccountRequestModal({ isOpen, onClose, agentName }: Acco
     email: "",
     phone: "",
     address: "",
-    password: "",
     recipientRole: "owner",
     reason: "",
   });
-  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -59,8 +57,7 @@ export default function AccountRequestModal({ isOpen, onClose, agentName }: Acco
         // ignore message send failures; notification already delivered
       }
       toast.success(`Account creation request sent to ${formData.recipientRole === "owner" ? "Owner" : "Admin"}!`);
-      setFormData({ name: "", email: "", phone: "", address: "", password: "", recipientRole: "admin", reason: "" });
-      setShowPassword(false);
+      setFormData({ name: "", email: "", phone: "", address: "", recipientRole: "admin", reason: "" });
       onClose();
     } catch {
       toast.error("Failed to send request");
@@ -119,18 +116,6 @@ export default function AccountRequestModal({ isOpen, onClose, agentName }: Acco
               <div className="relative">
                 <MapPin className="absolute left-2.5 top-2 h-3.5 w-3.5 text-gray-400" />
                 <Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} placeholder="Enter your address" className="pl-9 text-sm" autoComplete="off" />
-              </div>
-            </div>
-          </div>
-          <div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-700">Password</label>
-              <div className="relative">
-                <Lock className="absolute left-2.5 top-2 h-3.5 w-3.5 text-gray-400" />
-                <Input type={showPassword ? "text" : "password"} value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="••••••••" className="pl-9 pr-9 text-sm" autoComplete="new-password" />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600">
-                  {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </button>
               </div>
             </div>
           </div>

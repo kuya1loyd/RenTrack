@@ -61,7 +61,10 @@ export async function ensureAgentProfileTables() {
           admin.from("chat_messages").select("tenant_id").limit(0),
         ]);
         const failed = checks.find((result) => result.error);
-        if (!failed?.error) return;
+        if (!failed?.error) {
+          await admin.storage.createBucket("agent-certificates", { public: true }).catch(() => {});
+          return;
+        }
         if (attempt === 4) {
           throw new Error(`Rent Manager profile data is unavailable: ${failed.error.message}`);
         }
@@ -84,14 +87,6 @@ export async function getPublicRentManager(id: string) {
     .eq("role", "agent")
     .maybeSingle();
   if (error) throw error;
-  if (!agent?.created_by) return null;
-
-  const { data: owner, error: ownerError } = await client
-    .from("users")
-    .select("id")
-    .eq("id", agent.created_by)
-    .eq("role", "owner")
-    .maybeSingle();
-  if (ownerError) throw ownerError;
-  return owner ? agent : null;
+  if (!agent || agent.role !== "agent") return null;
+  return agent;
 }

@@ -39,10 +39,22 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     if (error) throw error;
 
     const certificates = await Promise.all((data || []).map(async (row) => {
-      const { data: signed, error: signError } = await client.storage
-        .from(BUCKET)
-        .createSignedUrl(row.storage_path, 60 * 60, { download: row.file_name });
-      if (signError) throw signError;
+      let downloadUrl = "";
+      try {
+        const { data: signed, error: signError } = await client.storage
+          .from(BUCKET)
+          .createSignedUrl(row.storage_path, 60 * 60, { download: row.file_name });
+        if (!signError && signed?.signedUrl) {
+          downloadUrl = signed.signedUrl;
+        } else {
+          const { data: pub } = client.storage.from(BUCKET).getPublicUrl(row.storage_path);
+          downloadUrl = pub?.publicUrl || "";
+        }
+      } catch (err) {
+        console.warn("Signed URL generation failed for certificate:", row.id, err);
+        const { data: pub } = client.storage.from(BUCKET).getPublicUrl(row.storage_path);
+        downloadUrl = pub?.publicUrl || "";
+      }
       return {
         id: row.id,
         title: row.title,
@@ -51,7 +63,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
         fileName: row.file_name,
         mimeType: row.mime_type,
         createdAt: row.created_at,
-        url: signed.signedUrl,
+        url: downloadUrl,
       };
     }));
     return json({ success: true, certificates });

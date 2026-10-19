@@ -41,25 +41,52 @@ export async function GET(request: NextRequest) {
         query = query.eq("agent_id", auth.userId);
       }
 
-      const { data, error } = await query;
+      const [{ data, error }, { data: propertiesData }] = await Promise.all([
+        query,
+        getAdminSupabase().from("properties").select("id, name, agent_id"),
+      ]);
 
       if (error) throw error;
-      inquiries = (data || []).map((row: any) => ({
-        id: row.id,
-        text: row.text,
-        propertyId: row.property_id,
-        senderName: row.sender_name,
-        senderEmail: row.sender_email,
-        senderPhone: row.sender_phone,
-        status: row.status || "new",
-        createdAt: row.created_at,
-        replyText: row.reply_text,
-        repliedAt: row.replied_at,
-        agentName: row.agent_name,
-        visitorReply: row.visitor_reply,
-        visitorRepliedAt: row.visitor_replied_at,
-        agentId: row.agent_id,
-      }));
+      const propertyList = propertiesData || [];
+      const propMap = new Map(propertyList.map((p: any) => [p.id, p.name]));
+
+      inquiries = (data || []).map((row: any) => {
+        let resolvedPropId = row.property_id || null;
+        let resolvedPropName = resolvedPropId ? propMap.get(resolvedPropId) || null : null;
+        const unitMatch = row.text ? row.text.match(/\[Unit\s+([^\]]+)\]/i) : null;
+        const unitNumber = unitMatch ? unitMatch[1].trim() : null;
+
+        // Auto-detect property from inquiry text if property_id was missing
+        if (!resolvedPropId && row.text) {
+          const lowerText = row.text.toLowerCase();
+          const matchedProp = propertyList.find((p: any) => p.name && lowerText.includes(p.name.toLowerCase()));
+          if (matchedProp) {
+            resolvedPropId = matchedProp.id;
+            resolvedPropName = matchedProp.name;
+            // Persist auto-detected property ID asynchronously
+            void getAdminSupabase().from("chat_messages").update({ property_id: matchedProp.id }).eq("id", row.id);
+          }
+        }
+
+        return {
+          id: row.id,
+          text: row.text,
+          propertyId: resolvedPropId,
+          propertyName: resolvedPropName,
+          unitNumber,
+          senderName: row.sender_name,
+          senderEmail: row.sender_email,
+          senderPhone: row.sender_phone,
+          status: row.status || "new",
+          createdAt: row.created_at,
+          replyText: row.reply_text,
+          repliedAt: row.replied_at,
+          agentName: row.agent_name,
+          visitorReply: row.visitor_reply,
+          visitorRepliedAt: row.visitor_replied_at,
+          agentId: row.agent_id,
+        };
+      });
     } catch (err: any) {
       if (err?.message?.includes("schema cache") || err?.code === "PGRST205") {
         console.warn("chat_messages table not found, returning empty inquiries");
@@ -124,14 +151,28 @@ export async function PATCH(request: NextRequest) {
       if (nextPropertyId && auth.user.role === "agent") {
         const { data: property, error } = await getAdminSupabase()
           .from("properties")
-          .select("id")
+          .select("id, agent_id")
           .eq("id", nextPropertyId)
-          .eq("agent_id", auth.userId)
           .maybeSingle();
         if (error) throw error;
         if (!property) {
-          const response = NextResponse.json({ success: false, error: "Choose one of your assigned properties" }, { status: 403 });
+          const response = NextResponse.json({ success: false, error: "Property not found" }, { status: 404 });
           return withSecurityHeaders(withCorsHeaders(request, response));
+        }
+        // Allow if:
+        // 1. Property is explicitly assigned to this agent (agent_id === auth.userId)
+        // 2. Property has no agent assigned (agent_id is null)
+        // 3. Or the inquiry itself was addressed to this agent
+        if (property.agent_id && property.agent_id !== auth.userId) {
+          const { data: inquiryRecord } = await getAdminSupabase()
+            .from("chat_messages")
+            .select("agent_id")
+            .eq("id", sanitizedId)
+            .maybeSingle();
+          if (inquiryRecord?.agent_id !== auth.userId) {
+            const response = NextResponse.json({ success: false, error: "Choose one of your assigned properties" }, { status: 403 });
+            return withSecurityHeaders(withCorsHeaders(request, response));
+          }
         }
       }
     }

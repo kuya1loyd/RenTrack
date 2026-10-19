@@ -48,6 +48,25 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       if (status !== 500) return NextResponse.json({ success: false, error: reviewError.message }, { status });
       throw reviewError;
     }
+    if (action.status === "approved") {
+      try {
+        if (moveOutRequest.unit_id) {
+          await client.from("units").update({ status: "vacant", tenant_id: null, tenant_name: null }).eq("id", moveOutRequest.unit_id);
+        }
+        if (moveOutRequest.tenant_id) {
+          await client.from("tenants").update({
+            status: "archived",
+            unit_id: null,
+            property_name: null,
+            unit_number: null,
+            assignment_status: "",
+            rent_amount: 0,
+          }).eq("id", moveOutRequest.tenant_id);
+        }
+      } catch (directUpdateErr) {
+        console.warn("Direct move-out update warning:", directUpdateErr);
+      }
+    }
     const { data: updatedRequest, error: updatedError } = await client.from("move_out_requests").select("*").eq("id", action.id).single();
     if (updatedError) throw updatedError;
     return NextResponse.json({ success: true, request: updatedRequest });

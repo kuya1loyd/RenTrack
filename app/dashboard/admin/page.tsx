@@ -22,7 +22,7 @@ import { Select } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Modal } from "@/components/ui/modal";
-import { cn, formatCurrency, formatDate, formatDateTime, getTimeAgo, getInitials, isSampleAccount } from "@/lib/utils";
+import { formatDisplayId, cn, formatCurrency, formatDate, formatDateTime, getTimeAgo, getInitials, isSampleAccount } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import {
   getUsers, getProperties, getUnits, getTenants, getNotifications,
@@ -1456,7 +1456,7 @@ export default function AdminDashboard() {
                                     className="inline-flex items-center gap-1 font-mono text-[11px] text-gray-500 hover:text-blue-600 transition-colors bg-gray-50 dark:bg-gray-800/60 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700"
                                     title="Click to copy Agent ID"
                                   >
-                                    <span>#{u.id.slice(0, 8)}</span>
+                                    <span>#{formatDisplayId(u.id)}</span>
                                     <Copy className="h-2.5 w-2.5 text-gray-400" />
                                   </button>
                                 </TableCell>
@@ -1595,7 +1595,7 @@ export default function AdminDashboard() {
                                     className="inline-flex items-center gap-1 font-mono text-[11px] text-gray-500 hover:text-blue-600 transition-colors bg-gray-50 dark:bg-gray-800/60 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700"
                                     title="Click to copy User ID"
                                   >
-                                    <span>#{u.id.slice(0, 8)}</span>
+                                    <span>#{formatDisplayId(u.id)}</span>
                                     <Copy className="h-2.5 w-2.5 text-gray-400" />
                                   </button>
                                 </TableCell>
@@ -1983,7 +1983,7 @@ export default function AdminDashboard() {
                                 </div>
                                 <div className="flex flex-col">
                                   <span className="font-bold text-gray-900 dark:text-white text-xs">{p.name}</span>
-                                  <span className="text-[10px] text-gray-400 font-mono">#{p.id.slice(0, 8)}</span>
+                                  <span className="text-[10px] text-gray-400 font-mono">#{formatDisplayId(p.id)}</span>
                                 </div>
                               </div>
                             </TableCell>
@@ -2303,7 +2303,7 @@ export default function AdminDashboard() {
                                 </div>
                                 <div className="flex flex-col">
                                   <span className="font-bold text-gray-900 dark:text-white text-xs">Unit {u.unitNumber}</span>
-                                  <span className="text-[10px] text-gray-400 font-mono">#{u.id.slice(0, 8)}</span>
+                                  <span className="text-[10px] text-gray-400 font-mono">#{formatDisplayId(u.id)}</span>
                                 </div>
                               </div>
                             </TableCell>

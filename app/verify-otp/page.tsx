@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Suspense } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, XCircle, Loader2, Mail } from "lucide-react";
@@ -12,11 +12,21 @@ import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { safeParseJson } from "@/lib/data";
 
+const DASHBOARD_BY_ROLE: Record<string, string> = {
+  admin: "/dashboard",
+  owner: "/dashboard",
+  agent: "/dashboard/agent",
+  tenant: "/dashboard/tenant",
+};
+
 function VerifyOtpContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const prefilledEmail = searchParams.get("email") || "";
+  const prefilledUserId = searchParams.get("userId") || "";
+  const prefilledOtp = (searchParams.get("otp") || "").replace(/\D/g, "").slice(0, 6);
   const [email, setEmail] = useState(prefilledEmail);
-  const [otp, setOtp] = useState("");
+  const [otp, setOtp] = useState(prefilledOtp);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -24,6 +34,7 @@ function VerifyOtpContent() {
   const [status, setStatus] = useState<"form" | "loading" | "success" | "error">("form");
   const [message, setMessage] = useState("");
   const { refreshUser } = useAuth();
+  const autoSubmittedRef = useRef(false);
 
   useEffect(() => {
     if (prefilledEmail) {
@@ -41,9 +52,9 @@ function VerifyOtpContent() {
     return () => clearTimeout(timer);
   }, [resendCooldown]);
 
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !otp) {
+  const verifyCode = useCallback(async (code: string, emailOverride?: string) => {
+    const targetEmail = (emailOverride ?? email).trim();
+    if (!targetEmail || !code) {
       toast.error("Please enter both email and verification code");
       return;
     }
@@ -52,14 +63,17 @@ function VerifyOtpContent() {
       const res = await fetch("/api/auth/signup/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, otp }),
+        body: JSON.stringify({ email: targetEmail, userId: prefilledUserId || undefined, otp: code }),
       });
       const result = await safeParseJson(res);
 
       if (result.success && result.verified) {
         setStatus("success");
         setMessage("Your email has been verified successfully!");
+        // The verify endpoint now establishes the session, so this signs the user in.
         await refreshUser();
+        const dashboardPath = DASHBOARD_BY_ROLE[result.user?.role] || "/dashboard/tenant";
+        window.setTimeout(() => router.replace(dashboardPath), 1200);
       } else {
         setStatus("error");
         setMessage(result.error || "Verification failed. Please check your code and try again.");
@@ -70,6 +84,19 @@ function VerifyOtpContent() {
     } finally {
       setIsSubmitting(false);
     }
+  }, [email, prefilledUserId, refreshUser, router]);
+
+  // Autofill: verify the prefilled code automatically once it is available.
+  useEffect(() => {
+    if (autoSubmittedRef.current) return;
+    if (!prefilledEmail || !prefilledOtp || prefilledOtp.length !== 6) return;
+    autoSubmittedRef.current = true;
+    void verifyCode(prefilledOtp, prefilledEmail);
+  }, [prefilledEmail, prefilledOtp, verifyCode]);
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await verifyCode(otp);
   };
 
   const handleResend = async () => {
@@ -256,6 +283,9 @@ function VerifyOtpContent() {
                       value={otp}
                       disabled={isSubmitting}
                       onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      autoComplete="one-time-code"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       maxLength={6}
                       className="h-11 text-base text-center font-mono tracking-widest rounded-xl border-border bg-surface-secondary focus:border-primary-500 focus:ring-primary-500/20"
                     />
@@ -326,11 +356,10 @@ function VerifyOtpContent() {
                 </motion.div>
                 <h2 className="text-2xl font-bold text-text-primary mb-2 text-center">Account Verified!</h2>
                 <p className="text-sm text-text-secondary mb-6 text-center">{message}</p>
-                <Link href={`/login?email=${encodeURIComponent(email)}&verified=true`}>
-                  <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">
-                    Continue to Login
-                  </Button>
-                </Link>
+                <div className="flex items-center justify-center gap-2 text-sm font-semibold text-blue-600">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Signing you in automatically...</span>
+                </div>
               </>
             )}
 

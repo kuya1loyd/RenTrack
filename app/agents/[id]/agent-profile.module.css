@@ -81,6 +81,14 @@
   color: var(--orange);
 }
 
+.directoryButton {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
 .shell {
   width: min(100% - 64px, 1252px);
   margin: 0 auto;
@@ -869,6 +877,7 @@
 }
 
 .contactForm input,
+.contactForm select,
 .contactForm textarea {
   width: 100%;
   min-width: 0;
@@ -882,15 +891,17 @@
   line-height: 1.5;
 }
 
-.contactForm input {
+.contactForm input,
+.contactForm select {
   min-height: 41px;
 }
 
-.contactForm textarea {
-  resize: vertical;
+.contactForm select {
+  cursor: pointer;
 }
 
 .contactForm input:focus,
+.contactForm select:focus,
 .contactForm textarea:focus {
   border-color: rgb(242 161 89 / 66%);
   outline: 2px solid rgb(242 161 89 / 14%);
@@ -1762,6 +1773,49 @@
   font-size: 13px;
 }
 
+.agentContactDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.contactDetailBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 11px;
+  border-radius: 9px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: all 140ms ease;
+  overflow: hidden;
+}
+
+.contactDetailBadge:hover {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.contactDetailIcon {
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+.contactDetailText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .summaryStats {
   margin: 0 8px;
   border: 1px solid #e2e8f0;
@@ -1788,22 +1842,41 @@
 }
 
 .identityActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
   margin: 14px 8px 0;
-  border-top: 0;
-  padding-top: 0;
+  border-top: 1px solid #edf0f3;
+  padding-top: 12px;
 }
 
 .actionLabel {
-  display: none;
+  display: block;
+  grid-column: 1 / -1;
+  margin: 0 0 2px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-align: left;
 }
 
 .primaryAction {
+  grid-column: 1 / -1;
   min-height: 48px;
   border-radius: 12px;
   background: #1d4ed8;
   color: #ffffff;
   font-size: 14px;
+  font-weight: 600;
   box-shadow: 0 8px 20px rgb(29 78 216 / 22%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  text-decoration: none;
 }
 
 .primaryAction:hover {
@@ -1814,11 +1887,28 @@
   min-height: 44px;
   border-radius: 12px;
   font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  text-decoration: none;
+  transition: all 150ms ease;
 }
 
 .secondaryAction:hover {
   border-color: #1d4ed8;
   color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.secondaryAction:only-of-type {
+  grid-column: 1 / -1;
 }
 
 .privacyNote {
@@ -1967,6 +2057,7 @@
 }
 
 .contactSection {
+  scroll-margin-top: 80px;
   border: 1px solid #e2e8f0;
   border-radius: 20px;
   padding: clamp(22px, 3vw, 32px);
@@ -2088,14 +2179,86 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .page *,
-  .page *::before,
-  .page *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+.tabsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 0 45px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 12px;
+}
+
+.tabButton {
+  border: 1px solid #e2e8f0;
+  border-radius: 9999px;
+  padding: 6px 14px;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 160ms ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tabButton:hover {
+  background: #f8fafc;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.tabButtonActive {
+  background: #0f172a;
+  color: #ffffff;
+  border-color: #0f172a;
+}
+
+.tabButtonActive:hover {
+  background: #1e293b;
+  color: #ffffff;
+  border-color: #1e293b;
+}
+
+.tabBadge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.tabButtonActive .tabBadge {
+  background: #334155;
+  color: #ffffff;
+}
+
+.unitPriceTag {
+  margin: 8px 0 0;
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.unitParentProperty {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #64748b;
+}
+
+@media (max-width: 760px) {
+  .identityPanel {
+    position: static;
+  }
+
+  .tabsRow {
+    margin-left: 0;
+    overflow-x: auto;
+    padding-bottom: 8px;
   }
 }
 

@@ -112,8 +112,8 @@ export default function TenantDashboard() {
     return "Good evening";
   }, []);
 
-  const handleOpenMessages = () => {
-    window.dispatchEvent(new CustomEvent("renttrack-open-messages"));
+  const handleContactLandlord = () => {
+    window.dispatchEvent(new CustomEvent("renttrack-contact-landlord"));
   };
 
   const rentalDetails = [
@@ -416,7 +416,7 @@ export default function TenantDashboard() {
             </span>
             <button
               type="button"
-              onClick={handleOpenMessages}
+              onClick={handleContactLandlord}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
             >
               <MessageSquare className="h-3.5 w-3.5 text-blue-600" />

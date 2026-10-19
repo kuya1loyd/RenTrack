@@ -14,7 +14,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { TenantRecord, Property, Unit, updateTenantStatus, safeParseJson } from "@/lib/data";
-import { formatCurrency, formatDate, getInitials } from "@/lib/utils";
+import { formatCurrency, formatDate, getInitials, formatDisplayId } from "@/lib/utils";
 import { toast } from "sonner";
 import { ManagementBanner } from "@/components/management-panel";
 import MessagingModal from "@/components/messaging-modal";
@@ -63,6 +63,7 @@ export default function TenantsPanel({
       if (!q) return true;
       const haystack = [
         tenant.id,
+        formatDisplayId(tenant.id),
         tenant.name,
         tenant.email,
         tenant.phone || "",
@@ -81,11 +82,16 @@ export default function TenantsPanel({
   const pendingCount = useMemo(() => tenants.filter((t) => t.assignmentStatus === "pending").length, [tenants]);
 
   const handleToggleBlock = async (tenant: TenantRecord) => {
+    const isArchived = tenant.status === "archived";
     const nextStatus = tenant.status === "active" ? "inactive" : "active";
     try {
       const res = await updateTenantStatus(tenant.id, nextStatus);
       if (res) {
-        toast.success(nextStatus === "active" ? "Tenant unblocked" : "Tenant blocked");
+        if (nextStatus === "active") {
+          toast.success(isArchived ? "Tenant restored from archive" : "Tenant unblocked");
+        } else {
+          toast.success("Tenant blocked");
+        }
         onReload();
       } else {
         toast.error("Failed to update tenant status");
@@ -201,7 +207,7 @@ export default function TenantsPanel({
                     : statusFilter === "active"
                     ? `Active tenants (${activeCount})`
                     : statusFilter === "inactive"
-                    ? `Blocked / Inactive (${inactiveCount})`
+                    ? `Archived / Blocked (${inactiveCount})`
                     : `Pending assignment (${pendingCount})`}
                 </span>
                 <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
@@ -234,10 +240,10 @@ export default function TenantsPanel({
                 className="flex items-center justify-between text-xs cursor-pointer"
               >
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-red-400" />
-                  Blocked / Inactive
+                  <span className="h-2 w-2 rounded-full bg-slate-400" />
+                  Archived / Blocked
                 </span>
-                <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
                   {inactiveCount}
                 </span>
               </DropdownMenuItem>
@@ -329,6 +335,7 @@ export default function TenantsPanel({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredTenants.map((tenant) => {
+                  const isArchived = tenant.status === "archived";
                   const isBlocked = tenant.status !== "active";
                   const isConfirmed = tenant.assignmentStatus === "confirmed";
                   const isPending = tenant.assignmentStatus === "pending";
@@ -343,7 +350,7 @@ export default function TenantsPanel({
                             <span className="absolute -bottom-0.5 -right-0.5 flex h-2.5 w-2.5 items-center justify-center">
                               <span
                                 className={`relative inline-flex h-2 w-2 rounded-full border border-white ${
-                                  isBlocked ? "bg-red-400" : "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]"
+                                  isArchived ? "bg-slate-300" : isBlocked ? "bg-red-400" : "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]"
                                 }`}
                               />
                             </span>
@@ -361,14 +368,15 @@ export default function TenantsPanel({
                           aria-label={`Copy tenant ID for ${tenant.name}`}
                           title="Copy tenant ID"
                           onClick={() => {
-                            navigator.clipboard?.writeText(tenant.id).then(
-                              () => toast.success("Tenant ID copied"),
+                            const displayId = formatDisplayId(tenant.id);
+                            navigator.clipboard?.writeText(displayId).then(
+                              () => toast.success(`Tenant ID #${displayId} copied`),
                               () => toast.error("Could not copy tenant ID")
                             );
                           }}
                           className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 hover:text-blue-600 transition-colors bg-slate-50 px-2 py-0.5 rounded border border-slate-200"
                         >
-                          <span>#{tenant.id.slice(0, 8)}</span>
+                          <span>#{formatDisplayId(tenant.id)}</span>
                           <Copy className="h-2.5 w-2.5 text-slate-400" />
                         </button>
                       </td>
@@ -465,15 +473,17 @@ export default function TenantsPanel({
                             className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
                               tenant.status === "active"
                                 ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : tenant.status === "archived"
+                                ? "bg-slate-100 text-slate-600 border border-slate-200"
                                 : "bg-red-50 text-red-700 border border-red-200"
                             }`}
                           >
                             <span
                               className={`h-1.5 w-1.5 rounded-full ${
-                                tenant.status === "active" ? "bg-emerald-500" : "bg-red-500"
+                                tenant.status === "active" ? "bg-emerald-500" : tenant.status === "archived" ? "bg-slate-400" : "bg-red-500"
                               }`}
                             />
-                            {tenant.status === "active" ? "Active" : "Blocked"}
+                            {tenant.status === "active" ? "Active" : tenant.status === "archived" ? "Archived" : "Blocked"}
                           </span>
                           {tenant.assignmentStatus && (
                             <span
@@ -546,7 +556,7 @@ export default function TenantsPanel({
                               ) : (
                                 <>
                                   <Shield className="h-3.5 w-3.5 text-emerald-500" />
-                                  <span>Unblock tenant</span>
+                                  <span>{tenant.status === "archived" ? "Unarchive tenant" : "Unblock tenant"}</span>
                                 </>
                               )}
                             </DropdownMenuItem>
@@ -585,7 +595,7 @@ export default function TenantsPanel({
                   <Avatar src={viewingTenant.avatarUrl} fallback={getInitials(viewingTenant.name)} size="md" />
                   <div>
                     <h3 className="text-base font-bold text-slate-900">{viewingTenant.name}</h3>
-                    <p className="font-mono text-xs text-slate-500">{viewingTenant.id}</p>
+                    <p className="font-mono text-xs text-slate-500">ID: #{formatDisplayId(viewingTenant.id)}</p>
                   </div>
                 </div>
                 <button
@@ -635,10 +645,10 @@ export default function TenantsPanel({
                   <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
                     <p className="font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Status</p>
                     <Badge
-                      variant={viewingTenant.status === "active" ? "default" : "destructive"}
+                      variant={viewingTenant.status === "active" ? "default" : viewingTenant.status === "archived" ? "secondary" : "destructive"}
                       className="mt-1 text-[10px] uppercase font-bold"
                     >
-                      {viewingTenant.status}
+                      {viewingTenant.status === "archived" ? "Archived" : viewingTenant.status}
                     </Badge>
                   </div>
                 </div>

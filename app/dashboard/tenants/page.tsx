@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
-import { cn, formatCurrency, formatDate, getInitials } from "@/lib/utils";
+import { formatDisplayId, cn, formatCurrency, formatDate, getInitials } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { getTenants, safeParseJson, TenantRecord, addNotification } from "@/lib/data";
 import { toast } from "sonner";
@@ -260,13 +260,14 @@ export default function TenantsPage() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                navigator.clipboard.writeText(tenant.id);
-                                toast.success("Tenant ID copied");
+                                const displayId = formatDisplayId(tenant.id);
+                                navigator.clipboard.writeText(displayId);
+                                toast.success(`Tenant ID #${displayId} copied`);
                               }}
                               className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-500 hover:text-blue-600 transition-colors bg-slate-50 px-2 py-0.5 rounded border border-slate-200"
                               title="Click to copy User ID"
                             >
-                              <span>#{tenant.id.slice(0, 8)}</span>
+                              <span>#{formatDisplayId(tenant.id)}</span>
                               <Copy className="h-2.5 w-2.5 text-slate-400" />
                             </button>
                           </td>

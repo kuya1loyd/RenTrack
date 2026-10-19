@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
-import { Home, Plus, Search, Edit, Check, Trash2, Image as ImageIcon, X } from "lucide-react";
+import { Home, Plus, Search, Edit, Check, Trash2, Image as ImageIcon, X, History as HistoryIcon } from "lucide-react";
+import { TenancyHistoryModal } from "@/components/tenancy-history-modal";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,19 +25,36 @@ const statusColors: Record<string, string> = {
   maintenance: "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400",
 };
 
+const UNIT_TYPES = [
+  { value: "condo", label: "Condominium Unit" },
+  { value: "dorm", label: "Dormitory Room" },
+  { value: "hotel", label: "Hotel Room" },
+  { value: "studio", label: "Studio Unit" },
+  { value: "apartment", label: "Apartment Unit" },
+];
+
+const UNIT_CONDITIONS = [
+  "Excellent – Ready to Move In",
+  "Very Good – Well Maintained",
+  "Good – Minor Wear and Tear",
+  "Fair – Some Repairs Needed",
+  "Needs Improvement – Repairs Required",
+];
+
 export default function UnitsPage() {
   const { user } = useAuth();
   const [units, setUnits] = useState<Unit[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
+  const [historyUnit, setHistoryUnit] = useState<Unit | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
-  const [editForm, setEditForm] = useState({ propertyId: "", unitNumber: "", floor: "", status: "vacant" as Unit["status"], rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
+  const [editForm, setEditForm] = useState({ propertyId: "", unitNumber: "", floor: "", status: "vacant" as Unit["status"], rentAmount: "", type: "condo", condition: "", imageUrl: "", imageUrls: [] as string[] });
   const [isSaving, setIsSaving] = useState(false);
   const [showImageModal, setShowImageModal] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ propertyId: "", unitNumber: "", floor: 0, rentAmount: 0, imageUrl: "", imageUrls: [] as string[] });
+  const [formData, setFormData] = useState({ propertyId: "", unitNumber: "", floor: 0, rentAmount: 0, type: "condo", condition: "", imageUrl: "", imageUrls: [] as string[] });
 
   const canManage = user && (user.role === "admin" || user.role === "owner");
 
@@ -77,7 +95,7 @@ export default function UnitsPage() {
       setUnits((current) => [createdUnit, ...current]);
       setProperties((current) => current.map((property) => property.id === formData.propertyId ? { ...property, units: property.units + 1 } : property));
       setShowAddModal(false);
-      setFormData({ propertyId: "", unitNumber: "", floor: 0, rentAmount: 0, imageUrl: "", imageUrls: [] });
+      setFormData({ propertyId: "", unitNumber: "", floor: 0, rentAmount: 0, type: "condo", condition: "", imageUrl: "", imageUrls: [] });
       notifyAdmins({ title: "New Unit Added", message: `Unit ${formData.unitNumber} was added by ${user?.name}`, type: "property", read: false });
       toast.success("Unit added successfully");
     } catch (err) {
@@ -94,6 +112,8 @@ export default function UnitsPage() {
       floor: unit.floor?.toString() || "",
       status: unit.status,
       rentAmount: unit.rentAmount.toString(),
+      type: unit.type || "condo",
+      condition: unit.condition || "",
       imageUrl: unit.imageUrl || "",
       imageUrls: unit.imageUrls || (unit.imageUrl ? [unit.imageUrl] : []),
     });
@@ -111,6 +131,8 @@ export default function UnitsPage() {
         propertyId: editForm.propertyId,
         unitNumber: editForm.unitNumber.trim(),
         floor: editForm.floor === "" ? undefined : Number(editForm.floor),
+        type: editForm.type || "condo",
+        condition: editForm.condition || undefined,
         status: editForm.status,
         rentAmount: Number(editForm.rentAmount),
         imageUrl: editForm.imageUrl.trim() || undefined,
@@ -271,6 +293,7 @@ export default function UnitsPage() {
                         {canManage && (
                           <div className="mb-4 flex gap-2">
                             <Button type="button" size="sm" variant="outline" onClick={() => openEdit(unit)} className="flex-1"><Edit className="mr-1.5 h-3.5 w-3.5" />Edit</Button>
+                            <Button type="button" size="sm" variant="outline" onClick={() => setHistoryUnit(unit)} className="flex-1"><HistoryIcon className="mr-1.5 h-3.5 w-3.5" />History</Button>
                             <Button type="button" size="sm" variant="destructive" onClick={() => handleDelete(unit)} className="flex-1"><Trash2 className="mr-1.5 h-3.5 w-3.5" />Delete</Button>
                           </div>
                         )}
@@ -279,7 +302,7 @@ export default function UnitsPage() {
                             <span className="text-text-secondary">Rent Amount</span>
                             <span className="font-medium text-foreground">{formatCurrency(unit.rentAmount)}/mo</span>
                           </div>
-                          {unit.tenantName && (
+                          {unit.status === "occupied" && unit.tenantName && (
                             <div className="flex items-center justify-between">
                               <span className="text-text-secondary">Tenant</span>
                               <span className="font-medium text-foreground">{unit.tenantName}</span>
@@ -345,6 +368,24 @@ export default function UnitsPage() {
               <Input type="number" value={formData.rentAmount || ""} onChange={(e) => setFormData({ ...formData, rentAmount: parseInt(e.target.value) || 0 })} placeholder="e.g. 5000" className="h-9" />
             </div>
           </div>
+          <div className="rounded-xl border border-border bg-surface-secondary/40 p-3.5 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Classification &amp; Unit Condition</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">Unit Type</label>
+                <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })} className="w-full h-9 rounded-lg border border-border bg-surface text-foreground px-3 text-sm">
+                  {UNIT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">Unit Condition</label>
+                <select value={formData.condition} onChange={(e) => setFormData({ ...formData, condition: e.target.value })} className="w-full h-9 rounded-lg border border-border bg-surface text-foreground px-3 text-sm">
+                  <option value="">Select condition...</option>
+                  {UNIT_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-foreground">Unit Images</label>
             <Input type="file" accept="image/*" multiple onChange={async (event) => {
@@ -382,8 +423,33 @@ export default function UnitsPage() {
             <div><label className="mb-1 block text-sm font-medium text-foreground">Floor</label><Input type="number" min="0" value={editForm.floor} onChange={(event) => setEditForm({ ...editForm, floor: event.target.value })} /></div>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div><label className="mb-1 block text-sm font-medium text-foreground">Monthly Rent *</label><Input required type="number" min="0" value={editForm.rentAmount} onChange={(event) => setEditForm({ ...editForm, rentAmount: event.target.value })} /></div>
-            <div><label className="mb-1 block text-sm font-medium text-foreground">Status</label><select value={editForm.status} onChange={(event) => setEditForm({ ...editForm, status: event.target.value as Unit["status"] })} className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm"><option value="vacant">Vacant</option><option value="occupied">Occupied</option><option value="maintenance">Maintenance</option></select></div>
+            <div><label className="mb-1 block text-sm font-medium text-foreground">Monthly Rent (₱) *</label><Input required type="number" min="0" value={editForm.rentAmount} onChange={(event) => setEditForm({ ...editForm, rentAmount: event.target.value })} /></div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-foreground">Unit Status</label>
+              <select value={editForm.status} onChange={(event) => setEditForm({ ...editForm, status: event.target.value as Unit["status"] })} className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm">
+                <option value="vacant">Vacant</option>
+                <option value="occupied">Occupied</option>
+                <option value="maintenance">Maintenance</option>
+              </select>
+            </div>
+          </div>
+          <div className="rounded-xl border border-border bg-surface-secondary/40 p-3.5 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Classification &amp; Unit Condition</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">Unit Type</label>
+                <select value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm">
+                  {UNIT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">Unit Condition</label>
+                <select value={editForm.condition} onChange={(e) => setEditForm({ ...editForm, condition: e.target.value })} className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm">
+                  <option value="">Select condition...</option>
+                  {UNIT_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-foreground">Unit Images</label>
@@ -404,6 +470,12 @@ export default function UnitsPage() {
           <div className="flex justify-end gap-2 pt-2"><Button type="button" variant="outline" onClick={() => setEditingUnit(null)}>Cancel</Button><Button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save Changes"}</Button></div>
         </form>
       </Modal>
+      <TenancyHistoryModal
+        isOpen={!!historyUnit}
+        onClose={() => setHistoryUnit(null)}
+        title={`Tenancy history · ${historyUnit?.unitNumber || ""}`}
+        unitId={historyUnit?.id}
+      />
     </motion.div>
   );
 }

@@ -8,7 +8,7 @@ import { logAudit, getAdminSupabase } from "@/lib/db";
 
 const ALLOWED_UNIT_FIELDS = [
   "propertyId", "unitNumber", "floor", "status", "rentAmount",
-  "tenantName", "tenantId", "imageUrl", "imageUrls"
+  "tenantName", "tenantId", "imageUrl", "imageUrls", "address", "type", "condition"
 ];
 
 export async function PATCH(request: NextRequest) {

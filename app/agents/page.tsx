@@ -44,14 +44,19 @@ export default function AgentsPage() {
   useEffect(() => {
     let mounted = true;
     setHasMounted(true);
-    fetch("/api/auth/users/agents")
-      .then(async (response) => {
+    (async () => {
+      try {
+        let response = await fetch("/api/agents");
+        if (!response.ok) response = await fetch("/api/auth/users/agents");
         const data = await safeParseJson(response);
         if (!response.ok || !data.success) throw new Error("Unable to load agents");
         if (mounted) setAgents(Array.isArray(data.users) ? data.users : []);
-      })
-      .catch(() => { if (mounted) setLoadError(true); })
-      .finally(() => { if (mounted) setLoading(false); });
+      } catch {
+        if (mounted) setLoadError(true);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
     fetch("/api/data/properties")
       .then(async (response) => {
         const data = await safeParseJson(response);

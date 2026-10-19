@@ -7,21 +7,21 @@ export async function GET() {
     await initDatabase();
     const users = await getAllUsers();
     const visibleContacts = users
-      .filter((user: any) => ["admin", "owner"].includes(user.role) && user.profileVisibility !== false)
+      .filter((user: any) => user.role === "owner" && user.profileVisibility !== false)
       .map((user: any) => ({
         role: user.role,
-        name: user.name || (user.role === "admin" ? "RentTrack Support" : "Property Owner"),
-        email: user.role === "owner" ? user.email || "" : user.showEmail === true ? user.email || "" : user.role === "admin" ? "admin@renttrack.com" : "",
-        phone: user.role === "owner" ? user.phone || "" : user.showPhone === true ? user.phone || "" : "",
+        name: user.name || "Property Owner",
+        email: user.email || "renttrackowner@gmail.com",
+        phone: user.phone || "09395158432",
       }));
 
-    const admins = visibleContacts.filter((contact) => contact.role === "admin").map(({ role: _role, ...contact }) => contact);
-    const owners = visibleContacts.filter((contact) => contact.role === "owner").map(({ role: _role, ...contact }) => contact);
+    const owners = visibleContacts.map(({ role: _role, ...contact }) => contact);
+    const finalOwners = owners.length ? owners : [{ name: "Property Owner", email: "renttrackowner@gmail.com", phone: "09395158432" }];
 
     return withSecurityHeaders(NextResponse.json({
       success: true,
-      admins: admins.length ? admins : [{ name: "RentTrack Support", email: "admin@renttrack.com", phone: "" }],
-      owners,
+      admins: [],
+      owners: finalOwners,
     }, { headers: { "Cache-Control": "no-store" } }));
   } catch (error) {
     console.error("Public contacts lookup failed:", error);

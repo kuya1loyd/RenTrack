@@ -144,7 +144,7 @@ export async function initDatabase() {
     statements.push(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_id_verification_status_check`);
     statements.push(`ALTER TABLE users ADD CONSTRAINT users_id_verification_status_check CHECK (id_verification_status IN ('pending', 'approved', 'rejected', 'not_required', 'exempt'))`);
     statements.push(`UPDATE users SET id_verification_status = 'not_required' WHERE role IN ('admin', 'owner') OR LOWER(email) IN ('admin@renttrack.com', 'renttrackowner@gmail.com')`);
-    statements.push(`UPDATE properties SET agent_id = (SELECT id FROM users WHERE LOWER(email) = 'galitojohnlloyd@gmail.com' OR role = 'agent' ORDER BY created_at ASC LIMIT 1) WHERE (agent_id IS NULL OR agent_id = '')`);
+    statements.push(`UPDATE properties SET agent_id = NULL`);
     statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ`);
     statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ`);
     statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT FALSE`);
@@ -191,6 +191,8 @@ export async function initDatabase() {
     statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS features JSONB DEFAULT '[]'::jsonb`);
     statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS condition TEXT`);
     statements.push(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS availability_status TEXT DEFAULT 'Available'`);
+    statements.push(`ALTER TABLE properties DROP CONSTRAINT IF EXISTS properties_type_check`);
+    statements.push(`ALTER TABLE properties ADD CONSTRAINT properties_type_check CHECK (type IN ('house', 'residential', 'building', 'condominium'))`);
 
     statements.push(`CREATE TABLE IF NOT EXISTS units (
     id TEXT PRIMARY KEY,
@@ -206,6 +208,10 @@ export async function initDatabase() {
     image_urls JSONB DEFAULT '[]'::jsonb
   )`);
     statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS image_urls JSONB DEFAULT '[]'::jsonb`);
+    statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS address TEXT`);
+    statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'condo'`);
+    statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS condition TEXT`);
+    statements.push(`ALTER TABLE units ALTER COLUMN property_id DROP NOT NULL`);
 
     statements.push(`CREATE TABLE IF NOT EXISTS tenants (
     id TEXT PRIMARY KEY,
@@ -229,6 +235,9 @@ export async function initDatabase() {
 
     statements.push(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS assignment_status TEXT DEFAULT '' CHECK (assignment_status IN ('', 'pending', 'confirmed', 'rejected'))`);
     statements.push(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS assigned_agent_id TEXT REFERENCES users(id)`);
+    // 'archived' keeps tenants whose move-out was approved separate from blocked ('inactive') accounts.
+    statements.push(`ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_status_check`);
+    statements.push(`ALTER TABLE tenants ADD CONSTRAINT tenants_status_check CHECK (status IN ('active', 'inactive', 'archived'))`);
     statements.push(`UPDATE tenants SET assigned_agent_id = (SELECT id FROM users WHERE LOWER(email) = 'galitojohnlloyd@gmail.com' OR role = 'agent' ORDER BY created_at ASC LIMIT 1) WHERE (assigned_agent_id IS NULL OR assigned_agent_id = '') AND (unit_id IS NOT NULL OR property_name IS NOT NULL OR assignment_status = 'pending')`);
 
     statements.push(`CREATE TABLE IF NOT EXISTS rental_contracts (
@@ -475,6 +484,23 @@ END;
 $$;`;
     await getAdminSupabase().rpc("exec_sql", { sql: migrationFunction });
 
+    statements.push(`CREATE TABLE IF NOT EXISTS tenancy_history (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    unit_id TEXT,
+    property_id TEXT,
+    property_name TEXT,
+    unit_number TEXT,
+    tenant_id TEXT,
+    tenant_name TEXT,
+    tenant_email TEXT,
+    rent_amount DECIMAL(10,2) DEFAULT 0,
+    start_date TIMESTAMPTZ DEFAULT NOW(),
+    end_date TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+    statements.push(`CREATE INDEX IF NOT EXISTS tenancy_history_unit_idx ON tenancy_history(unit_id, start_date DESC)`);
+    statements.push(`CREATE INDEX IF NOT EXISTS tenancy_history_property_idx ON tenancy_history(property_id, start_date DESC)`);
+
     const batch = statements.join("\n");
     try {
       const { error } = await getAdminSupabase().rpc("exec_migration", { sql: batch });
@@ -483,6 +509,84 @@ $$;`;
       }
     } catch (err) {
       console.error("initDatabase batch error:", err);
+    }
+
+    // Tenancy history: log every tenant assignment / move-out on units via trigger.
+    // These contain semicolons, so they run outside the ';'-split migration batch.
+    const tenancyStatements = [
+      `CREATE OR REPLACE FUNCTION log_unit_tenancy() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE prop_name text; t record;
+BEGIN
+  IF TG_OP = 'UPDATE' AND OLD.tenant_id IS NOT NULL AND NEW.tenant_id IS DISTINCT FROM OLD.tenant_id THEN
+    UPDATE tenancy_history SET end_date = NOW() WHERE unit_id = OLD.id AND tenant_id = OLD.tenant_id AND end_date IS NULL;
+  END IF;
+  IF NEW.tenant_id IS NOT NULL AND (TG_OP = 'INSERT' OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id) THEN
+    IF NOT EXISTS (SELECT 1 FROM tenancy_history WHERE unit_id = NEW.id AND tenant_id = NEW.tenant_id AND end_date IS NULL) THEN
+      SELECT name INTO prop_name FROM properties WHERE id = NEW.property_id;
+      SELECT * INTO t FROM tenants WHERE id = NEW.tenant_id;
+      INSERT INTO tenancy_history (unit_id, property_id, property_name, unit_number, tenant_id, tenant_name, tenant_email, rent_amount, start_date)
+      VALUES (NEW.id, NEW.property_id, prop_name, NEW.unit_number, NEW.tenant_id, COALESCE(NEW.tenant_name, t.name), t.email, COALESCE(NEW.rent_amount, 0), COALESCE(t.contract_start::timestamptz, NOW()));
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$`,
+      `DROP TRIGGER IF EXISTS units_tenancy_log ON units`,
+      `CREATE TRIGGER units_tenancy_log AFTER INSERT OR UPDATE OF tenant_id ON units FOR EACH ROW EXECUTE FUNCTION log_unit_tenancy()`,
+      // Backfill: units that are occupied right now
+      `INSERT INTO tenancy_history (unit_id, property_id, property_name, unit_number, tenant_id, tenant_name, tenant_email, rent_amount, start_date)
+SELECT u.id, u.property_id, p.name, u.unit_number, u.tenant_id, COALESCE(u.tenant_name, t.name), t.email, COALESCE(u.rent_amount, 0), COALESCE(t.contract_start::timestamptz, NOW())
+FROM units u LEFT JOIN properties p ON p.id = u.property_id LEFT JOIN tenants t ON t.id = u.tenant_id
+WHERE u.tenant_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM tenancy_history h WHERE h.unit_id = u.id AND h.tenant_id = u.tenant_id)`,
+      // Backfill: past tenancies recorded by approved move-out requests
+      `INSERT INTO tenancy_history (unit_id, property_id, property_name, unit_number, tenant_id, tenant_name, tenant_email, rent_amount, start_date, end_date)
+SELECT m.unit_id, u.property_id, COALESCE(p.name, m.property_name), u.unit_number, m.tenant_id, COALESCE(m.tenant_name, t.name), t.email, COALESCE(u.rent_amount, 0), COALESCE(t.contract_start::timestamptz, m.created_at), COALESCE(m.reviewed_at, m.created_at)
+FROM move_out_requests m LEFT JOIN units u ON u.id = m.unit_id LEFT JOIN properties p ON p.id = u.property_id LEFT JOIN tenants t ON t.id = m.tenant_id
+WHERE m.status = 'approved' AND m.unit_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM tenancy_history h WHERE h.unit_id = m.unit_id AND h.tenant_id = m.tenant_id)`,
+    ];
+    for (const sql of tenancyStatements) {
+      try {
+        const { error } = await getAdminSupabase().rpc("exec_sql", { sql });
+        if (error) console.warn("Tenancy history setup warning:", error.message);
+      } catch (err) {
+        console.warn("Tenancy history setup error:", err);
+      }
+    }
+
+    try {
+      await getAdminSupabase().rpc("exec_sql", {
+        sql: `
+          DO $$
+          DECLARE r RECORD;
+          BEGIN
+            FOR r IN (
+              SELECT conname
+              FROM pg_constraint
+              WHERE conrelid = 'properties'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%type%'
+            ) LOOP
+              EXECUTE 'ALTER TABLE properties DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname);
+            END LOOP;
+          END $$;
+          ALTER TABLE properties ADD CONSTRAINT properties_type_check CHECK (type IN ('house', 'residential', 'building', 'condominium'));
+          ALTER TABLE units ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'condo';
+          ALTER TABLE units ADD COLUMN IF NOT EXISTS condition TEXT;
+          DO $$
+          DECLARE r RECORD;
+          BEGIN
+            FOR r IN (
+              SELECT conname
+              FROM pg_constraint
+              WHERE conrelid = 'units'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%type%'
+            ) LOOP
+              EXECUTE 'ALTER TABLE units DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname);
+            END LOOP;
+          END $$;
+          ALTER TABLE units ADD CONSTRAINT units_type_check CHECK (type IN ('condo', 'dorm', 'hotel', 'studio', 'apartment'));
+          NOTIFY pgrst, 'reload schema';
+        `
+      });
+    } catch (err) {
+      console.warn("Direct constraint fix in initDatabase error:", err);
     }
 
     try {
@@ -563,39 +667,63 @@ let rentalContractsSchemaPromise: Promise<void> | null = null;
 export async function ensureRentalContractsSchema(): Promise<void> {
   if (!rentalContractsSchemaPromise) {
     rentalContractsSchemaPromise = (async () => {
-      await initDatabase();
       const admin = getAdminSupabase();
+
+      // 1. If table is already accessible, quickly return
+      const { error: probeError } = await admin
+        .from("rental_contracts")
+        .select("id, owner_id, agent_id, property_id, property_name, tenant_id, tenant_name, title, message, file_upload_id, file_name, file_mime_type, status, created_at, updated_at")
+        .limit(0);
+
+      if (!probeError) {
+        await ensureUploadsTable().catch(() => false);
+        return;
+      }
+
+      await initDatabase().catch(() => undefined);
       const statements = [
         `CREATE TABLE IF NOT EXISTS public.rental_contracts (
           id TEXT PRIMARY KEY,
-          owner_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-          agent_id TEXT REFERENCES public.users(id) ON DELETE CASCADE,
-          property_id TEXT NOT NULL REFERENCES public.properties(id) ON DELETE CASCADE,
+          owner_id TEXT NOT NULL,
+          agent_id TEXT,
+          property_id TEXT NOT NULL,
           property_name TEXT NOT NULL,
-          tenant_id TEXT REFERENCES public.tenants(id) ON DELETE SET NULL,
+          tenant_id TEXT,
           tenant_name TEXT,
           title TEXT NOT NULL,
           message TEXT,
           file_upload_id TEXT,
           file_name TEXT,
           file_mime_type TEXT,
-          status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'sent', 'rejected')),
+          status TEXT NOT NULL DEFAULT 'requested',
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         )`,
         "ALTER TABLE public.rental_contracts ALTER COLUMN agent_id DROP NOT NULL",
+        "ALTER TABLE public.rental_contracts DROP CONSTRAINT IF EXISTS rental_contracts_status_check",
+        "ALTER TABLE public.rental_contracts ADD CONSTRAINT rental_contracts_status_check CHECK (status IN ('requested', 'sent', 'rejected'))",
+        "ALTER TABLE public.uploads DROP CONSTRAINT IF EXISTS uploads_type_check",
+        "ALTER TABLE public.uploads DROP CONSTRAINT IF EXISTS uploads_user_id_fkey",
         "CREATE INDEX IF NOT EXISTS rental_contracts_owner_created_idx ON public.rental_contracts(owner_id, created_at DESC)",
         "CREATE INDEX IF NOT EXISTS rental_contracts_agent_created_idx ON public.rental_contracts(agent_id, created_at DESC)",
         "CREATE INDEX IF NOT EXISTS rental_contracts_tenant_created_idx ON public.rental_contracts(tenant_id, created_at DESC)",
       ];
 
       for (const sql of statements) {
-        const { error } = await admin.rpc("exec_sql", { sql });
-        if (error) throw new Error(`Could not install rental contracts schema: ${error.message}`);
+        try {
+          await (admin.rpc as any)("exec_sql", { sql });
+        } catch {
+          // ignore individual sql errors
+        }
       }
 
-      const { error: reloadError } = await admin.rpc("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
-      if (reloadError) throw new Error(`Could not refresh the database API schema: ${reloadError.message}`);
+      try {
+        await (admin.rpc as any)("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
+      } catch {
+        // ignore
+      }
+
+      await ensureUploadsTable().catch(() => false);
 
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const { error } = await admin
@@ -603,12 +731,15 @@ export async function ensureRentalContractsSchema(): Promise<void> {
           .select("id, owner_id, agent_id, property_id, property_name, tenant_id, tenant_name, title, message, file_upload_id, file_name, file_mime_type, status, created_at, updated_at")
           .limit(0);
         if (!error) return;
-        if (attempt === 2) throw new Error(`Rental contracts schema is not available through the database API: ${error.message}`);
+        if (attempt === 2) {
+          console.warn(`Rental contracts schema select warning: ${error.message}`);
+          return;
+        }
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     })().catch((error) => {
       rentalContractsSchemaPromise = null;
-      throw error;
+      console.warn("ensureRentalContractsSchema warning:", error);
     });
   }
 
@@ -675,7 +806,7 @@ export async function ensureUserCommissionRateSchema(): Promise<void> {
 
 export async function createUser(name: string, email: string, password: string, role: string, phone?: string, paymentPin?: string, address?: string, emailVerified = false, createdBy?: string) {
   await ensureUserCreatedBySchema();
-  const id = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const id = `${Date.now()}${Math.floor(100 + Math.random() * 900)}`;
   const hashedPassword = await bcrypt.hash(password, 10);
   let { error } = await getAdminSupabase().schema("public").from("users").insert({
     id,
@@ -1036,21 +1167,21 @@ export async function getProperties() {
   let fallbackAgentId: string | null = null;
 
   try {
-    const { data: agentUsers } = await adminClient.schema("public").from("users").select("id, email").eq("role", "agent").order("created_at", { ascending: true });
+    const { data: agentUsers } = await adminClient.schema("public").from("users").select("id, email, address").eq("role", "agent").order("created_at", { ascending: true });
     if (agentUsers && agentUsers.length > 0) {
-      const primaryAgent = agentUsers.find((a: any) => (a.email || "").toLowerCase().includes("galitojohnlloyd")) || agentUsers[0];
-      fallbackAgentId = primaryAgent.id;
-      const unassignedIds = rows.filter((r: any) => !r.agent_id || r.agent_id === "").map((r: any) => r.id);
-      if (unassignedIds.length > 0) {
+      const butuanAgentIds = new Set(agentUsers.filter((a: any) => (a.email || "").toLowerCase().includes("galitojohnlloyd") || (a.address || "").toLowerCase().includes("butuan")).map((a: any) => a.id));
+      const mismatchedIds = rows.filter((r: any) => r.agent_id && butuanAgentIds.has(r.agent_id) && !String(r.location || "").toLowerCase().includes("butuan")).map((r: any) => r.id);
+      if (mismatchedIds.length > 0) {
         Promise.resolve(
-          adminClient.from("properties").update({ agent_id: fallbackAgentId }).in("id", unassignedIds)
-        ).then(({ error: pErr }) => {
-          if (pErr) console.warn("Failed to update unassigned properties agent_id:", pErr.message);
-        }).catch((err) => console.warn("Error assigning agent to properties:", err));
+          adminClient.from("properties").update({ agent_id: null }).in("id", mismatchedIds)
+        ).catch(() => {});
+        for (const row of rows) {
+          if (mismatchedIds.includes(row.id)) row.agent_id = null;
+        }
       }
     }
   } catch (e) {
-    console.warn("Could not fetch agent user for properties fallback:", e);
+    console.warn("Could not check agent user for properties:", e);
   }
 
   const needsReassignment = rows.some((row: any) => 
@@ -1083,9 +1214,7 @@ export async function getProperties() {
     if ((!property.createdBy || property.createdBy === "usr_builtin_admin" || (typeof property.createdBy === "string" && property.createdBy.toLowerCase().includes("admin"))) && fallbackOwnerId) {
       property.createdBy = fallbackOwnerId;
     }
-    if ((!property.agentId || property.agentId === "") && fallbackAgentId) {
-      property.agentId = fallbackAgentId;
-    }
+    property.agentId = row.agent_id || property.agentId || null;
     property.imageUrls = Array.isArray(row.image_urls) && row.image_urls.length > 0
       ? Array.from(new Set(row.image_urls.filter((url: unknown): url is string => typeof url === "string")))
       : row.image_url ? [row.image_url] : [];
@@ -1096,19 +1225,38 @@ export async function getProperties() {
 export async function createProperty(data: any, userId: string) {
   const id = `prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const PHILIPPINE_CITY_COORDS: Record<string, { lat: number; lng: number }> = {
-    butuan: { lat: 8.9475, lng: 125.5406 },
+    mandaue: { lat: 10.3345, lng: 123.9312 },
+    lapulapu: { lat: 10.3114, lng: 123.9515 },
+    "lapu-lapu": { lat: 10.3114, lng: 123.9515 },
     cebu: { lat: 10.3157, lng: 123.8854 },
+    butuan: { lat: 8.9475, lng: 125.5406 },
     manila: { lat: 14.5995, lng: 120.9842 },
     davao: { lat: 7.1907, lng: 125.4553 },
+    makati: { lat: 14.5547, lng: 121.0244 },
+    quezon: { lat: 14.6760, lng: 121.0437 },
+    taguig: { lat: 14.5176, lng: 121.0509 },
+    pasig: { lat: 14.5764, lng: 121.0851 },
+    mandaluyong: { lat: 14.5794, lng: 121.0359 },
+    paranaque: { lat: 14.4793, lng: 121.0198 },
+    pasay: { lat: 14.5378, lng: 121.0014 },
+    cagayan: { lat: 8.4542, lng: 124.6319 },
+    iloilo: { lat: 10.7202, lng: 122.5621 },
+    bacolod: { lat: 10.6765, lng: 122.9509 },
+    angeles: { lat: 15.1450, lng: 120.5887 },
+    baguio: { lat: 16.4023, lng: 120.5960 },
   };
   let lat = data.latitude !== undefined && data.latitude !== null ? Number(data.latitude) : null;
   let lng = data.longitude !== undefined && data.longitude !== null ? Number(data.longitude) : null;
   if (lat === null || lng === null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
     const locLower = String(data.location || "").toLowerCase();
     const match = Object.entries(PHILIPPINE_CITY_COORDS).find(([city]) => locLower.includes(city));
-    const fallback = match ? match[1] : PHILIPPINE_CITY_COORDS.butuan;
-    lat = fallback.lat;
-    lng = fallback.lng;
+    const fallback = match ? match[1] : PHILIPPINE_CITY_COORDS.cebu;
+    // Slight deterministic offset based on property name/id to avoid overlapping pins
+    const hash = (data.name || id).split("").reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
+    const offsetLat = ((hash % 17) - 8) * 0.0015;
+    const offsetLng = (((hash * 3) % 17) - 8) * 0.0015;
+    lat = Number((fallback.lat + offsetLat).toFixed(6));
+    lng = Number((fallback.lng + offsetLng).toFixed(6));
   }
 
   const adminClient = getAdminSupabase();
@@ -1126,16 +1274,14 @@ export async function createProperty(data: any, userId: string) {
     }
   }
 
-  const { error } = await adminClient.from("properties").insert({
+  const insertPayload: Record<string, any> = {
     id,
     name: data.name,
     location: data.location,
     type: data.type,
     units: data.units || 0,
     occupied_units: 0,
-    latitude: lat,
-    longitude: lng,
-    monthly_revenue: 0,
+    monthly_revenue: Number(data.monthlyRevenue ?? data.rentAmount ?? 0),
     status: "active",
     created_by: ownerId,
     image_url: data.imageUrl || null,
@@ -1145,8 +1291,59 @@ export async function createProperty(data: any, userId: string) {
     condition: data.condition || null,
     availability_status: data.availabilityStatus || "Available",
     created_at: new Date().toISOString(),
-  });
-  if (error) throw error;
+  };
+
+  if (lat !== null) insertPayload.latitude = lat;
+  if (lng !== null) insertPayload.longitude = lng;
+
+  let { error } = await adminClient.from("properties").insert(insertPayload);
+  
+  // If PostgREST schema cache hasn't reloaded latitude/longitude or other optional columns yet:
+  if (error && (error.message?.includes("latitude") || error.message?.includes("longitude") || error.code === "PGRST204")) {
+    console.warn("createProperty encountered schema cache error, retrying without latitude/longitude:", error.message);
+    try {
+      await adminClient.rpc("exec_sql", { sql: "ALTER TABLE properties ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION; ALTER TABLE properties ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION; NOTIFY pgrst, 'reload schema';" });
+    } catch (e) {
+      console.warn("Could not alter properties table directly:", e);
+    }
+    delete insertPayload.latitude;
+    delete insertPayload.longitude;
+    const retry = await adminClient.from("properties").insert(insertPayload);
+    error = retry.error;
+  }
+
+  // If properties_type_check constraint was violated (e.g. newly added property types like 'residential' or 'building'):
+  if (error && (error.message?.includes("properties_type_check") || error.code === "23514" || error.message?.includes("violates check constraint"))) {
+    console.warn("createProperty encountered type constraint violation, updating database constraint and retrying:", error.message);
+    try {
+      const fixSql = `
+        DO $$
+        DECLARE r RECORD;
+        BEGIN
+          FOR r IN (
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = 'properties'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%type%'
+          ) LOOP
+            EXECUTE 'ALTER TABLE properties DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname);
+          END LOOP;
+        END $$;
+        ALTER TABLE properties ADD CONSTRAINT properties_type_check CHECK (type IN ('house', 'residential', 'building', 'condominium'));
+        NOTIFY pgrst, 'reload schema';
+      `;
+      await adminClient.rpc("exec_sql", { sql: fixSql });
+      const retry = await adminClient.from("properties").insert(insertPayload);
+      error = retry.error;
+    } catch (e) {
+      console.warn("Could not auto-repair properties_type_check constraint:", e);
+    }
+  }
+
+  if (error) {
+    console.error("createProperty insert failed:", error);
+    throw new Error(error.message || "Failed to create property");
+  }
+
   return { id, ...data, createdBy: ownerId, status: "active", createdAt: new Date().toISOString() };
 }
 
@@ -1156,15 +1353,27 @@ export async function deleteProperty(id: string) {
   if (chatError) {
     console.error("Failed to clear chat messages before property deletion:", chatError);
   }
+  const { error: unitsError } = await adminClient.from("units").delete().eq("property_id", id);
+  if (unitsError) {
+    console.error("Failed to clear units before property deletion:", unitsError);
+  }
   const { error } = await adminClient.from("properties").delete().eq("id", id);
   if (error) throw error;
 }
 
 export async function getUnits() {
-  const { data, error } = await getAdminSupabase().from("units").select("*").order("unit_number");
+  const adminClient = getAdminSupabase();
+  const { data, error } = await adminClient.from("units").select("*").order("unit_number");
   if (error) throw error;
-  return (data || []).map((row: any) => {
+  let rows = data || [];
+
+  return (rows || []).map((row: any) => {
     const unit = snakeToCamel(row);
+    if (unit.status === "vacant") {
+      unit.tenantId = null;
+      unit.tenantName = null;
+    }
+    unit.address = row.address || "";
     unit.imageUrls = Array.isArray(row.image_urls) && row.image_urls.length > 0
       ? Array.from(new Set(row.image_urls.filter((url: unknown): url is string => typeof url === "string")))
       : row.image_url ? [row.image_url] : [];
@@ -1174,18 +1383,60 @@ export async function getUnits() {
 
 export async function createUnit(data: any) {
   const id = `unit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  const { error } = await getAdminSupabase().from("units").insert({
+  let { error } = await getAdminSupabase().from("units").insert({
     id,
-    property_id: data.propertyId,
+    property_id: data.propertyId || null,
     unit_number: data.unitNumber,
     floor: data.floor || null,
     status: data.status || "vacant",
     rent_amount: data.rentAmount || 0,
+    type: data.type || "condo",
+    condition: data.condition || null,
+    address: data.address || null,
     image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
     image_urls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [],
   });
+
+  if (error && (error.message?.includes("units_type_check") || error.code === "23514" || error.message?.includes("type") || error.message?.includes("condition") || error.code === "PGRST204")) {
+    try {
+      const fixSql = `
+        ALTER TABLE units ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'condo';
+        ALTER TABLE units ADD COLUMN IF NOT EXISTS condition TEXT;
+        DO $$
+        DECLARE r RECORD;
+        BEGIN
+          FOR r IN (
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = 'units'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%type%'
+          ) LOOP
+            EXECUTE 'ALTER TABLE units DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname);
+          END LOOP;
+        END $$;
+        ALTER TABLE units ADD CONSTRAINT units_type_check CHECK (type IN ('condo', 'dorm', 'hotel', 'studio', 'apartment'));
+        NOTIFY pgrst, 'reload schema';
+      `;
+      await getAdminSupabase().rpc("exec_sql", { sql: fixSql });
+      const retry = await getAdminSupabase().from("units").insert({
+        id,
+        property_id: data.propertyId || null,
+        unit_number: data.unitNumber,
+        floor: data.floor || null,
+        status: data.status || "vacant",
+        rent_amount: data.rentAmount || 0,
+        type: data.type || "condo",
+        condition: data.condition || null,
+        address: data.address || null,
+        image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
+        image_urls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [],
+      });
+      error = retry.error;
+    } catch (e) {
+      console.warn("Could not auto-repair units table constraint:", e);
+    }
+  }
   if (error) throw error;
-  return { id, ...data, imageUrls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [], status: data.status || "vacant" };
+  return { id, ...data, type: data.type || "condo", condition: data.condition || null, address: data.address || "", imageUrls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [], status: data.status || "vacant" };
 }
 
 export async function clearTenantUnitAssignment(tenantId: string, tenantName?: string | null, forcedUnitId?: string | null) {
@@ -1337,56 +1588,34 @@ export async function getTenants() {
   for (const u of usersList) {
     let tr = tenantsList.find((t: any) => t.id === u.id || (t.email && String(t.email).toLowerCase() === String(u.email || "").toLowerCase()));
 
-    // If Junrich Gwapo was unassigned due to the previous syncTenantUnit wipe, restore pending assignment for agent
-    if (u.email && u.email.toLowerCase().includes("junrich.menardo") && (!tr?.unit_id || !tr?.property_name)) {
-      try {
-        const { data: vacantUnits } = await getAdminSupabase().from("units").select("id, unit_number, property_id, rent_amount").order("unit_number", { ascending: true }).limit(1);
-        if (vacantUnits && vacantUnits.length > 0) {
-          const vUnit = vacantUnits[0];
-          const { data: propData } = await getAdminSupabase().from("properties").select("name, agent_id").eq("id", vUnit.property_id).maybeSingle();
-          const propName = propData?.name || "J Tower Residence";
-          const agentIdToAssign = propData?.agent_id || fallbackAgentId || "";
-
-          await getAdminSupabase().from("tenants").upsert({
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            phone: u.phone,
-            unit_id: vUnit.id,
-            property_name: propName,
-            unit_number: vUnit.unit_number,
-            rent_amount: vUnit.rent_amount || 15000,
-            assignment_status: "pending",
-            status: "active",
-            assigned_agent_id: agentIdToAssign,
-          }, { onConflict: "id" });
-
-          if (!tr) {
-            tr = {
-              id: u.id,
-              name: u.name,
-              email: u.email,
-              phone: u.phone,
-              unit_id: vUnit.id,
-              property_name: propName,
-              unit_number: vUnit.unit_number,
-              rent_amount: vUnit.rent_amount || 15000,
-              assignment_status: "pending",
-              status: "active",
-              assigned_agent_id: agentIdToAssign,
-            };
-            tenantsList.push(tr);
-          } else {
-            tr.unit_id = vUnit.id;
-            tr.property_name = propName;
-            tr.unit_number = vUnit.unit_number;
-            tr.rent_amount = vUnit.rent_amount || 15000;
-            tr.assignment_status = "pending";
-            tr.assigned_agent_id = agentIdToAssign;
-          }
+    // Junrich Gwapo has moved out; ensure he is unassigned from any unit so other tenants can avail the unit
+    if (u.email && u.email.toLowerCase().includes("junrich.menardo")) {
+      if (tr?.unit_id || tr?.property_name || tr?.unit_number) {
+        try {
+          await getAdminSupabase().from("tenants").update({
+            unit_id: null,
+            property_name: null,
+            unit_number: null,
+            assignment_status: "",
+            status: "archived",
+            rent_amount: 0,
+          }).eq("id", u.id);
+          await getAdminSupabase().from("units").update({
+            status: "vacant",
+            tenant_id: null,
+            tenant_name: null,
+          }).eq("tenant_id", u.id);
+        } catch (cleanupErr) {
+          console.warn("Could not cleanup Junrich Gwapo assignment:", cleanupErr);
         }
-      } catch (restoreErr) {
-        console.warn("Could not restore Junrich Gwapo pending assignment:", restoreErr);
+        if (tr) {
+          tr.unit_id = null;
+          tr.property_name = null;
+          tr.unit_number = null;
+          tr.assignment_status = "";
+          tr.status = "archived";
+          tr.rent_amount = 0;
+        }
       }
     }
 
@@ -1451,7 +1680,7 @@ export async function getTenants() {
 }
 
 export async function createTenant(data: any, userId: string) {
-  const id = data.id || `ten_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const id = data.id || `${Date.now()}${Math.floor(100 + Math.random() * 900)}`;
   const { error } = await getAdminSupabase().from("tenants").insert({
     id,
     name: data.name,
@@ -2231,8 +2460,8 @@ export async function getUpload(id: string) {
   // 3. Fallback: Quick parallel check in Supabase Storage if not in database
   try {
     const admin = getAdminSupabase();
-    const probeTypes = ["property", "unit", "id_verification", "avatar", "receipt"];
-    const probeExts = ["jpg", "png", "webp", "jpeg"];
+    const probeTypes = ["property", "unit", "id_verification", "avatar", "receipt", "contract"];
+    const probeExts = ["jpg", "png", "webp", "jpeg", "pdf", "doc", "docx"];
     const checks = probeTypes.flatMap((type) =>
       probeExts.map(async (ext) => {
         const storagePath = `${type}/${id}.${ext}`;
@@ -2284,8 +2513,8 @@ export async function deleteUpload(id: string) {
     // Ignore database delete errors
   }
   try {
-    for (const ext of ["jpg", "png", "webp", "jpeg", "pdf"]) {
-      for (const type of ["property", "unit", "avatar", "receipt", "id_verification"]) {
+    for (const ext of ["jpg", "png", "webp", "jpeg", "pdf", "doc", "docx"]) {
+      for (const type of ["property", "unit", "avatar", "receipt", "id_verification", "contract"]) {
         await admin.storage.from("renttrack-uploads").remove([`${type}/${id}.${ext}`]);
       }
     }

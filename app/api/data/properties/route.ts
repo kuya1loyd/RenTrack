@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getProperties, createProperty, deleteProperty, findUserById
+  getProperties, createProperty, deleteProperty, findUserById, initDatabase
 } from "@/lib/db";
 import {
   requireAuth, requireRole, validateApiRequest, withRateLimit,
@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    await initDatabase();
     const rateLimit = await withRateLimit(request, `create_property:${getClientIp(request)}`);
     if (rateLimit) return rateLimit;
 
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
       { key: "latitude", type: "number" },
       { key: "longitude", type: "number" },
       { key: "monthlyRevenue", type: "number" },
+      { key: "rentAmount", type: "number" },
       { key: "status", type: "string", maxLength: 20 },
       { key: "imageUrl", type: "string", maxLength: 5000000 },
       { key: "agentId", type: "string", maxLength: 200 },
@@ -56,20 +58,21 @@ export async function POST(request: NextRequest) {
     if (!sanitized.name || !sanitized.location) {
       return NextResponse.json({ success: false, error: "Name and location are required" }, { status: 400 });
     }
-    if ((sanitized.latitude === undefined) !== (sanitized.longitude === undefined)
-      || (sanitized.latitude !== undefined && (sanitized.latitude < -90 || sanitized.latitude > 90))
-      || (sanitized.longitude !== undefined && (sanitized.longitude < -180 || sanitized.longitude > 180))) {
-      return NextResponse.json({ success: false, error: "Provide valid latitude and longitude together" }, { status: 400 });
+    if (sanitized.latitude !== undefined && (sanitized.latitude < -90 || sanitized.latitude > 90)) {
+      delete sanitized.latitude;
+    }
+    if (sanitized.longitude !== undefined && (sanitized.longitude < -180 || sanitized.longitude > 180)) {
+      delete sanitized.longitude;
     }
 
     const property = await createProperty(sanitized, auth.userId);
     console.log("Created property:", property);
     await logAudit(auth.userId, "property_created", { propertyId: property.id, name: property.name }, auth.ip, auth.userAgent);
     return NextResponse.json({ success: true, property: sanitizeResponse(property) });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Create property error:", error);
-    const message = error instanceof Error ? error.message : "Failed to create property";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    const message = error?.message || (typeof error === "string" ? error : "Failed to create property");
+    return NextResponse.json({ success: false, error: message, details: error?.details || error?.hint || null }, { status: 500 });
   }
 }
 

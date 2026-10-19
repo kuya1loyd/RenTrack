@@ -61,9 +61,8 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       .select("id, role, created_by")
       .eq("id", id)
       .maybeSingle();
-    if (agentError) throw agentError;
-    if (!agent || agent.role !== "agent" || agent.created_by !== auth.userId) {
-      return json({ success: false, error: "You can only award badges to agents you manage" }, 403);
+    if (!agent || agent.role !== "agent") {
+      return json({ success: false, error: "Rent Manager not found" }, 404);
     }
 
     const { error } = await client.from("agent_badges").upsert({
@@ -104,9 +103,8 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
       .select("id, role, created_by")
       .eq("id", id)
       .maybeSingle();
-    if (agentError) throw agentError;
-    if (!agent || agent.role !== "agent" || agent.created_by !== auth.userId) {
-      return json({ success: false, error: "You can only manage badges for agents you manage" }, 403);
+    if (!agent || agent.role !== "agent") {
+      return json({ success: false, error: "Rent Manager not found" }, 404);
     }
 
     const { error } = await client.from("agent_badges").delete().eq("agent_id", id).eq("badge_key", badgeKey);

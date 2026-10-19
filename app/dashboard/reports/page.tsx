@@ -194,7 +194,8 @@ export default function ReportsPage() {
                     <PieChart>
                       <Pie data={[
                         { name: "Active", value: tenants.filter(t => t.status === "active").length },
-                        { name: "Inactive", value: tenants.filter(t => t.status === "inactive").length },
+                        { name: "Archived", value: tenants.filter(t => t.status === "archived").length },
+                        { name: "Blocked", value: tenants.filter(t => t.status === "inactive").length },
                       ]} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
                         <Cell fill={COLORS[0]} />
                         <Cell fill={COLORS[3]} />

@@ -189,7 +189,7 @@ export default function UnitImageCarousel({
           {/* Hover overlay hint */}
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 opacity-0 transition-opacity duration-200 group-hover:opacity-100 pointer-events-none">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1 text-xs font-semibold text-white backdrop-blur-xs shadow-lg">
-              <Eye className="h-3.5 w-3.5" /> View Gallery ({total})
+              <Eye className="h-3.5 w-3.5" /> {total > 1 ? `View Gallery (${total})` : "View Photo"}
             </span>
           </div>
 

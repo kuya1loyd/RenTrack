@@ -7,6 +7,7 @@ import {
   LayoutDashboard, Home, MapPinned, FileText,
   CreditCard, BarChart3, LogOut, ChevronRight, Menu, X,
   Loader2, ChevronDown, ChevronLeft, Users, User, Bell, MessageSquare,
+  ClipboardCheck, Building2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Image from "next/image";
@@ -22,17 +23,35 @@ import AccountRequestReviewModal from "@/components/account-request-review-modal
 import { Avatar } from "@/components/ui/avatar";
 import { getNotificationDashboardHref } from "@/lib/notification-routing";
 
-type OwnerNavLink = {
+type OwnerNavSubItem = {
   label: string;
   tab: string;
   href: string;
   icon: LucideIcon;
+};
+
+type OwnerNavLink = {
+  label: string;
+  tab: string;
+  href?: string;
+  icon: LucideIcon;
   group?: string;
+  children?: OwnerNavSubItem[];
 };
 
 const navItems: OwnerNavLink[] = [
   { label: "Dashboard", tab: "overview", href: "/dashboard/owner#overview", icon: LayoutDashboard },
-  { label: "Properties & Units", tab: "units", href: "/dashboard/owner#units", icon: Home, group: "Management" },
+  {
+    label: "Units",
+    tab: "units",
+    href: "/dashboard/owner#units",
+    icon: ClipboardCheck,
+    group: "Management",
+    children: [
+      { label: "Properties", tab: "properties", href: "/dashboard/owner#properties", icon: Building2 },
+      { label: "Occupancy", tab: "occupancy", href: "/dashboard/owner#occupancy", icon: BarChart3 },
+    ],
+  },
   { label: "Tenants", tab: "create-tenant", href: "/dashboard/owner#create-tenant", icon: User, group: "Management" },
   { label: "Agents", tab: "agents", href: "/dashboard/owner#agents", icon: Users, group: "Management" },
   { label: "Property Map", tab: "map", href: "/dashboard/owner#map", icon: MapPinned, group: "Management" },
@@ -44,7 +63,14 @@ const navItems: OwnerNavLink[] = [
 function getTabFromHash(hash: string) {
   if (hash === "payments") return "financial";
   if (hash === "move-out") return "move-out-requests";
-  return navItems.find((item) => item.href.endsWith(`#${hash}`))?.tab || "";
+  for (const item of navItems) {
+    if (item.href?.endsWith(`#${hash}`)) return item.tab;
+    if (item.children) {
+      const child = item.children.find((c) => c.href.endsWith(`#${hash}`));
+      if (child) return child.tab;
+    }
+  }
+  return "";
 }
 
 function getActiveTab(pathname: string, hash: string) {
@@ -84,6 +110,15 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [unitsDropdownOpen, setUnitsDropdownOpen] = useState(true);
+
+  const isUnitsChildActive = activeTab === "units" || activeTab === "properties" || activeTab === "occupancy";
+
+  useEffect(() => {
+    if (isUnitsChildActive) {
+      setUnitsDropdownOpen(true);
+    }
+  }, [isUnitsChildActive]);
 
   const unreadMessagesCount = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 
@@ -365,6 +400,96 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
 
     return navItems.map((item, index) => {
       const Icon = item.icon;
+      const isFirstInGroup = expanded && item.group && navItems[index - 1]?.group !== item.group;
+
+      if (item.children) {
+        const isExactActive = activeTab === item.tab;
+        const isChildActive = item.children.some((c) => c.tab === activeTab);
+        const isOpen = unitsDropdownOpen;
+
+        return (
+          <Fragment key={item.tab}>
+            {isFirstInGroup && (
+              <div className="pt-4 pb-1.5 px-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  {item.group}
+                </p>
+              </div>
+            )}
+            <div className="space-y-1">
+              <div
+                className={cn(
+                  "group relative flex w-full items-center justify-between rounded-xl text-[13px] font-medium transition-all duration-150",
+                  isExactActive
+                    ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/20"
+                    : isChildActive
+                      ? "bg-white/[0.08] text-white font-semibold"
+                      : "text-slate-300 hover:bg-white/[0.08] hover:text-white"
+                )}
+              >
+                <Link
+                  id={`${mobile ? "mobile-" : ""}sidebar-${item.tab}`}
+                  title={expanded ? undefined : item.label}
+                  href={item.href || "/dashboard/owner#units"}
+                  onClick={() => {
+                    handleNavigationClick("units", mobile);
+                    setUnitsDropdownOpen(true);
+                  }}
+                  className={cn(
+                    "flex flex-1 items-center gap-3 px-3 py-2.5 min-w-0 focus-visible:outline-none rounded-xl",
+                    !expanded && "justify-center px-0 py-2.5 w-full"
+                  )}
+                >
+                  <Icon className={cn("h-4 w-4 shrink-0 transition-colors", (isExactActive || isChildActive) ? "text-white" : "text-slate-400 group-hover:text-white")} />
+                  {expanded && <span className="truncate">{item.label}</span>}
+                </Link>
+                {expanded && (
+                  <button
+                    type="button"
+                    aria-label="Toggle properties and occupancy dropdown"
+                    title={isOpen ? "Collapse dropdown" : "Expand dropdown"}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setUnitsDropdownOpen(!unitsDropdownOpen);
+                    }}
+                    className="p-2.5 pr-3 text-slate-400 hover:text-white transition-colors cursor-pointer rounded-r-xl"
+                  >
+                    <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-200", isOpen && "rotate-180", isExactActive && "text-white")} />
+                  </button>
+                )}
+              </div>
+
+              {expanded && isOpen && (
+                <div className="space-y-1 pl-3.5 ml-4 border-l border-slate-800/80 my-1">
+                  {item.children.map((sub) => {
+                    const isSubActive = activeTab === sub.tab;
+                    const SubIcon = sub.icon;
+                    return (
+                      <Link
+                        key={sub.tab}
+                        id={`${mobile ? "mobile-" : ""}sidebar-${sub.tab}`}
+                        href={sub.href}
+                        onClick={() => handleNavigationClick(sub.tab, mobile)}
+                        className={cn(
+                          "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors cursor-pointer",
+                          isSubActive
+                            ? "bg-blue-600 text-white font-semibold shadow-xs shadow-blue-500/20"
+                            : "text-slate-400 hover:text-white hover:bg-white/[0.06]"
+                        )}
+                      >
+                        <SubIcon className={cn("h-3.5 w-3.5 shrink-0 transition-colors", isSubActive ? "text-white" : "text-slate-400 group-hover:text-white")} />
+                        <span className="truncate">{sub.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Fragment>
+        );
+      }
+
       const isActive = activeTab === item.tab;
       const badgeCount = item.tab === "agents"
         ? pendingAgentApplicationsCount
@@ -376,36 +501,37 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
 
       return (
         <Fragment key={item.tab}>
-          {expanded && item.group && navItems[index - 1]?.group !== item.group && (
-            <p className="mb-2 mt-5 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
-              {item.group}
-            </p>
+          {isFirstInGroup && (
+            <div className="pt-4 pb-1.5 px-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                {item.group}
+              </p>
+            </div>
           )}
           <Link
             id={`${mobile ? "mobile-" : ""}sidebar-${item.tab}`}
             title={expanded ? undefined : item.label}
-            href={item.href}
+            href={item.href || "#"}
             onClick={() => handleNavigationClick(item.tab, mobile)}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 motion-reduce:transition-none motion-reduce:hover:translate-x-0",
+              "group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
               isActive
-                ? "bg-blue-600 text-white shadow-[0_4px_12px_rgba(37,99,235,0.22)]"
-                : "text-slate-400 hover:translate-x-0.5 hover:bg-white/[0.06] hover:text-white",
-              !expanded && "justify-center px-0"
+                ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/20"
+                : "text-slate-300 hover:bg-white/[0.08] hover:text-white",
+              !expanded && "justify-center px-0 py-2.5"
             )}
           >
-            <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-white" : "text-slate-500")} />
+            <Icon className={cn("h-4 w-4 shrink-0 transition-colors", isActive ? "text-white" : "text-slate-400 group-hover:text-white")} />
             {expanded && <span className="truncate">{item.label}</span>}
             {badgeCount > 0 && (
               <span className={cn(
-                "flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white",
-                expanded ? "ml-auto" : "absolute right-1 top-1 h-2 min-w-0 p-0"
+                "flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white shadow-xs",
+                expanded ? "ml-auto" : "absolute -top-1 -right-1 h-4 min-w-4 text-[9px]"
               )}>
-                {expanded ? badgeCount : ""}
+                {badgeCount}
               </span>
             )}
-            {isActive && expanded && <span aria-hidden="true" className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.4)]" />}
           </Link>
         </Fragment>
       );
@@ -435,17 +561,22 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
   return (
     <div className="min-h-screen flex-1 bg-[#f3f7fc]">
       {/* Mobile header */}
-      <div className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 p-4 backdrop-blur lg:hidden">
+      <div className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
         <button onClick={() => setMobileSidebarOpen(true)} className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" aria-label="Open navigation menu">
           <Menu className="h-5 w-5" />
         </button>
-        <span className="font-semibold text-sm">Owner Panel</span>
+        <div className="flex items-center gap-2">
+          <div className="h-7 w-7 flex items-center justify-center">
+            <Image src="/images/landing/logo.png" alt="RentTrack" width={28} height={28} className="h-7 w-7 object-contain" />
+          </div>
+          <span className="font-semibold text-sm text-slate-900">Owner Portal</span>
+        </div>
         <div className="flex items-center gap-1">
           <div className="relative">
-            <button onClick={() => handleOpenNotifications()} className="p-2 rounded-lg hover:bg-surface-secondary relative">
+            <button onClick={() => handleOpenNotifications()} className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 relative">
               <Bell className="h-5 w-5" />
               {notifications.filter(n => !n.read).length > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
                   {notifications.filter(n => !n.read).length}
                 </span>
               )}
@@ -458,23 +589,23 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
                   onClick={(e) => e.stopPropagation()}
-                  className="absolute right-0 mt-2 w-72 rounded-xl border border-slate-700 bg-surface shadow-dropdown overflow-hidden z-[70]"
+                  className="absolute right-0 mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden z-[70]"
                 >
-                  <div className="p-3 border-b border-slate-700">
-                    <h3 className="font-semibold text-foreground text-sm">Notifications</h3>
+                  <div className="p-3 border-b border-slate-100">
+                    <h3 className="font-semibold text-slate-900 text-sm">Notifications</h3>
                   </div>
                   <div className="max-h-60 overflow-y-auto">
                     {notifications.length === 0 ? (
-                      <p className="px-3 py-6 text-center text-xs text-text-secondary">No notifications yet</p>
+                      <p className="px-3 py-6 text-center text-xs text-slate-500">No notifications yet</p>
                     ) : (
                       notifications.slice(0, 10).map((n) => (
                         <button
                           key={n.id}
                           onClick={() => handleNotificationClick(n)}
-                          className="w-full text-left p-3 border-b border-slate-700 last:border-0 hover:bg-surface-secondary transition-colors"
+                          className="w-full text-left p-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors"
                         >
-                          <p className="text-sm font-medium text-foreground">{n.title}</p>
-                          <p className="text-xs text-text-secondary mt-0.5 line-clamp-2">{n.message}</p>
+                          <p className="text-sm font-medium text-slate-900">{n.title}</p>
+                          <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
                         </button>
                       ))
                     )}
@@ -483,7 +614,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
               )}
             </AnimatePresence>
           </div>
-          <button onClick={() => setShowLogoutModal(true)} className="p-2 rounded-lg hover:bg-surface-secondary text-red-600">
+          <button onClick={() => setShowLogoutModal(true)} className="p-2 rounded-lg hover:bg-rose-50 text-rose-600">
             <LogOut className="h-5 w-5" />
           </button>
         </div>
@@ -491,29 +622,42 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
 
       <div className="flex h-screen w-full">
         {/* Sidebar */}
-        <div className={cn("hidden h-full shrink-0 flex-col border-r border-white/10 bg-[#07111f] text-slate-200 transition-[width] duration-200 motion-reduce:transition-none lg:flex", desktopSidebarOpen ? "w-56" : "w-16")}>
-          <div className={cn("border-b border-white/10 py-4", desktopSidebarOpen ? "px-4" : "px-3")}>
-            <Link href="/dashboard/owner" className="flex items-center gap-2">
-              <div className="h-8 w-8 shrink-0 rounded-full overflow-hidden">
-                <Image src="/images/landing/logo.png" alt="RentTrack" width={64} height={64} className="h-full w-full object-contain" />
+        <aside className={cn("hidden h-full shrink-0 flex-col border-r border-slate-800/80 bg-[#0a1120] text-slate-200 transition-[width] duration-200 motion-reduce:transition-none lg:flex", desktopSidebarOpen ? "w-60" : "w-16")}>
+          {/* Header */}
+          <div className={cn("flex items-center gap-3 border-b border-slate-800/80 py-4", desktopSidebarOpen ? "px-4" : "justify-center px-2")}>
+            <Link href="/dashboard/owner" className="flex items-center gap-3 min-w-0">
+              <div className="h-9 w-9 shrink-0 flex items-center justify-center">
+                <Image src="/images/landing/logo.png" alt="RentTrack" width={32} height={32} className="h-full w-full object-contain" />
               </div>
-              {desktopSidebarOpen && <span className="text-sm font-bold text-white">Owner Panel</span>}
+              {desktopSidebarOpen && (
+                <div className="min-w-0">
+                  <span className="block text-sm font-bold tracking-tight text-white leading-tight">RentTrack</span>
+                  <span className="block text-[11px] font-medium text-slate-400 leading-tight mt-0.5">Owner Portal</span>
+                </div>
+              )}
             </Link>
           </div>
-          <nav aria-label="Owner navigation" className="flex-1 overflow-y-auto px-3 py-3">
+
+          {/* Navigation Links */}
+          <nav aria-label="Owner navigation" className="flex-1 overflow-y-auto px-2.5 py-3 space-y-0.5">
             {renderNavigation()}
           </nav>
-          <div className={cn("mt-auto border-t border-white/10 py-3", desktopSidebarOpen ? "px-3" : "px-2")}>
+
+          {/* Sidebar Footer Logout */}
+          <div className="border-t border-slate-800/80 p-2.5">
             <button
               onClick={() => setShowLogoutModal(true)}
               title={desktopSidebarOpen ? undefined : "Logout"}
-              className={cn("flex w-full items-center gap-2 rounded-lg px-2.5 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400", !desktopSidebarOpen && "justify-center px-0")}
+              className={cn(
+                "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-xs font-semibold text-slate-400 transition-colors hover:bg-rose-500/10 hover:text-rose-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 cursor-pointer",
+                !desktopSidebarOpen && "justify-center px-0 py-2.5"
+              )}
             >
               <LogOut className="h-4 w-4 shrink-0" />
-              {desktopSidebarOpen && <span className="truncate">Logout</span>}
+              {desktopSidebarOpen && <span>Sign Out</span>}
             </button>
           </div>
-        </div>
+        </aside>
 
         {/* Mobile sidebar */}
         <AnimatePresence>
@@ -523,7 +667,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
               animate={{ x: 0 }}
               exit={reduceMotion ? undefined : { x: -300 }}
               transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.21, 0.47, 0.32, 0.98] }}
-              className="lg:hidden fixed inset-0 z-50 bg-black/50"
+              className="lg:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-xs"
               onClick={() => setMobileSidebarOpen(false)}
             >
               <motion.div
@@ -531,23 +675,38 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                 animate={{ x: 0 }}
                 exit={reduceMotion ? undefined : { x: -300 }}
                 transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.21, 0.47, 0.32, 0.98] }}
-                className="flex h-full w-64 flex-col border-r border-white/10 bg-[#07111f] text-slate-200"
+                className="flex h-full w-64 flex-col border-r border-slate-800 bg-[#0a1120] text-slate-200"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="flex items-center justify-between border-b border-white/10 p-4">
-                  <Link href="/dashboard/owner" className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary-600 to-secondary-600 flex items-center justify-center">
-                      <LayoutDashboard className="h-4 w-4 text-white" />
+                <div className="flex items-center justify-between border-b border-slate-800 p-4">
+                  <Link href="/dashboard/owner" className="flex items-center gap-2.5">
+                    <div className="h-8 w-8 flex items-center justify-center">
+                      <Image src="/images/landing/logo.png" alt="RentTrack" width={28} height={28} className="h-full w-full object-contain" />
                     </div>
-                    <span className="text-sm font-bold text-white">Owner Panel</span>
+                    <div>
+                      <span className="block text-sm font-bold text-white">RentTrack</span>
+                      <span className="block text-[10px] text-slate-400">Owner Portal</span>
+                    </div>
                   </Link>
                   <button onClick={() => setMobileSidebarOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" aria-label="Close navigation menu">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
-                <nav aria-label="Owner navigation" className="flex-1 overflow-y-auto p-3">
+                <nav aria-label="Owner navigation" className="flex-1 overflow-y-auto p-3 space-y-0.5">
                   {renderNavigation(true)}
                 </nav>
+                <div className="border-t border-slate-800 p-3">
+                  <button
+                    onClick={() => {
+                      setMobileSidebarOpen(false);
+                      setShowLogoutModal(true);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-400 hover:bg-rose-500/10 hover:text-rose-300"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
               </motion.div>
             </motion.div>
           )}
@@ -555,26 +714,31 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
 
         {/* Desktop header */}
         <div className="hidden lg:flex flex-1 flex-col min-w-0">
-          <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-6 backdrop-blur">
+          <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/95 px-6 backdrop-blur-md">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)}
-                className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                title={desktopSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
               >
                 {desktopSidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               </button>
-              <h1 className="text-sm font-semibold text-slate-900">Owner Panel</h1>
+              <div>
+                <h1 className="text-sm font-bold text-slate-900 tracking-tight">Owner Portal</h1>
+                <p className="text-[11px] text-slate-500 -mt-0.5">Overview &amp; Management</p>
+              </div>
             </div>
             <div className="flex items-center gap-3">
+              {/* Notifications */}
               <div className="relative">
                 <button
                   onClick={handleOpenNotifications}
-                  className="relative rounded-lg p-2 text-text-secondary transition-colors hover:bg-surface-secondary hover:text-foreground"
+                  className="relative rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
                   aria-label="Open notifications"
                 >
                   <Bell className="h-5 w-5" />
                   {unreadNotificationsCount > 0 && (
-                    <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-xs">
                       {unreadNotificationsCount}
                     </span>
                   )}
@@ -585,18 +749,18 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                       initial={{ opacity: 0, y: 8, scale: 0.96 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                      className="absolute right-0 top-full z-[70] mt-2 w-80 overflow-hidden rounded-xl border border-slate-700 bg-surface shadow-dropdown"
+                      className="absolute right-0 top-full z-[70] mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
                     >
-                      <div className="border-b border-slate-700 p-3">
-                        <h3 className="text-sm font-semibold text-foreground">Notifications</h3>
+                      <div className="border-b border-slate-100 px-4 py-3">
+                        <h3 className="text-sm font-semibold text-slate-900">Notifications</h3>
                       </div>
-                      <div className="max-h-80 overflow-y-auto">
+                      <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
                         {notifications.length === 0 ? (
-                          <p className="px-3 py-6 text-center text-xs text-text-secondary">No notifications yet</p>
+                          <p className="px-3 py-6 text-center text-xs text-slate-500">No notifications yet</p>
                         ) : notifications.slice(0, 10).map((notification) => (
-                          <button key={notification.id} onClick={() => handleNotificationClick(notification)} className="w-full border-b border-slate-700 p-3 text-left last:border-0 hover:bg-surface-secondary">
-                            <p className="text-sm font-medium text-foreground">{notification.title}</p>
-                            <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">{notification.message}</p>
+                          <button key={notification.id} onClick={() => handleNotificationClick(notification)} className="w-full p-3 text-left hover:bg-slate-50 transition-colors">
+                            <p className="text-xs font-semibold text-slate-900">{notification.title}</p>
+                            <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">{notification.message}</p>
                           </button>
                         ))}
                       </div>
@@ -604,14 +768,16 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                   )}
                 </AnimatePresence>
               </div>
+
+              {/* User Dropdown */}
               <div className="relative">
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-surface-secondary transition-all"
+                  className="flex items-center gap-2.5 p-1.5 pl-2 rounded-xl hover:bg-slate-100 transition-all border border-transparent hover:border-slate-200"
                 >
-                  <Avatar src={user.avatarUrl} fallback={getInitials(user.name)} size="sm" />
-                  <span className="hidden sm:block text-sm font-medium text-foreground">{user.name?.split(' ')[0] || "Owner"}</span>
-                  <ChevronDown className={`h-4 w-4 text-text-secondary transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} />
+                  <Avatar src={user.avatarUrl} fallback={getInitials(user.name)} size="sm" className="ring-1 ring-slate-200" />
+                  <span className="hidden sm:block text-xs font-semibold text-slate-800">{user.name?.split(' ')[0] || "Owner"}</span>
+                  <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} />
                 </button>
                 <AnimatePresence initial={false}>
                   {showUserMenu && (
@@ -620,11 +786,11 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-700 bg-surface shadow-dropdown overflow-hidden z-[70]"
+                      className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden z-[70]"
                     >
-                      <div className="p-3 border-b border-slate-700">
-                        <p className="text-sm font-semibold text-foreground truncate">{user.name}</p>
-                        <p className="text-xs text-text-secondary truncate">{user.email}</p>
+                      <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                        <p className="text-sm font-semibold text-slate-900 truncate">{user.name}</p>
+                        <p className="text-xs text-slate-500 truncate mt-0.5">{user.email}</p>
                       </div>
                       <div className="p-2 space-y-0.5">
                         <button
@@ -633,48 +799,27 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                             setActiveTab("profile");
                             window.location.hash = "profile";
                           }}
-                          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-text-secondary hover:bg-surface-secondary hover:text-foreground transition-colors"
+                          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
                         >
-                          <User className="h-4 w-4" />
+                          <User className="h-4 w-4 text-slate-500" />
                           My Profile
                         </button>
-                        <div className="border-t border-slate-700 pt-1 mt-1">
+                        <div className="border-t border-slate-100 pt-1 mt-1">
                           <button
                             onClick={() => {
                               setShowUserMenu(false);
                               setShowMessages(true);
                             }}
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium text-text-secondary hover:bg-surface-secondary hover:text-foreground"
+                            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900"
                           >
-                            <MessageSquare className="h-4 w-4" />
+                            <MessageSquare className="h-4 w-4 text-slate-500" />
                             <span>Messages</span>
                             {conversations.some((conv) => conv.unreadCount > 0) && (
-                              <span className="ml-auto rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                              <span className="ml-auto rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
                                 {conversations.reduce((count, conv) => count + conv.unreadCount, 0)}
                               </span>
                             )}
                           </button>
-                          {conversations.length === 0 ? (
-                            <p className="px-3 pb-2 text-[11px] text-text-secondary">No messages yet</p>
-                          ) : conversations.slice(0, 5).map((conv) => (
-                            <button
-                              key={conv.userId}
-                              onClick={() => {
-                                setShowUserMenu(false);
-                                setConversations((prev) => prev.map((c) => c.userId === conv.userId ? { ...c, unreadCount: 0 } : c));
-                                void markAllMessagesRead(conv.userId);
-                                if (conv.lastMessage?.subject === "Account Creation Request") {
-                                  setSelectedAccountRequest(conv);
-                                } else {
-                                  setSelectedConversation(conv);
-                                }
-                              }}
-                              className="w-full text-left px-3 py-2 rounded-lg hover:bg-surface-secondary transition-colors"
-                            >
-                              <p className="text-xs font-medium text-foreground truncate">{conv.otherUser?.name || "Unknown"}</p>
-                              <p className="text-[10px] text-text-secondary truncate">{conv.lastMessage?.body?.split('\n').slice(0, 2).join(' ')}</p>
-                            </button>
-                          ))}
                         </div>
                       </div>
                     </motion.div>

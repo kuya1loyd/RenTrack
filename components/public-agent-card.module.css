@@ -219,18 +219,20 @@
 
 .actions {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-columns: 48px repeat(2, minmax(0, 1fr));
   gap: 9px;
 }
 
 .profileButton,
-.chatButton {
+.chatButton,
+.inquireButton {
   display: flex;
   min-height: 48px;
   align-items: center;
   justify-content: center;
   gap: 8px;
   border-radius: 12px;
+  text-align: center;
   transition: background 180ms ease, border-color 180ms ease;
 }
 
@@ -247,19 +249,38 @@
 }
 
 .chatButton {
+  min-width: 0;
   border: 0;
   background: #f2a159;
   color: #15243b;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.1em;
   line-height: 1.2;
   cursor: pointer;
+  padding: 0 5px;
 }
 
 .chatButton:hover {
   background: #e8913d;
+}
+
+.inquireButton {
+  min-width: 0;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  padding: 0 5px;
+}
+
+.inquireButton:hover {
+  border-color: #93c5fd;
+  background: #dbeafe;
 }
 
 .chatButton:disabled {
@@ -269,7 +290,9 @@
 
 .saveButton:focus-visible,
 .profileButton:focus-visible,
-.chatButton:focus-visible {
+.chatButton:focus-visible,
+.inquireButton:focus-visible,
+.compactInquire:focus-visible {
   outline: 2px solid #92400e;
   outline-offset: 3px;
 }
@@ -492,6 +515,27 @@
   color: #475569;
   font-size: 14px;
   font-weight: 500;
+}
+
+.compactInquire {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 6px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 11px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.compactInquire:hover {
+  border-color: #93c5fd;
+  background: #dbeafe;
 }
 
 .compactLandscape {

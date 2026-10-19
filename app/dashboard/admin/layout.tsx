@@ -378,42 +378,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         </Link>
 
 
-                        {conversations.length > 0 && (
-                          <div className="border-t border-gray-200 dark:border-gray-700 pt-1 mt-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setShowUserMenu(false);
-                                setShowMessages(true);
-                              }}
-                              className="w-full text-left px-3 py-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-text-secondary hover:text-foreground cursor-pointer"
-                            >
-                              <span>Messages</span>
-                              <span className="text-blue-600 font-medium normal-case">Open Inbox</span>
-                            </button>
-                            {conversations.slice(0, 5).map((conv) => (
-                              <button
-                                key={conv.userId}
-                                type="button"
-                                onClick={() => {
-                                  setShowUserMenu(false);
-                                  setConversations((prev) => prev.map((c) => c.userId === conv.userId ? { ...c, unreadCount: 0 } : c));
-                                  setUnreadMessagesCount((prev) => Math.max(0, prev - (conv.unreadCount || 1)));
-                                  void markAllMessagesRead(conv.userId);
-                                  if (conv.lastMessage?.subject === "Account Creation Request") {
-                                    setSelectedAccountRequest(conv);
-                                  } else {
-                                    setSelectedConversation(conv);
-                                  }
-                                }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-surface-secondary transition-colors cursor-pointer"
-                              >
-                                <p className="text-xs font-medium text-foreground truncate">{conv.otherUser?.name || "Unknown"}</p>
-                                <p className="text-[10px] text-text-secondary truncate">{conv.lastMessage?.body?.split('\n').slice(0, 2).join(' ')}</p>
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                        <div className="border-t border-gray-200 dark:border-gray-700 pt-1 mt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowUserMenu(false);
+                              setShowMessages(true);
+                            }}
+                            className="w-full text-left px-3 py-2 flex items-center justify-between text-xs font-medium text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+                          >
+                            <span>Messages</span>
+                            <span className="text-blue-600 font-medium">Open Inbox</span>
+                          </button>
+                        </div>
                       </div>
                     </motion.div>
                   </>

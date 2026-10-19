@@ -298,7 +298,7 @@ export default function TenantBrowsePage() {
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Houses
+                Properties
               </button>
               <button
                 type="button"

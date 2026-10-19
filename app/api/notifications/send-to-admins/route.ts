@@ -4,7 +4,7 @@ import { createNotification, getAdminSupabase, sendMessage } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireRole(request, ["agent", "admin", "owner"]);
+    const auth = await requireRole(request, ["agent", "admin", "owner", "tenant"]);
     if (auth instanceof NextResponse) return auth;
 
     const body = await request.json();
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     const targetRoles =
-      recipientRole === "both" || type === "tenant"
+      recipientRole === "both" || type === "tenant" || type === "payment"
         ? ["owner", "admin"]
         : recipientRole === "owner"
         ? ["owner"]

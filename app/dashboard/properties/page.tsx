@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import {
-  Building2, Plus, Search, MapPin, Home, Users, DollarSign, Edit, Trash2, Eye, X, Check, Upload,
+  Building2, Plus, Search, MapPin, Home, Users, DollarSign, Edit, Trash2, Eye, X, Check, Upload, History as HistoryIcon,
 } from "lucide-react";
+import { TenancyHistoryModal } from "@/components/tenancy-history-modal";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,8 +43,9 @@ export default function PropertiesPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [historyProperty, setHistoryProperty] = useState<Property | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [formData, setFormData] = useState({ name: "", location: "", latitude: "", longitude: "", type: "house" as "house" | "condominium", units: 0, features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "" });
+  const [formData, setFormData] = useState({ name: "", location: "", latitude: "", longitude: "", monthlyRevenue: 0, type: "house" as "house" | "condominium", units: 0, features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "" });
   const [propertyImage, setPropertyImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
@@ -86,16 +88,10 @@ export default function PropertiesPage() {
       toast.error("Please fill in all required fields");
       return;
     }
-    if (Boolean(formData.latitude) !== Boolean(formData.longitude)) {
-      toast.error("Enter both latitude and longitude to map this property");
-      return;
-    }
     if (!user) return;
     try {
       const submitData = {
         ...formData,
-        latitude: formData.latitude ? Number(formData.latitude) : undefined,
-        longitude: formData.longitude ? Number(formData.longitude) : undefined,
       };
       if (propertyImage) {
         submitData.imageUrl = await new Promise<string>((resolve) => {
@@ -113,14 +109,14 @@ export default function PropertiesPage() {
         setProperties(props);
       }
       setShowAddModal(false);
-      setFormData({ name: "", location: "", latitude: "", longitude: "", type: "house", units: 0, features: [], condition: "", availabilityStatus: "Available", imageUrl: "" });
+      setFormData({ name: "", location: "", latitude: "", longitude: "", monthlyRevenue: 0, type: "house", units: 0, features: [], condition: "", availabilityStatus: "Available", imageUrl: "" });
       setPropertyImage(null);
       setImagePreview("");
       notifyAdmins({ title: "New Property Created", message: `${formData.name} was added by ${user.name}`, type: "property", read: false });
       toast.success("Property added successfully");
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast.error("Failed to add property");
+      toast.error(err?.message || "Failed to add property");
     }
   };
 
@@ -130,16 +126,10 @@ export default function PropertiesPage() {
       toast.error("Please fill in all required fields");
       return;
     }
-    if (Boolean(formData.latitude) !== Boolean(formData.longitude)) {
-      toast.error("Enter both latitude and longitude to map this property");
-      return;
-    }
     setIsSaving(true);
     try {
       const submitData = {
         ...formData,
-        latitude: formData.latitude ? Number(formData.latitude) : undefined,
-        longitude: formData.longitude ? Number(formData.longitude) : undefined,
       };
       if (propertyImage) {
         const reader = new FileReader();
@@ -171,7 +161,7 @@ export default function PropertiesPage() {
 
   const openEdit = (property: Property) => {
     setSelectedProperty(property);
-    setFormData({ name: property.name, location: property.location, latitude: property.latitude?.toString() || "", longitude: property.longitude?.toString() || "", type: property.type, units: property.units, features: property.features || [], condition: property.condition || "", availabilityStatus: property.availabilityStatus || "Available", imageUrl: property.imageUrl || "" });
+    setFormData({ name: property.name, location: property.location, latitude: property.latitude?.toString() || "", longitude: property.longitude?.toString() || "", monthlyRevenue: property.monthlyRevenue || (property as any).rentAmount || 0, type: property.type, units: property.units, features: property.features || [], condition: property.condition || "", availabilityStatus: property.availabilityStatus || "Available", imageUrl: property.imageUrl || "" });
     setImagePreview(property.imageUrl || "");
     setPropertyImage(null);
     setShowEditModal(true);
@@ -196,7 +186,7 @@ export default function PropertiesPage() {
             <p className="text-white/70 text-sm mt-1.5">Manage your rental properties and their units</p>
           </div>
           {canManage && (
-              <Button onClick={() => { setFormData({ name: "", location: "", latitude: "", longitude: "", type: "house", units: 0, features: [], condition: "", availabilityStatus: "Available", imageUrl: "" }); setPropertyImage(null); setImagePreview(""); setShowAddModal(true); }}
+              <Button onClick={() => { setFormData({ name: "", location: "", latitude: "", longitude: "", monthlyRevenue: 0, type: "house", units: 0, features: [], condition: "", availabilityStatus: "Available", imageUrl: "" }); setPropertyImage(null); setImagePreview(""); setShowAddModal(true); }}
               className="bg-white text-orange-700 hover:bg-orange-50 shadow-lg"><Plus className="h-4 w-4 mr-1.5" />Add Property</Button>
           )}
         </div>
@@ -290,6 +280,9 @@ export default function PropertiesPage() {
                             <Button size="sm" variant="outline" className="flex-1 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all" onClick={() => openEdit(property)}>
                               <Edit className="h-3.5 w-3.5 mr-1" />Edit
                             </Button>
+                            <Button size="sm" variant="outline" className="flex-1" onClick={() => setHistoryProperty(property)}>
+                              <HistoryIcon className="h-3.5 w-3.5 mr-1" />History
+                            </Button>
                             <Button size="sm" variant="outline" className="text-red-500 hover:text-red-600 hover:bg-red-50 hover:border-red-200 transition-all"
                               onClick={() => handleDelete(property.id, property.name)}>
                               <Trash2 className="h-3.5 w-3.5" />
@@ -317,22 +310,14 @@ export default function PropertiesPage() {
             <label className="block text-sm font-medium text-foreground mb-1.5">Location *</label>
             <Input value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} placeholder="e.g. Butuan City" />
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Latitude</label>
-              <Input type="number" step="any" min="-90" max="90" value={formData.latitude} onChange={(e) => setFormData({ ...formData, latitude: e.target.value })} placeholder="e.g. 8.9475" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Longitude</label>
-              <Input type="number" step="any" min="-180" max="180" value={formData.longitude} onChange={(e) => setFormData({ ...formData, longitude: e.target.value })} placeholder="e.g. 125.5406" />
-            </div>
-          </div>
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">Type</label>
-            <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as "house" | "condominium" })}
+            <label className="block text-sm font-medium text-foreground mb-1.5">Property Type</label>
+            <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
               className="w-full h-12 rounded-xl border border-border bg-surface text-foreground px-4">
-              <option value="house">House</option>
-              <option value="condominium">Condominium</option>
+              <option value="house">House / Villa</option>
+              <option value="residential">Residential Property</option>
+              <option value="building">Commercial / Building</option>
+              <option value="condominium">Condominium Complex</option>
             </select>
           </div>
           <div>
@@ -341,18 +326,22 @@ export default function PropertiesPage() {
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Current Property Condition</label>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Property Condition</label>
               <select value={formData.condition} onChange={(e) => setFormData({ ...formData, condition: e.target.value })} className="h-12 w-full rounded-xl border border-border bg-surface px-4">
                 <option value="">Select condition...</option>
                 {PROPERTY_CONDITIONS.map((condition) => <option key={condition} value={condition}>{condition}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Availability Status</label>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Property Status</label>
               <select value={formData.availabilityStatus} onChange={(e) => setFormData({ ...formData, availabilityStatus: e.target.value as typeof AVAILABILITY_STATUSES[number] })} className="h-12 w-full rounded-xl border border-border bg-surface px-4">
                 {AVAILABILITY_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
               </select>
             </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Monthly Rent (₱)</label>
+            <Input type="number" min="0" value={formData.monthlyRevenue || ""} onChange={(e) => setFormData({ ...formData, monthlyRevenue: parseInt(e.target.value) || 0 })} placeholder="e.g. 15000" />
           </div>
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Property Image</label>
@@ -439,22 +428,14 @@ export default function PropertiesPage() {
             <label className="block text-sm font-medium text-foreground mb-1.5">Location *</label>
             <Input value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} />
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Latitude</label>
-              <Input type="number" step="any" min="-90" max="90" value={formData.latitude} onChange={(e) => setFormData({ ...formData, latitude: e.target.value })} placeholder="e.g. 8.9475" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Longitude</label>
-              <Input type="number" step="any" min="-180" max="180" value={formData.longitude} onChange={(e) => setFormData({ ...formData, longitude: e.target.value })} placeholder="e.g. 125.5406" />
-            </div>
-          </div>
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">Type</label>
-            <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as "house" | "condominium" })}
+            <label className="block text-sm font-medium text-foreground mb-1.5">Property Type</label>
+            <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
               className="w-full h-12 rounded-xl border border-border bg-surface text-foreground px-4">
-              <option value="house">House</option>
-              <option value="condominium">Condominium</option>
+              <option value="house">House / Villa</option>
+              <option value="residential">Residential Property</option>
+              <option value="building">Commercial / Building</option>
+              <option value="condominium">Condominium Complex</option>
             </select>
           </div>
           <div>
@@ -463,18 +444,22 @@ export default function PropertiesPage() {
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Current Property Condition</label>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Property Condition</label>
               <select value={formData.condition} onChange={(e) => setFormData({ ...formData, condition: e.target.value })} className="h-12 w-full rounded-xl border border-border bg-surface px-4">
                 <option value="">Select condition...</option>
                 {PROPERTY_CONDITIONS.map((condition) => <option key={condition} value={condition}>{condition}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Availability Status</label>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Property Status</label>
               <select value={formData.availabilityStatus} onChange={(e) => setFormData({ ...formData, availabilityStatus: e.target.value as typeof AVAILABILITY_STATUSES[number] })} className="h-12 w-full rounded-xl border border-border bg-surface px-4">
                 {AVAILABILITY_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
               </select>
             </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Monthly Rent (₱)</label>
+            <Input type="number" min="0" value={formData.monthlyRevenue || ""} onChange={(e) => setFormData({ ...formData, monthlyRevenue: parseInt(e.target.value) || 0 })} placeholder="e.g. 15000" />
           </div>
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Property Image</label>
@@ -510,6 +495,12 @@ export default function PropertiesPage() {
           </div>
         </div>
       </Modal>
+      <TenancyHistoryModal
+        isOpen={!!historyProperty}
+        onClose={() => setHistoryProperty(null)}
+        title={`Tenancy history · ${historyProperty?.name || ""}`}
+        propertyId={historyProperty?.id}
+      />
     </motion.div>
   );
 }

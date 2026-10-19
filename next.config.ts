@@ -19,6 +19,18 @@ const nextConfig: NextConfig = {
     ],
   },
   reactStrictMode: true,
+  async rewrites() {
+    return {
+      beforeFiles: [
+        {
+          source: "/api/auth/users/agents",
+          destination: "/api/agents",
+        },
+      ],
+      afterFiles: [],
+      fallback: [],
+    };
+  },
 };
 
 export default nextConfig;

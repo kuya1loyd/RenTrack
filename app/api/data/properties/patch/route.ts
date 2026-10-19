@@ -8,7 +8,7 @@ import { logAudit, getAdminSupabase } from "@/lib/db";
 
 const ALLOWED_PROPERTY_FIELDS = [
   "name", "location", "type", "units", "occupiedUnits",
-  "monthlyRevenue", "status", "latitude", "longitude", "imageUrl", "imageUrls", "features", "condition", "availabilityStatus", "agentId", "agent_id"
+  "monthlyRevenue", "rentAmount", "rent_amount", "status", "latitude", "longitude", "imageUrl", "imageUrls", "features", "condition", "availabilityStatus", "agentId", "agent_id"
 ];
 
 export async function PATCH(request: NextRequest) {
@@ -61,7 +61,31 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: false, error: "No valid fields to update" }, { status: 400 });
     }
 
-    const { error } = await getAdminSupabase().from("properties").update(updates).eq("id", id);
+    let { error } = await getAdminSupabase().from("properties").update(updates).eq("id", id);
+    if (error && (error.message?.includes("properties_type_check") || (error as any).code === "23514" || error.message?.includes("violates check constraint"))) {
+      try {
+        const fixSql = `
+          DO $$
+          DECLARE r RECORD;
+          BEGIN
+            FOR r IN (
+              SELECT conname
+              FROM pg_constraint
+              WHERE conrelid = 'properties'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%type%'
+            ) LOOP
+              EXECUTE 'ALTER TABLE properties DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname);
+            END LOOP;
+          END $$;
+          ALTER TABLE properties ADD CONSTRAINT properties_type_check CHECK (type IN ('house', 'residential', 'building', 'condominium'));
+          NOTIFY pgrst, 'reload schema';
+        `;
+        await getAdminSupabase().rpc("exec_sql", { sql: fixSql });
+        const retry = await getAdminSupabase().from("properties").update(updates).eq("id", id);
+        error = retry.error;
+      } catch (e) {
+        console.warn("Could not auto-repair properties_type_check constraint on update:", e);
+      }
+    }
     if (error) throw error;
 
     await logAudit(auth.userId, "property_updated", { propertyId: id, fields: Object.keys(updates).length }, auth.ip, auth.userAgent);

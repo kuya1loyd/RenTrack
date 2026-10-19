@@ -13,7 +13,7 @@ import { Modal } from "@/components/ui/modal";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { getOwnerAgents, registerAgent, deleteUser, deleteRejectedAgentApplication, updateUser, UserRecord, getAgentApplications, reviewAgentApplication, reopenAgentApplication, markAgentApplicationApproved, AgentApplication, getProperties, getUnits, getTenants, getPayments, Payment, getAgentsAssistedTenants, AssistedTenantInfo } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
-import { formatCurrency, formatDate, getInitials } from "@/lib/utils";
+import { formatDisplayId, formatCurrency, formatDate, getInitials } from "@/lib/utils";
 import { toast } from "sonner";
 import MessagingModal from "@/components/messaging-modal";
 import ReceiptModal from "@/components/receipt-modal";
@@ -169,7 +169,7 @@ export default function OwnerAgentsPage() {
             .map((property) => String(property.name || "").trim().toLowerCase())
             .filter(Boolean)
         );
-        const agentUnitIds = new Set(units.filter((unit) => agentPropertyIds.has(unit.propertyId)).map((unit) => unit.id));
+        const agentUnitIds = new Set(units.filter((unit) => Boolean(unit.propertyId && agentPropertyIds.has(unit.propertyId))).map((unit) => unit.id));
 
         // Use API-returned assisted tenants or comprehensive local resolution
         let agentAssistedList = assistedTenantsMap[agent.id]?.tenants || [];
@@ -220,7 +220,7 @@ export default function OwnerAgentsPage() {
           .sort((left, right) => right.paymentDate.localeCompare(left.paymentDate))
           .map((payment) => {
             const unit = unitsById.get(payment.unitId);
-            const property = unit ? propertiesById.get(unit.propertyId) : undefined;
+            const property = unit?.propertyId ? propertiesById.get(unit.propertyId) : undefined;
             return {
               ...payment,
               propertyLabel: property?.name || payment.propertyName || "Property unavailable",
@@ -1102,7 +1102,7 @@ export default function OwnerAgentsPage() {
                               }}
                               className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-600 hover:text-blue-600 transition-colors bg-slate-50 border border-slate-200 px-2 py-0.5 rounded"
                             >
-                              <span>#{agent.id.slice(0, 8)}</span>
+                              <span>#{formatDisplayId(agent.id)}</span>
                               <Copy className="h-2.5 w-2.5 text-slate-400" />
                             </button>
                           </td>

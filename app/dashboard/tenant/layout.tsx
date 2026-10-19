@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createPortal } from "react-dom";
 import { LogOut, Loader2 } from "lucide-react";
@@ -10,8 +10,9 @@ import { Button } from "@/components/ui/button";
 import TenantNavbar from "@/components/tenant-navbar";
 import MessagingPanel from "@/components/messaging-panel";
 import MessagingModal from "@/components/messaging-modal";
-import { Conversation, getProperties, getUnits, Property, Unit } from "@/lib/data";
+import { Conversation, getProperties, getUnits, Property, Unit, safeParseJson } from "@/lib/data";
 import styles from "@/components/tenant-panel.module.css";
+import { toast } from "sonner";
 
 export default function TenantLayout({ children }: { children: React.ReactNode }) {
   const { user, logout, isAuthenticated, isLoading } = useAuth();
@@ -47,6 +48,20 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
     unitNames: units.filter((unit) => unit.propertyId === property.id).map((unit) => unit.unitNumber),
   }));
 
+  const handleContactLandlord = useCallback(async () => {
+    try {
+      const response = await fetch("/api/tenant/landlord", { credentials: "include", cache: "no-store" });
+      const data = await safeParseJson(response);
+      if (!response.ok || !data.success || !data.owner?.id) {
+        throw new Error(data.error || "The owner of your assigned property could not be resolved.");
+      }
+      setShowMessages(false);
+      setActiveChatUser(data.owner as NonNullable<Conversation["otherUser"]>);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The owner of your assigned property could not be resolved.");
+    }
+  }, []);
+
   useEffect(() => {
     const handleOpenMessages = (event: Event) => {
       const customEvent = event as CustomEvent<{ otherUser?: Conversation["otherUser"] }>;
@@ -59,8 +74,13 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
     };
 
     window.addEventListener("renttrack-open-messages", handleOpenMessages);
-    return () => window.removeEventListener("renttrack-open-messages", handleOpenMessages);
-  }, []);
+    const handleContactLandlordEvent = () => { void handleContactLandlord(); };
+    window.addEventListener("renttrack-contact-landlord", handleContactLandlordEvent);
+    return () => {
+      window.removeEventListener("renttrack-open-messages", handleOpenMessages);
+      window.removeEventListener("renttrack-contact-landlord", handleContactLandlordEvent);
+    };
+  }, [handleContactLandlord]);
 
   if (isLoading) {
     return (

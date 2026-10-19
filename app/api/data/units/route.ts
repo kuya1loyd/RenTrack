@@ -32,20 +32,23 @@ export async function POST(request: NextRequest) {
     const sanitized = sanitizeObject(body, [
       { key: "propertyId", type: "string", maxLength: 100 },
       { key: "unitNumber", type: "string", maxLength: 50 },
+      { key: "address", type: "string", maxLength: 500 },
       { key: "floor", type: "number" },
       { key: "status", type: "string", maxLength: 20 },
       { key: "rentAmount", type: "number" },
       { key: "tenantName", type: "string", maxLength: 200 },
       { key: "tenantId", type: "string", maxLength: 100 },
       { key: "imageUrl", type: "string", maxLength: 5000000 },
+      { key: "type", type: "string", maxLength: 50 },
+      { key: "condition", type: "string", maxLength: 100 },
     ]);
     if (Array.isArray(body.imageUrls)) {
       sanitized.imageUrls = Array.from(new Set(body.imageUrls.filter((url: unknown): url is string => typeof url === "string")).values()).slice(0, 20);
       sanitized.imageUrl = sanitized.imageUrls[0] || sanitized.imageUrl;
     }
 
-    if (!sanitized.propertyId || !sanitized.unitNumber) {
-      return NextResponse.json({ success: false, error: "Property ID and unit number are required" }, { status: 400 });
+    if (!sanitized.unitNumber) {
+      return NextResponse.json({ success: false, error: "Unit number is required" }, { status: 400 });
     }
 
     const unit = await createUnit(sanitized);

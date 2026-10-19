@@ -109,3 +109,21 @@ export function getStatusColor(status: string): string {
   return colors[status] || "text-gray-600 bg-gray-50 border-gray-200";
 }
 
+
+export function formatDisplayId(id?: string | null): string {
+  if (!id) return "00000000";
+  const s = String(id).trim();
+  // If the ID contains an embedded numeric timestamp/sequence (e.g. usr_1791791116893_b8vs)
+  const numMatch = s.match(/\d{6,}/);
+  if (numMatch) {
+    return numMatch[0];
+  }
+  const digitsOnly = s.replace(/\D/g, "");
+  if (digitsOnly.length >= 4) {
+    return digitsOnly;
+  }
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 100000000;
+  return String(h).padStart(8, "0");
+}
+

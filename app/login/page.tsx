@@ -94,7 +94,10 @@ function LoginContent() {
       } else {
         if (data.needsVerification) {
           toast.info(data.error || "Please verify your account before logging in. A verification code has been sent to your email.");
-          router.push(`/verify-otp?email=${encodeURIComponent(data.email || email)}`);
+          const verifyParams = new URLSearchParams({ email: data.email || email });
+          if (data.userId) verifyParams.set("userId", data.userId);
+          if (data.devOtp) verifyParams.set("otp", String(data.devOtp));
+          router.push(`/verify-otp?${verifyParams.toString()}`);
           return;
         }
         toast.error(data.error || "Login failed");

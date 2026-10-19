@@ -137,15 +137,16 @@ BEGIN
     RAISE EXCEPTION 'You can only review requests for your properties' USING ERRCODE = '42501';
   END IF;` : ""}
   ${status === "approved" ? `IF current_tenant.id IS NULL OR current_unit.id IS NULL
-    OR current_tenant.status = 'inactive' OR COALESCE(current_tenant.assignment_status, '') = 'rejected'
+    OR current_tenant.status IN ('inactive', 'archived') OR COALESCE(current_tenant.assignment_status, '') = 'rejected'
     OR (current_tenant.unit_id IS NOT NULL AND current_tenant.unit_id <> current_unit.id)
     OR current_unit.status <> 'occupied'
     OR (current_unit.tenant_id IS NOT NULL AND current_unit.tenant_id NOT IN (${identities}))
     OR (current_unit.tenant_id IS NULL AND (current_tenant.unit_id IS DISTINCT FROM current_unit.id OR COALESCE(current_tenant.assignment_status, '') = 'pending')) THEN
     RAISE EXCEPTION 'The current unit assignment has changed; check the tenancy before approving' USING ERRCODE = '40001';
   END IF;
+  -- Approved move-outs vacate the unit and archive the tenant instead of blocking the account.
   UPDATE units SET status = 'vacant', tenant_id = NULL, tenant_name = NULL WHERE id = current_unit.id;
-  UPDATE tenants SET status = 'inactive', unit_id = NULL, property_name = NULL, unit_number = NULL, assignment_status = '', rent_amount = 0 WHERE id = current_tenant.id;` : ""}
+  UPDATE tenants SET status = 'archived', unit_id = NULL, property_name = NULL, unit_number = NULL, assignment_status = '', rent_amount = 0 WHERE id = current_tenant.id;` : ""}
   UPDATE move_out_requests SET status = ${sqlText(status)}, reviewed_by = ${sqlText(reviewerId)}, reviewed_at = NOW() WHERE id = current_request.id;
 END;
 ${delimiter};`;
