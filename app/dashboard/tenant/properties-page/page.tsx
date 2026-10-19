@@ -253,10 +253,10 @@ export default function TenantPropertiesPage() {
                 setSelectedUnitFilter(val);
                 if (val !== "all") {
                   const targetUnit = units.find((u) => u.id === val);
-                  if (targetUnit) {
+                  if (targetUnit && targetUnit.propertyId) {
                     setSelectedUnitByProperty((prev) => ({
                       ...prev,
-                      [targetUnit.propertyId]: targetUnit.id,
+                      [targetUnit.propertyId as string]: targetUnit.id,
                     }));
                   }
                 }
