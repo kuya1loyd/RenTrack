@@ -752,7 +752,7 @@ export default function OwnerDashboard() {
   const normalizedUnitSearch = unitSearch.trim().toLowerCase();
   const filteredUnits = units.filter((unit) => {
     const prop = properties.find((p) => p.id === unit.propertyId);
-    const searchable = `${unit.unitNumber} ${unit.tenantName || ""} ${unit.address || ""} ${prop?.name || ""} ${prop?.location || ""} ${unit.propertyName || ""}`.toLowerCase();
+    const searchable = `${unit.unitNumber} ${unit.tenantName || ""} ${unit.address || ""} ${prop?.name || ""} ${prop?.location || ""} ${(unit as any).propertyName || prop?.name || ""}`.toLowerCase();
     const searchMatches = !normalizedUnitSearch || searchable.includes(normalizedUnitSearch);
     const statusMatches = unitStatusFilter === "all" || unit.status === unitStatusFilter;
     return searchMatches && statusMatches;

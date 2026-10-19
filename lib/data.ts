@@ -29,6 +29,8 @@ export interface Property {
 export interface Unit {
   id: string;
   propertyId?: string;
+  propertyName?: string;
+  agentId?: string;
   unitNumber: string;
   floor?: number;
   status: "occupied" | "vacant" | "maintenance";
