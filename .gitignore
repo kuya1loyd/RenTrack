@@ -49,3 +49,6 @@ next-env.d.ts
 .vscode/mcp.json
 
 scripts/.env.local
+
+# Tesseract
+*.traineddata

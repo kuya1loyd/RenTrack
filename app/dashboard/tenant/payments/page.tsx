@@ -26,7 +26,7 @@ import {
   CheckCircle2,
   Sparkles,
 } from "lucide-react";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, parseGcashReference } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import {
   getPayments,
@@ -181,10 +181,40 @@ export default function TenantPaymentsPage() {
       return;
     }
 
+    // Quick filename check (e.g., if user renamed receipt to reference number)
+    const filenameRef = parseGcashReference(file.name);
+    if (filenameRef) {
+      setGcashRefNumber(filenameRef);
+      setOcrDetected(true);
+      toast.success(`GCash Reference Number detected: ${filenameRef}`);
+      return;
+    }
+
     // If paying via GCash, scan for reference number (checks both mime type and file extension)
     const isImageFile = (file.type && file.type.startsWith("image/")) || /\.(jpe?g|png|webp|bmp|gif|tiff)$/i.test(file.name);
     if (paymentMethod === "gcash" && isImageFile) {
       setIsScanningReceipt(true);
+
+      // 1. Try instant client-side scan with tesseract.js in browser Web Worker
+      try {
+        const { createWorker } = await import("tesseract.js");
+        const worker = await createWorker("eng");
+        const ret = await worker.recognize(file);
+        await worker.terminate();
+        const text = ret?.data?.text || "";
+        const extracted = parseGcashReference(text);
+        if (extracted) {
+          setGcashRefNumber(extracted);
+          setOcrDetected(true);
+          toast.success(`GCash Reference Number detected: ${extracted}`);
+          setIsScanningReceipt(false);
+          return;
+        }
+      } catch (clientOcrErr) {
+        console.warn("Client-side OCR notice, falling back to server:", clientOcrErr);
+      }
+
+      // 2. Server API fallback
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
 
