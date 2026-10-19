@@ -191,7 +191,7 @@ export default function OwnerDashboard() {
   const [viewingReport, setViewingReport] = useState<"rental" | "property" | null>(null);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
-  const [editPropertyForm, setEditPropertyForm] = useState({ name: "", location: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house" as "house" | "residential" | "building" | "condominium", status: "active" as "active" | "inactive", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
+  const [editPropertyForm, setEditPropertyForm] = useState({ name: "", location: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house" as "house" | "residential" | "building" | "condominium" | string, status: "active" as "active" | "inactive", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
   const [editUnitPropertyId, setEditUnitPropertyId] = useState<string | null>(null);
   const [editUnitForm, setEditUnitForm] = useState({ unitNumber: "", address: "", floor: "", type: "condo", condition: "", status: "vacant" as "vacant" | "occupied" | "maintenance", rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
   const [isUploadingEditPropertyImage, setIsUploadingEditPropertyImage] = useState(false);
@@ -534,7 +534,7 @@ export default function OwnerDashboard() {
       latitude: property.latitude?.toString() || "",
       longitude: property.longitude?.toString() || "",
       monthlyRevenue: (property.monthlyRevenue || (property as any).rentAmount || "").toString(),
-      type: property.type,
+      type: (property.type as "house" | "residential" | "building" | "condominium") || "house",
       status: property.status,
       features: property.features || [],
       condition: property.condition || "",
@@ -556,7 +556,7 @@ export default function OwnerDashboard() {
         latitude: property.latitude?.toString() || "",
         longitude: property.longitude?.toString() || "",
         monthlyRevenue: (property.monthlyRevenue || (property as any).rentAmount || "").toString(),
-        type: property.type,
+        type: (property.type as "house" | "residential" | "building" | "condominium") || "house",
         status: property.status,
         features: property.features || [],
         condition: property.condition || "",
