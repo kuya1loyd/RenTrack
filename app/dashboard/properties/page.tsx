@@ -45,7 +45,7 @@ export default function PropertiesPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [historyProperty, setHistoryProperty] = useState<Property | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [formData, setFormData] = useState({ name: "", location: "", latitude: "", longitude: "", monthlyRevenue: 0, type: "house" as "house" | "condominium", units: 0, features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "" });
+  const [formData, setFormData] = useState({ name: "", location: "", latitude: "", longitude: "", monthlyRevenue: 0, type: "house" as "house" | "residential" | "building" | "condominium" | string, units: 0, features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "" });
   const [propertyImage, setPropertyImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
@@ -92,6 +92,8 @@ export default function PropertiesPage() {
     try {
       const submitData = {
         ...formData,
+        latitude: formData.latitude ? Number(formData.latitude) : undefined,
+        longitude: formData.longitude ? Number(formData.longitude) : undefined,
       };
       if (propertyImage) {
         submitData.imageUrl = await new Promise<string>((resolve) => {
@@ -130,6 +132,8 @@ export default function PropertiesPage() {
     try {
       const submitData = {
         ...formData,
+        latitude: formData.latitude ? Number(formData.latitude) : undefined,
+        longitude: formData.longitude ? Number(formData.longitude) : undefined,
       };
       if (propertyImage) {
         const reader = new FileReader();
@@ -146,7 +150,7 @@ export default function PropertiesPage() {
       });
       const result = await safeParseJson(response);
       if (!response.ok || !result.success) throw new Error(result.error || "Failed to update property");
-      setProperties((current) => current.map((property) => property.id === selectedProperty.id ? { ...property, ...submitData } : property));
+      setProperties((current) => current.map((property) => property.id === selectedProperty.id ? ({ ...property, ...submitData } as Property) : property));
       setShowEditModal(false);
       setSelectedProperty(null);
       setPropertyImage(null);
@@ -161,7 +165,7 @@ export default function PropertiesPage() {
 
   const openEdit = (property: Property) => {
     setSelectedProperty(property);
-    setFormData({ name: property.name, location: property.location, latitude: property.latitude?.toString() || "", longitude: property.longitude?.toString() || "", monthlyRevenue: property.monthlyRevenue || (property as any).rentAmount || 0, type: property.type, units: property.units, features: property.features || [], condition: property.condition || "", availabilityStatus: property.availabilityStatus || "Available", imageUrl: property.imageUrl || "" });
+    setFormData({ name: property.name, location: property.location, latitude: property.latitude?.toString() || "", longitude: property.longitude?.toString() || "", monthlyRevenue: property.monthlyRevenue || (property as any).rentAmount || 0, type: (property.type as any) || "house", units: property.units, features: property.features || [], condition: property.condition || "", availabilityStatus: property.availabilityStatus || "Available", imageUrl: property.imageUrl || "" });
     setImagePreview(property.imageUrl || "");
     setPropertyImage(null);
     setShowEditModal(true);
