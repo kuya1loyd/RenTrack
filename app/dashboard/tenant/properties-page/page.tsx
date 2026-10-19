@@ -393,7 +393,7 @@ export default function TenantPropertiesPage() {
             const currentUnit = propertyUnits.find((u) => u.id === selectedUnitId) || defaultUnit;
             const isCurrentUnitAssigned = currentUnit ? isMyUnit(currentUnit) : isAssignedProperty(property);
             const displayRent = currentUnit?.rentAmount ?? getPropertyRent(property);
-            const propertyCoverImage = property.imageUrl || (Array.isArray(property.imageUrls) && property.imageUrls[0]) || null;
+            const propertyCoverImage = property.imageUrl || property.imageUrls?.[0] || null;
 
             return (
               <div
@@ -660,9 +660,9 @@ export default function TenantPropertiesPage() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="relative h-52 w-full bg-slate-100 flex items-center justify-center">
-                {(selectedProperty.imageUrl || (Array.isArray(selectedProperty.imageUrls) && selectedProperty.imageUrls[0])) ? (
+                {(selectedProperty.imageUrl || selectedProperty.imageUrls?.[0]) ? (
                   <Image
-                    src={selectedProperty.imageUrl || selectedProperty.imageUrls[0]}
+                    src={selectedProperty.imageUrl || selectedProperty.imageUrls?.[0] || "/images/landing/feature-property.jpg"}
                     alt={selectedProperty.name}
                     fill
                     unoptimized

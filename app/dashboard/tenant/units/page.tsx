@@ -372,7 +372,7 @@ export default function TenantUnitsPage() {
             const currentUnit = propertyUnits.find((u) => u.id === selectedUnitId) || defaultUnit;
             const isCurrentUnitAssigned = currentUnit ? isMyUnit(currentUnit) : isAssignedProperty(property);
             const displayRent = currentUnit?.rentAmount ?? getPropertyRent(property);
-            const coverImage = currentUnit?.imageUrl || (Array.isArray(currentUnit?.imageUrls) && currentUnit.imageUrls[0]) || property.imageUrl || (Array.isArray(property.imageUrls) && property.imageUrls[0]) || null;
+            const coverImage = currentUnit?.imageUrl || currentUnit?.imageUrls?.[0] || property.imageUrl || property.imageUrls?.[0] || null;
 
             return (
               <div
@@ -667,7 +667,7 @@ export default function TenantUnitsPage() {
           const selectedUnitId = selectedUnitByProperty[selectedProperty.id] || defaultUnit?.id;
           const currentUnit = propertyUnits.find((u) => u.id === selectedUnitId) || defaultUnit;
           const isCurrentUnitAssigned = currentUnit ? isMyUnit(currentUnit) : isAssignedProperty(selectedProperty);
-          const modalCoverImage = currentUnit?.imageUrl || (Array.isArray(currentUnit?.imageUrls) && currentUnit.imageUrls[0]) || selectedProperty.imageUrl || (Array.isArray(selectedProperty.imageUrls) && selectedProperty.imageUrls[0]) || null;
+          const modalCoverImage = currentUnit?.imageUrl || currentUnit?.imageUrls?.[0] || selectedProperty.imageUrl || selectedProperty.imageUrls?.[0] || null;
 
           return (
             <div
