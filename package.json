@@ -4,7 +4,8 @@
   "private": true,
   "allowScripts": {
     "sharp": true,
-    "unrs-resolver": true
+    "unrs-resolver": true,
+    "tesseract.js": true
   },
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
