@@ -1175,15 +1175,6 @@ export default function OwnerDashboard() {
             title="Rental Units"
             description="Browse, filter, and manage individual rental units across your portfolio."
             icon={ClipboardCheck}
-            actions={
-              <Button
-                onClick={openAddUnit}
-                className="h-9 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer shadow-xs transition-colors flex items-center gap-1.5 px-3.5"
-              >
-                <Plus className="h-4 w-4" />
-                Add Unit
-              </Button>
-            }
           />
 
           <section id="units-section" className="space-y-4">
@@ -1367,15 +1358,6 @@ export default function OwnerDashboard() {
             title="Properties"
             description="Browse, filter, and manage registered properties across your portfolio."
             icon={Building2}
-            actions={
-              <Button
-                onClick={openAddProperty}
-                className="h-9 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer shadow-xs transition-colors flex items-center gap-1.5 px-3.5"
-              >
-                <Plus className="h-4 w-4" />
-                Add Property
-              </Button>
-            }
           />
 
           <section id="properties-section" className="space-y-4">
