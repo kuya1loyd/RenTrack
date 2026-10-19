@@ -169,7 +169,7 @@ export default function AgentsPage() {
                   </button>
                 )}
               </div>
-              <label className="flex h-9.5 w-full sm:w-48 shrink-0 min-w-0 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 text-slate-500 shadow-2xs transition focus-within:border-amber-700 focus-within:ring-2 focus-within:ring-amber-100">
+              <label className="flex h-9.5 w-full sm:w-48 shrink-0 min-w-0 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 text-slate-500 shadow-2xs transition-all duration-200 hover:border-amber-500 hover:shadow-md hover:-translate-y-0.5 focus-within:border-amber-700 focus-within:ring-2 focus-within:ring-amber-100 cursor-pointer">
                 <MapPin aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-amber-800" />
                 <span className="sr-only">Filter by location</span>
                 <select

@@ -15,10 +15,12 @@ const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-[9999] min-w-[180px] rounded-xl border border-gray-200 bg-white py-1 shadow-xl",
+        "z-[9999] min-w-[180px] rounded-2xl border border-slate-200/90 bg-white/95 p-1.5 shadow-[0_16px_36px_rgba(15,23,42,0.14)] backdrop-blur-md",
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+        "data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
+        "transition-all duration-200 ease-out",
         className
       )}
       {...props}
@@ -34,12 +36,12 @@ const DropdownMenuItem = React.forwardRef<
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      "flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 data-[highlighted]:bg-gray-50 data-[highlighted]:text-gray-900 focus-visible:outline-none transition-colors text-left cursor-pointer",
+      "flex items-center gap-2.5 w-full rounded-xl px-3 py-2 text-xs font-medium text-slate-700 hover:bg-blue-50/80 hover:text-blue-700 hover:translate-x-1 data-[highlighted]:bg-blue-50/80 data-[highlighted]:text-blue-700 data-[highlighted]:translate-x-1 active:scale-[0.98] focus-visible:outline-none transition-all duration-150 text-left cursor-pointer select-none",
       className
     )}
     {...props}
   >
-    {icon && <span className="h-4 w-4 text-gray-500">{icon}</span>}
+    {icon && <span className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-blue-600">{icon}</span>}
     {children}
   </DropdownMenuPrimitive.Item>
 ));

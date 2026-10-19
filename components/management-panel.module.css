@@ -12,14 +12,16 @@
 .toolbar { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px; border-radius: 12px; border: 1px solid #e2edfc; background: white; box-shadow: 0 2px 7px rgb(18 54 99 / 3%); }
 .search { position: relative; flex: 0 1 360px; width: 100%; max-width: 360px; min-width: 220px; }
 .search > svg { position: absolute; z-index: 1; left: 14px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); color: #6384b5; pointer-events: none; }
-.toolbar input, .toolbar select, .tableControls select { height: 44px; width: 100%; min-width: 0; border: 1px solid #dce8fa; border-radius: 8px; background: #fcfdff; color: #2d528b; font-size: 13px; outline: none; }
-.toolbar input { padding: 0 14px 0 42px; box-shadow: 0 2px 4px rgb(28 71 129 / 3%); }
+.toolbar input { height: 44px; width: 100%; min-width: 0; border: 1px solid #dce8fa; border-radius: 8px; background: #fcfdff; color: #2d528b; font-size: 13px; outline: none; padding: 0 14px 0 42px; box-shadow: 0 2px 4px rgb(28 71 129 / 3%); transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+.toolbar select, .tableControls select { height: 44px; width: 100%; min-width: 0; border: 1px solid #dce8fa; border-radius: 8px; background: #fcfdff; color: #2d528b; font-size: 13px; outline: none; padding: 0 28px 0 11px; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 1px 3px rgba(28, 71, 129, 0.04); }
+.toolbar select:hover, .tableControls select:hover { border-color: #8bbafc; background-color: #ffffff; box-shadow: 0 4px 14px rgba(8, 114, 255, 0.09); transform: translateY(-1.5px); }
 .toolbar input::placeholder { color: #6381b2; opacity: 1; }
-.toolbar select { padding: 0 28px 0 11px; }
-.toolbar input:focus-visible, .toolbar select:focus-visible, .tableControls select:focus-visible { border-color: #1674ff; box-shadow: 0 0 0 3px rgb(22 116 255 / 13%); }
-.filter { flex: 0 1 170px; min-width: 140px; }
+.toolbar input:focus-visible { border-color: #1674ff; box-shadow: 0 0 0 3px rgb(22 116 255 / 13%); }
+.toolbar select:focus-visible, .tableControls select:focus-visible { border-color: #1674ff; background-color: #ffffff; box-shadow: 0 0 0 3.5px rgba(22, 116, 255, 0.16), 0 4px 12px rgba(8, 114, 255, 0.1); transform: translateY(-1.5px); }
+.filter { flex: 0 1 170px; min-width: 140px; transition: transform 0.2s ease; }
+.filter:hover, .filterCompact:hover { transform: translateY(-1px); }
 .filter > span { display: block; margin-bottom: 5px; font-size: 11px; font-weight: 600; color: #456b9e; }
-.filterCompact { position: relative; flex: 0 1 175px; min-width: 140px; }
+.filterCompact { position: relative; flex: 0 1 175px; min-width: 140px; transition: transform 0.2s ease; }
 .filterCompact > span { position: absolute; z-index: 1; left: 11px; top: 6px; color: #42689b; font-size: 10px; font-weight: 600; pointer-events: none; }
 .filterCompact select { height: 44px; padding-top: 14px; }
 .toolbarActions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
