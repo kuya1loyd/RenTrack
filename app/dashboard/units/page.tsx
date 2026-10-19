@@ -107,7 +107,7 @@ export default function UnitsPage() {
   const openEdit = (unit: Unit) => {
     setEditingUnit(unit);
     setEditForm({
-      propertyId: unit.propertyId,
+      propertyId: unit.propertyId || "",
       unitNumber: unit.unitNumber,
       floor: unit.floor?.toString() || "",
       status: unit.status,
@@ -140,7 +140,7 @@ export default function UnitsPage() {
       });
       if (!savedUnit) throw new Error("Failed to update unit");
       const updatedUnit = { ...editingUnit, ...editForm, floor: editForm.floor === "" ? undefined : Number(editForm.floor), rentAmount: Number(editForm.rentAmount), imageUrl: editForm.imageUrl.trim() || undefined };
-      setUnits((current) => current.map((unit) => unit.id === editingUnit.id ? updatedUnit : unit));
+      setUnits((current) => current.map((unit) => unit.id === editingUnit.id ? (updatedUnit as Unit) : unit));
       setEditingUnit(null);
       toast.success("Unit updated successfully");
     } catch (error) {
