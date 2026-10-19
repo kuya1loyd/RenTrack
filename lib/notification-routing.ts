@@ -56,7 +56,15 @@ export function getNotificationDashboardHref(
     if (isTenant) return "/dashboard/tenant/payments";
   }
 
-  if (type === "id_verification" || /verification|verify id|uploaded an id|id upload/.test(text)) {
+  if (/account verified|tenant account verified|verified their account|account created|user registered/.test(text)) {
+    if (isAdmin) return "/dashboard/admin?tab=users";
+    if (isOwner) return "/dashboard/owner#overview";
+    if (isAgent) return "/dashboard/agent#overview";
+    if (isTenant) return "/dashboard/tenant";
+    return defaultHref[role] || "/dashboard";
+  }
+
+  if (type === "id_verification" || /verification|verify id|verified|uploaded an id|id upload/.test(text)) {
     if (isOwner) return "/dashboard/owner#agents";
     if (isAdmin) return "/dashboard/admin?tab=users";
     if (isAgent) return "/dashboard/agent#verifications";

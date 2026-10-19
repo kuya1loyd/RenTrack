@@ -241,7 +241,7 @@ export default function AdminDashboard() {
     name: "",
     email: "",
     password: "",
-    role: "owner" as "owner" | "agent" | "tenant" | "admin",
+    role: "tenant" as "owner" | "agent" | "tenant" | "admin",
     phone: "",
     address: "",
   });
@@ -549,17 +549,18 @@ export default function AdminDashboard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(newUserForm),
+        body: JSON.stringify({ ...newUserForm, role: "tenant" }),
       });
       const data = await parseJsonSafely(res);
       if (data.success) {
-        toast.success(`Account for ${newUserForm.name} created successfully. Login details sent to ${newUserForm.email}.`);
+        toast.success(`Tenant account for ${newUserForm.name} created successfully. Login details sent to ${newUserForm.email}.`);
         setShowCreateUserModal(false);
         setNewUserForm({
           name: "",
           email: "",
-          password: "",
-          role: "owner",
+          password:
+            "",
+          role: "tenant",
           phone: "",
           address: "",
         });
@@ -1293,7 +1294,7 @@ export default function AdminDashboard() {
                     className="h-9 rounded-xl bg-blue-600 px-3.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
                   >
                     <Plus className="mr-1.5 h-4 w-4" />
-                    Add Account
+                    Add Tenant Account
                   </Button>
                 </motion.div>
               </div>
@@ -4811,7 +4812,10 @@ export default function AdminDashboard() {
             className="relative w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-800 dark:bg-gray-900"
           >
             <div className="flex items-center justify-between border-b border-gray-100 pb-4 dark:border-gray-800">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Create New Account</h3>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Create Tenant Account</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Register a new tenant resident profile into the system.</p>
+              </div>
               <button onClick={() => setShowCreateUserModal(false)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
                 <XCircle className="h-5 w-5" />
               </button>
@@ -4852,16 +4856,26 @@ export default function AdminDashboard() {
 
               <div>
                 <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Account Role</label>
-                <select
-                  value={newUserForm.role}
-                  onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value as any })}
-                  className="h-9.5 w-full rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-800 outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 cursor-pointer"
-                >
-                  <option value="tenant">Tenant (Renter)</option>
-                  <option value="owner">Property Owner</option>
-                  <option value="agent">Real Estate Agent</option>
-                  <option value="admin">System Administrator</option>
-                </select>
+                <div className="flex h-10 w-full items-center justify-between rounded-xl border border-gray-200 bg-gray-50/80 px-3.5 text-xs font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                  <span className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+                    Tenant (Resident / Renter)
+                  </span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100/70 dark:bg-emerald-950/60 dark:text-emerald-300 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                    Tenant Only
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1">Admin accounts are restricted to creating tenant resident accounts only.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Phone Number (Optional)</label>
+                <Input
+                  value={newUserForm.phone}
+                  onChange={(e) => setNewUserForm({ ...newUserForm, phone: e.target.value })}
+                  placeholder="e.g. 09171234567"
+                  className="h-9.5 rounded-xl border-gray-200 text-sm"
+                />
               </div>
 
               <div>
@@ -4884,7 +4898,7 @@ export default function AdminDashboard() {
                 onClick={handleCreateUser}
                 disabled={!newUserForm.name || !newUserForm.email || !newUserForm.password}
               >
-                Create Account
+                Create Tenant Account
               </Button>
             </div>
           </motion.div>

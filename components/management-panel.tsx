@@ -28,7 +28,6 @@ export function ManagementBanner({
 
   return (
     <section className={styles.banner}>
-      <span className={styles.bannerIcon}><Icon aria-hidden="true" /></span>
       <div className={styles.bannerCopy}>
         <p>{category || defaultCategory}</p>
         <h1>{title || defaultTitle}</h1>
