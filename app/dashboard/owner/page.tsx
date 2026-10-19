@@ -1257,16 +1257,13 @@ export default function OwnerDashboard() {
                   <Home aria-hidden="true" />
                   <strong>{units.length ? "No units match these filters" : "No units yet"}</strong>
                   <p>{units.length ? "Adjust your search or reset the filters to see your units." : "Add a property and its units to start managing your portfolio."}</p>
-                  <div className="flex items-center justify-center gap-2 mt-2">
-                    {units.length > 0 && (
+                  {units.length > 0 && (
+                    <div className="flex items-center justify-center gap-2 mt-2">
                       <Button variant="outline" onClick={() => { setUnitSearch(""); setUnitStatusFilter("all"); }}>
                         <RotateCcw className="mr-1 h-4 w-4" />Reset filters
                       </Button>
-                    )}
-                    <Button variant={units.length > 0 ? "ghost" : "outline"} onClick={openAddUnit}>
-                      <Plus className="mr-1 h-4 w-4" />Add unit
-                    </Button>
-                  </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
@@ -1447,8 +1444,14 @@ export default function OwnerDashboard() {
                 <div className={management.empty}>
                   <Building2 aria-hidden="true" />
                   <strong>{properties.length ? "No properties match these filters" : "No properties yet"}</strong>
-                  <p>{properties.length ? "Adjust your search or reset the filters to see your properties." : "Click below to register your first property."}</p>
-                  <Button variant="outline" onClick={openAddProperty}><Plus className="mr-1 h-4 w-4" />Add property</Button>
+                  <p>{properties.length ? "Adjust your search or reset the filters to see your properties." : "Register your properties to start managing your portfolio."}</p>
+                  {properties.length > 0 && (
+                    <div className="flex items-center justify-center gap-2 mt-2">
+                      <Button variant="outline" onClick={() => { setPropertySearch(""); setPropertyTypeFilter("all"); setPropertyStatusFilter("all"); }}>
+                        <RotateCcw className="mr-1 h-4 w-4" />Reset filters
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ) : propertiesDisplayMode === "table" ? (
                 <>

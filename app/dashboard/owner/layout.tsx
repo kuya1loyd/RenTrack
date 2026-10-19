@@ -41,17 +41,9 @@ type OwnerNavLink = {
 
 const navItems: OwnerNavLink[] = [
   { label: "Dashboard", tab: "overview", href: "/dashboard/owner#overview", icon: LayoutDashboard },
-  {
-    label: "Units",
-    tab: "units",
-    href: "/dashboard/owner#units",
-    icon: ClipboardCheck,
-    group: "Management",
-    children: [
-      { label: "Properties", tab: "properties", href: "/dashboard/owner#properties", icon: Building2 },
-      { label: "Occupancy", tab: "occupancy", href: "/dashboard/owner#occupancy", icon: BarChart3 },
-    ],
-  },
+  { label: "Units", tab: "units", href: "/dashboard/owner#units", icon: ClipboardCheck, group: "Management" },
+  { label: "Properties", tab: "properties", href: "/dashboard/owner#properties", icon: Building2, group: "Management" },
+  { label: "Occupancy", tab: "occupancy", href: "/dashboard/owner#occupancy", icon: BarChart3, group: "Management" },
   { label: "Tenants", tab: "create-tenant", href: "/dashboard/owner#create-tenant", icon: User, group: "Management" },
   { label: "Agents", tab: "agents", href: "/dashboard/owner#agents", icon: Users, group: "Management" },
   { label: "Property Map", tab: "map", href: "/dashboard/owner#map", icon: MapPinned, group: "Management" },
@@ -110,15 +102,6 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [unitsDropdownOpen, setUnitsDropdownOpen] = useState(true);
-
-  const isUnitsChildActive = activeTab === "units" || activeTab === "properties" || activeTab === "occupancy";
-
-  useEffect(() => {
-    if (isUnitsChildActive) {
-      setUnitsDropdownOpen(true);
-    }
-  }, [isUnitsChildActive]);
 
   const unreadMessagesCount = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 
@@ -402,93 +385,6 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
       const Icon = item.icon;
       const isFirstInGroup = expanded && item.group && navItems[index - 1]?.group !== item.group;
 
-      if (item.children) {
-        const isExactActive = activeTab === item.tab;
-        const isChildActive = item.children.some((c) => c.tab === activeTab);
-        const isOpen = unitsDropdownOpen;
-
-        return (
-          <Fragment key={item.tab}>
-            {isFirstInGroup && (
-              <div className="pt-4 pb-1.5 px-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  {item.group}
-                </p>
-              </div>
-            )}
-            <div className="space-y-1">
-              <div
-                className={cn(
-                  "group relative flex w-full items-center justify-between rounded-xl text-[13px] font-medium transition-all duration-150",
-                  isExactActive
-                    ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/20"
-                    : isChildActive
-                      ? "bg-white/[0.08] text-white font-semibold"
-                      : "text-slate-300 hover:bg-white/[0.08] hover:text-white"
-                )}
-              >
-                <Link
-                  id={`${mobile ? "mobile-" : ""}sidebar-${item.tab}`}
-                  title={expanded ? undefined : item.label}
-                  href={item.href || "/dashboard/owner#units"}
-                  onClick={() => {
-                    handleNavigationClick("units", mobile);
-                    setUnitsDropdownOpen(true);
-                  }}
-                  className={cn(
-                    "flex flex-1 items-center gap-3 px-3 py-2.5 min-w-0 focus-visible:outline-none rounded-xl",
-                    !expanded && "justify-center px-0 py-2.5 w-full"
-                  )}
-                >
-                  <Icon className={cn("h-4 w-4 shrink-0 transition-colors", (isExactActive || isChildActive) ? "text-white" : "text-slate-400 group-hover:text-white")} />
-                  {expanded && <span className="truncate">{item.label}</span>}
-                </Link>
-                {expanded && (
-                  <button
-                    type="button"
-                    aria-label="Toggle properties and occupancy dropdown"
-                    title={isOpen ? "Collapse dropdown" : "Expand dropdown"}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setUnitsDropdownOpen(!unitsDropdownOpen);
-                    }}
-                    className="p-2.5 pr-3 text-slate-400 hover:text-white transition-colors cursor-pointer rounded-r-xl"
-                  >
-                    <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-200", isOpen && "rotate-180", isExactActive && "text-white")} />
-                  </button>
-                )}
-              </div>
-
-              {expanded && isOpen && (
-                <div className="space-y-1 pl-3.5 ml-4 border-l border-slate-800/80 my-1">
-                  {item.children.map((sub) => {
-                    const isSubActive = activeTab === sub.tab;
-                    const SubIcon = sub.icon;
-                    return (
-                      <Link
-                        key={sub.tab}
-                        id={`${mobile ? "mobile-" : ""}sidebar-${sub.tab}`}
-                        href={sub.href}
-                        onClick={() => handleNavigationClick(sub.tab, mobile)}
-                        className={cn(
-                          "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors cursor-pointer",
-                          isSubActive
-                            ? "bg-blue-600 text-white font-semibold shadow-xs shadow-blue-500/20"
-                            : "text-slate-400 hover:text-white hover:bg-white/[0.06]"
-                        )}
-                      >
-                        <SubIcon className={cn("h-3.5 w-3.5 shrink-0 transition-colors", isSubActive ? "text-white" : "text-slate-400 group-hover:text-white")} />
-                        <span className="truncate">{sub.label}</span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </Fragment>
-        );
-      }
 
       const isActive = activeTab === item.tab;
       const badgeCount = item.tab === "agents"
