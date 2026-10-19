@@ -2526,9 +2526,6 @@ export default function LandingPage() {
                 <h2 id="agent-application-title" className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
                   Apply as a Real Estate Agent
                 </h2>
-                <p className="mt-1 text-xs sm:text-sm text-slate-600 leading-relaxed">
-                  Join the official accredited agent team at <span className="font-semibold text-slate-900">HedgeHomes Realty & Brokerage</span> (powered by RentTrack). Submit your professional credentials and resume for brokerage evaluation.
-                </p>
               </div>
 
               {/* Requirements & Qualification Checklist Box */}
