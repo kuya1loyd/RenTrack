@@ -708,18 +708,16 @@ export default function OwnerDashboard() {
 
   useEffect(() => {
     const readHash = () => {
-      const hash = window.location.hash.replace("#", "");
-      if (hash === "payments") {
-        setActiveTab("financial");
-      } else if (hash === "properties" || hash === "units" || hash === "occupancy") {
-        setActiveTab(hash as Step);
-      } else if (hash && flowSteps.some((s) => s.key === hash)) {
-        setActiveTab(hash as Step);
+      const rawHash = window.location.hash.replace("#", "").split("?")[0];
+      const normalized = rawHash === "payments" ? "financial" : rawHash === "move-out" ? "move-out-requests" : rawHash;
+      if (normalized && flowSteps.some((s) => s.key === normalized)) {
+        setActiveTab(normalized as Step);
       }
     };
     const handleOwnerTabChange = (event: Event) => {
       const tabKey = (event as CustomEvent<string>).detail;
-      const tab = flowSteps.find((step) => step.key === tabKey);
+      const normalizedKey = tabKey === "move-out" ? "move-out-requests" : tabKey === "payments" ? "financial" : tabKey;
+      const tab = flowSteps.find((step) => step.key === normalizedKey);
       if (tab) {
         setActiveTab(tab.key);
         if (tab.key === "units") {
@@ -1069,7 +1067,7 @@ export default function OwnerDashboard() {
   };
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
+    <div className="w-full">
       {/* OVERVIEW */}
       {activeTab === "overview" && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">

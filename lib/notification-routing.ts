@@ -30,13 +30,20 @@ export function getNotificationDashboardHref(
   // Account creation requests open the existing review modal in the admin/owner layouts.
   if (title.includes("account creation request")) return defaultHref[role] || "/dashboard";
 
+  if (/move-out|move out/.test(text)) {
+    if (isOwner) return "/dashboard/owner#move-out-requests";
+    if (isAdmin) return "/dashboard/admin?tab=overview";
+    if (isAgent) return "/dashboard/agent#overview";
+    if (isTenant) return "/dashboard/tenant";
+  }
+
   if (/contract/.test(text)) {
     if (isOwner) return "/dashboard/owner#contracts";
     if (isAgent) return "/dashboard/agent#contracts";
   }
 
   if (text.includes("agent applicant") || text.includes("agent application") || text.includes("applied to become an agent") || text.includes("agent email verified")) {
-    if (isOwner) return "/dashboard/owner?view=applicants#agents";
+    if (isOwner) return "/dashboard/owner#agents";
     if (isAdmin) return "/dashboard/admin?tab=users";
     if (isTenant) return "/dashboard/tenant/settings";
     return defaultHref[role] || "/dashboard";
@@ -50,7 +57,7 @@ export function getNotificationDashboardHref(
   }
 
   if (type === "id_verification" || /verification|verify id|uploaded an id|id upload/.test(text)) {
-    if (isOwner) return "/dashboard/owner?filter=pending#agents";
+    if (isOwner) return "/dashboard/owner#agents";
     if (isAdmin) return "/dashboard/admin?tab=users";
     if (isAgent) return "/dashboard/agent#verifications";
     if (isTenant) return "/dashboard/tenant/settings";
@@ -87,7 +94,7 @@ export function getNotificationDashboardHref(
   if (type === "property" || /property|unit/.test(text)) {
     const isUnit = /unit/.test(text);
     if (isAdmin) return `/dashboard/admin?tab=${isUnit ? "units" : "properties"}`;
-    if (isOwner) return "/dashboard/owner#units";
+    if (isOwner) return isUnit ? "/dashboard/owner#units" : "/dashboard/owner#properties";
     if (isAgent) return "/dashboard/agent#units";
     if (isTenant) return isUnit ? "/dashboard/tenant/units" : "/dashboard/tenant/properties-page";
   }

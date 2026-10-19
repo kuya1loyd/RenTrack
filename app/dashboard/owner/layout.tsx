@@ -60,13 +60,22 @@ const navItems: OwnerNavLink[] = [
   { label: "Move-out Requests", tab: "move-out-requests", href: "/dashboard/owner#move-out-requests", icon: LogOut },
 ];
 
+const validOwnerTabs = new Set([
+  "overview", "properties", "units", "assignments", "agents", "map",
+  "create-tenant", "contracts", "occupancy", "payments", "receivables",
+  "reports", "financial", "profile", "move-out-requests", "move-out"
+]);
+
 function getTabFromHash(hash: string) {
-  if (hash === "payments") return "financial";
-  if (hash === "move-out") return "move-out-requests";
+  if (!hash) return "";
+  const cleanHash = hash.replace(/^#/, "").split("?")[0];
+  if (cleanHash === "payments") return "financial";
+  if (cleanHash === "move-out") return "move-out-requests";
+  if (validOwnerTabs.has(cleanHash)) return cleanHash;
   for (const item of navItems) {
-    if (item.href?.endsWith(`#${hash}`)) return item.tab;
+    if (item.href?.endsWith(`#${cleanHash}`)) return item.tab;
     if (item.children) {
-      const child = item.children.find((c) => c.href.endsWith(`#${hash}`));
+      const child = item.children.find((c) => c.href.endsWith(`#${cleanHash}`));
       if (child) return child.tab;
     }
   }
@@ -300,6 +309,10 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
         }).catch(() => undefined);
       }
     }
+    setShowNotifications(false);
+    setShowUserMenu(false);
+    setMobileSidebarOpen(false);
+
     if (!notification.read) {
       setNotifications((prev) =>
         prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n))
@@ -313,11 +326,14 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
         setShowMessages(true);
       } else {
         const destination = new URL(href, window.location.origin);
-        if (destination.pathname === "/dashboard/owner") {
-          const tab = getActiveTab(destination.pathname, destination.hash.slice(1));
-          if (tab) {
-            setActiveTab(tab);
-            window.dispatchEvent(new CustomEvent("owner-dashboard-tab-change", { detail: tab }));
+        const hashPart = destination.hash ? destination.hash.replace(/^#/, "").split("?")[0] : "";
+        const targetTab = getTabFromHash(hashPart) || hashPart || "overview";
+
+        if (destination.pathname === "/dashboard/owner" || pathname === "/dashboard/owner") {
+          if (targetTab) {
+            setActiveTab(targetTab);
+            window.location.hash = targetTab;
+            window.dispatchEvent(new CustomEvent("owner-dashboard-tab-change", { detail: targetTab }));
           }
         }
         router.push(href);
@@ -574,34 +590,59 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
             </button>
             <AnimatePresence initial={false}>
               {showNotifications && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  transition={{ duration: 0.15 }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="absolute right-0 mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden z-[70]"
-                >
-                  <div className="p-3 border-b border-slate-100">
-                    <h3 className="font-semibold text-slate-900 text-sm">Notifications</h3>
-                  </div>
-                  <div className="max-h-60 overflow-y-auto">
-                    {notifications.length === 0 ? (
-                      <p className="px-3 py-6 text-center text-xs text-slate-500">No notifications yet</p>
-                    ) : (
-                      notifications.slice(0, 10).map((n) => (
-                        <button
-                          key={n.id}
-                          onClick={() => handleNotificationClick(n)}
-                          className="w-full text-left p-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors"
-                        >
-                          <p className="text-sm font-medium text-slate-900">{n.title}</p>
-                          <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </motion.div>
+                <>
+                  <div
+                    className="fixed inset-0 z-[65] bg-black/25 backdrop-blur-2xs lg:hidden"
+                    onClick={() => setShowNotifications(false)}
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="fixed left-3 right-3 top-14 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden z-[70]"
+                  >
+                    <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-slate-900 text-sm">Notifications</h3>
+                        {notifications.filter(n => !n.read).length > 0 && (
+                          <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                            {notifications.filter(n => !n.read).length}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setShowNotifications(false)}
+                        className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
+                        aria-label="Close notifications"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                      {notifications.length === 0 ? (
+                        <p className="px-3 py-6 text-center text-xs text-slate-500">No notifications yet</p>
+                      ) : (
+                        notifications.slice(0, 10).map((n) => (
+                          <button
+                            key={n.id}
+                            onClick={() => handleNotificationClick(n)}
+                            className="w-full text-left p-3 hover:bg-slate-50 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-xs font-semibold text-slate-900">{n.title}</p>
+                              {!n.read && (
+                                <span className="h-2 w-2 rounded-full bg-blue-600 shrink-0 mt-1" />
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </motion.div>
+                </>
               )}
             </AnimatePresence>
           </div>
@@ -611,7 +652,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
         </div>
       </div>
 
-      <div className="flex h-screen w-full">
+      <div className="flex h-[calc(100dvh-53px)] lg:h-screen w-full overflow-hidden">
         {/* Sidebar */}
         <aside className={cn("hidden h-full shrink-0 flex-col border-r border-slate-800/80 bg-[#0a1120] text-slate-200 transition-[width] duration-200 motion-reduce:transition-none lg:flex", desktopSidebarOpen ? "w-60" : "w-16")}>
           {/* Header */}
@@ -736,26 +777,40 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                 </button>
                 <AnimatePresence initial={false}>
                   {showNotifications && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                      className="absolute right-0 top-full z-[70] mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
-                    >
-                      <div className="border-b border-slate-100 px-4 py-3">
-                        <h3 className="text-sm font-semibold text-slate-900">Notifications</h3>
-                      </div>
-                      <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
-                        {notifications.length === 0 ? (
-                          <p className="px-3 py-6 text-center text-xs text-slate-500">No notifications yet</p>
-                        ) : notifications.slice(0, 10).map((notification) => (
-                          <button key={notification.id} onClick={() => handleNotificationClick(notification)} className="w-full p-3 text-left hover:bg-slate-50 transition-colors">
-                            <p className="text-xs font-semibold text-slate-900">{notification.title}</p>
-                            <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">{notification.message}</p>
-                          </button>
-                        ))}
-                      </div>
-                    </motion.div>
+                    <>
+                      <div className="fixed inset-0 z-[65]" onClick={() => setShowNotifications(false)} />
+                      <motion.div
+                        initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                        className="absolute right-0 top-full z-[70] mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
+                          <h3 className="text-sm font-semibold text-slate-900">Notifications</h3>
+                          {notifications.filter(n => !n.read).length > 0 && (
+                            <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                              {notifications.filter(n => !n.read).length} unread
+                            </span>
+                          )}
+                        </div>
+                        <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                          {notifications.length === 0 ? (
+                            <p className="px-3 py-6 text-center text-xs text-slate-500">No notifications yet</p>
+                          ) : notifications.slice(0, 10).map((notification) => (
+                            <button key={notification.id} onClick={() => handleNotificationClick(notification)} className="w-full p-3 text-left hover:bg-slate-50 transition-colors">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-xs font-semibold text-slate-900">{notification.title}</p>
+                                {!notification.read && (
+                                  <span className="h-2 w-2 rounded-full bg-blue-600 shrink-0 mt-1" />
+                                )}
+                              </div>
+                              <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">{notification.message}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </motion.div>
+                    </>
                   )}
                 </AnimatePresence>
               </div>
