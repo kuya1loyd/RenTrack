@@ -440,10 +440,11 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                   title={expanded ? undefined : item.label}
                   href={item.href || "/dashboard/owner#units"}
                   onClick={() => {
-                    handleNavigationClick("units", mobile);
+                    handleNavigationClick("units", false);
+                    setUnitsDropdownOpen((prev) => !prev);
                   }}
                   className={cn(
-                    "flex flex-1 items-center gap-3 px-3 py-2.5 min-w-0 focus-visible:outline-none rounded-xl",
+                    "flex flex-1 items-center gap-3 px-3 py-2.5 min-w-0 focus-visible:outline-none rounded-xl cursor-pointer",
                     !expanded && "justify-center px-0 py-2.5 w-full"
                   )}
                 >
@@ -467,31 +468,47 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                 )}
               </div>
 
-              {expanded && isOpen && (
-                <div className="space-y-1 pl-3.5 ml-4 border-l border-slate-800/80 my-1">
-                  {item.children.map((sub) => {
-                    const isSubActive = activeTab === sub.tab;
-                    const SubIcon = sub.icon;
-                    return (
-                      <Link
-                        key={sub.tab}
-                        id={`${mobile ? "mobile-" : ""}sidebar-${sub.tab}`}
-                        href={sub.href}
-                        onClick={() => handleNavigationClick(sub.tab, mobile)}
-                        className={cn(
-                          "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors cursor-pointer",
-                          isSubActive
-                            ? "bg-blue-600 text-white font-semibold shadow-xs shadow-blue-500/20"
-                            : "text-slate-400 hover:text-white hover:bg-white/[0.06]"
-                        )}
-                      >
-                        <SubIcon className={cn("h-3.5 w-3.5 shrink-0 transition-colors", isSubActive ? "text-white" : "text-slate-400 group-hover:text-white")} />
-                        <span className="truncate">{sub.label}</span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
+              <AnimatePresence initial={false}>
+                {expanded && isOpen && (
+                  <motion.div
+                    key={`${item.tab}-dropdown`}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.22, ease: [0.04, 0.62, 0.23, 0.98] }}
+                    className="overflow-hidden space-y-1 pl-3.5 ml-4 border-l border-slate-800/80 my-1"
+                  >
+                    {item.children.map((sub, subIdx) => {
+                      const isSubActive = activeTab === sub.tab;
+                      const SubIcon = sub.icon;
+                      return (
+                        <motion.div
+                          key={sub.tab}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -8 }}
+                          transition={{ duration: 0.18, delay: subIdx * 0.04 }}
+                        >
+                          <Link
+                            id={`${mobile ? "mobile-" : ""}sidebar-${sub.tab}`}
+                            href={sub.href}
+                            onClick={() => handleNavigationClick(sub.tab, mobile)}
+                            className={cn(
+                              "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors cursor-pointer",
+                              isSubActive
+                                ? "bg-blue-600 text-white font-semibold shadow-xs shadow-blue-500/20"
+                                : "text-slate-400 hover:text-white hover:bg-white/[0.06]"
+                            )}
+                          >
+                            <SubIcon className={cn("h-3.5 w-3.5 shrink-0 transition-colors", isSubActive ? "text-white" : "text-slate-400 group-hover:text-white")} />
+                            <span className="truncate">{sub.label}</span>
+                          </Link>
+                        </motion.div>
+                      );
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </Fragment>
         );
@@ -827,13 +844,16 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                 </button>
                 <AnimatePresence initial={false}>
                   {showUserMenu && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      transition={{ duration: 0.15 }}
-                      className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden z-[70]"
-                    >
+                    <>
+                      <div className="fixed inset-0 z-[65]" onClick={() => setShowUserMenu(false)} />
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden z-[70]"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                       <div className="p-4 border-b border-slate-100 bg-slate-50/50">
                         <p className="text-sm font-semibold text-slate-900 truncate">{user.name}</p>
                         <p className="text-xs text-slate-500 truncate mt-0.5">{user.email}</p>
@@ -869,8 +889,9 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                         </div>
                       </div>
                     </motion.div>
-                  )}
-                </AnimatePresence>
+                  </>
+                )}
+              </AnimatePresence>
               </div>
             </div>
           </header>
