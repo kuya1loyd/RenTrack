@@ -37,7 +37,6 @@ export default function AgentsPage() {
 
   useEffect(() => {
     let mounted = true;
-    setHasMounted(true);
     (async () => {
       try {
         let response = await fetch("/api/agents");
