@@ -2514,15 +2514,128 @@ export default function OwnerDashboard() {
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={management.page}>
             <ManagementBanner financial />
-            <div className={management.toolbar}>
-              <label className={management.search}><Search aria-hidden="true" /><input type="search" value={financialSearch} onChange={(event) => setFinancialSearch(event.target.value)} placeholder="Search by tenant, unit, reference, or transaction ID..." aria-label="Search payments" /></label>
-              <label className={management.filter}><span>Date Range</span><select aria-label="Filter payments by date range" value={financialDateRange} onChange={(event) => setFinancialDateRange(event.target.value)}><option value="all">All dates</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="year">This year</option></select></label>
-              <label className={management.filter}><span>Payment Method</span><select aria-label="Filter payments by method" value={financialMethodFilter} onChange={(event) => setFinancialMethodFilter(event.target.value)}><option value="all">All methods</option><option value="cash">Cash</option><option value="upload_receipt">Receipt upload</option></select></label>
-              <label className={management.filter}><span>Status</span><select aria-label="Filter payments by status" value={financialStatusFilter} onChange={(event) => setFinancialStatusFilter(event.target.value)}><option value="all">All statuses</option><option value="paid">Verified / Paid</option><option value="pending">Pending</option><option value="overdue">Overdue</option><option value="partial">Partial</option></select></label>
-              <label className={management.filter}><span>Unit</span><select aria-label="Filter payments by unit" value={financialUnitFilter} onChange={(event) => setFinancialUnitFilter(event.target.value)}><option value="all">All units</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{properties.find((property) => property.id === unit.propertyId)?.name || "Property"} • Unit {unit.unitNumber}</option>)}</select></label>
-              <div className={management.toolbarActions}>
-                <button type="button" className={management.reset} onClick={() => { setFinancialSearch(""); setFinancialDateRange("all"); setFinancialMethodFilter("all"); setFinancialStatusFilter("all"); setFinancialUnitFilter("all"); }}><RotateCcw aria-hidden="true" />Reset</button>
-                <Button onClick={downloadFinancialExport} className={management.export}><Download className="h-4 w-4" />Excel</Button><Button variant="outline" onClick={downloadFinancialPdf}><Download className="mr-1.5 h-4 w-4" />PDF</Button>
+            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+              {/* Top Row: Search Input & Action Buttons */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <div className="relative flex-1 min-w-0 max-w-xl">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="search"
+                    value={financialSearch}
+                    onChange={(event) => setFinancialSearch(event.target.value)}
+                    placeholder="Search by tenant, unit, reference, or transaction ID..."
+                    aria-label="Search payments"
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/60 pl-10 pr-4 text-xs font-medium text-slate-800 placeholder:text-slate-400 outline-none transition-all duration-200 focus:border-blue-500 focus:bg-white focus:ring-3 focus:ring-blue-500/15"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 shrink-0 self-end sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFinancialSearch("");
+                      setFinancialDateRange("all");
+                      setFinancialMethodFilter("all");
+                      setFinancialStatusFilter("all");
+                      setFinancialUnitFilter("all");
+                    }}
+                    className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-600 transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 cursor-pointer shadow-2xs active:scale-[0.98]"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Reset
+                  </button>
+                  <Button
+                    onClick={downloadFinancialExport}
+                    className="h-11 rounded-xl bg-blue-600 px-3.5 text-xs font-semibold text-white shadow-xs transition-all duration-200 hover:bg-blue-700 cursor-pointer active:scale-[0.98] flex items-center gap-1.5"
+                  >
+                    <Download className="h-4 w-4" />
+                    Excel
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={downloadFinancialPdf}
+                    className="h-11 rounded-xl border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 shadow-2xs transition-all duration-200 hover:bg-slate-50 hover:text-slate-900 cursor-pointer active:scale-[0.98] flex items-center gap-1.5"
+                  >
+                    <Download className="h-4 w-4" />
+                    PDF
+                  </Button>
+                </div>
+              </div>
+
+              {/* Bottom Row: 4 Filter Dropdowns in a unified, evenly-spaced grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-2 border-t border-slate-100">
+                <label className="relative flex flex-col">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 ml-1">Date Range</span>
+                  <div className="relative">
+                    <select
+                      aria-label="Filter payments by date range"
+                      value={financialDateRange}
+                      onChange={(event) => setFinancialDateRange(event.target.value)}
+                      className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-medium text-slate-700 outline-none transition-all duration-200 hover:border-blue-300 hover:bg-white hover:shadow-2xs focus:border-blue-500 focus:bg-white focus:ring-3 focus:ring-blue-500/15 cursor-pointer pr-8"
+                    >
+                      <option value="all">All dates</option>
+                      <option value="30">Last 30 days</option>
+                      <option value="90">Last 90 days</option>
+                      <option value="year">This year</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  </div>
+                </label>
+
+                <label className="relative flex flex-col">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 ml-1">Payment Method</span>
+                  <div className="relative">
+                    <select
+                      aria-label="Filter payments by method"
+                      value={financialMethodFilter}
+                      onChange={(event) => setFinancialMethodFilter(event.target.value)}
+                      className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-medium text-slate-700 outline-none transition-all duration-200 hover:border-blue-300 hover:bg-white hover:shadow-2xs focus:border-blue-500 focus:bg-white focus:ring-3 focus:ring-blue-500/15 cursor-pointer pr-8"
+                    >
+                      <option value="all">All methods</option>
+                      <option value="cash">Cash</option>
+                      <option value="upload_receipt">Receipt upload</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  </div>
+                </label>
+
+                <label className="relative flex flex-col">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 ml-1">Status</span>
+                  <div className="relative">
+                    <select
+                      aria-label="Filter payments by status"
+                      value={financialStatusFilter}
+                      onChange={(event) => setFinancialStatusFilter(event.target.value)}
+                      className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-medium text-slate-700 outline-none transition-all duration-200 hover:border-blue-300 hover:bg-white hover:shadow-2xs focus:border-blue-500 focus:bg-white focus:ring-3 focus:ring-blue-500/15 cursor-pointer pr-8"
+                    >
+                      <option value="all">All statuses</option>
+                      <option value="paid">Verified / Paid</option>
+                      <option value="pending">Pending</option>
+                      <option value="overdue">Overdue</option>
+                      <option value="partial">Partial</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  </div>
+                </label>
+
+                <label className="relative flex flex-col">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 ml-1">Unit</span>
+                  <div className="relative">
+                    <select
+                      aria-label="Filter payments by unit"
+                      value={financialUnitFilter}
+                      onChange={(event) => setFinancialUnitFilter(event.target.value)}
+                      className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-medium text-slate-700 outline-none transition-all duration-200 hover:border-blue-300 hover:bg-white hover:shadow-2xs focus:border-blue-500 focus:bg-white focus:ring-3 focus:ring-blue-500/15 cursor-pointer pr-8 truncate"
+                    >
+                      <option value="all">All units</option>
+                      {units.map((unit) => (
+                        <option key={unit.id} value={unit.id}>
+                          {properties.find((property) => property.id === unit.propertyId)?.name || "Property"} • Unit {unit.unitNumber}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  </div>
+                </label>
               </div>
             </div>
             <FinancialMetrics collected={formatCurrency(filteredCollected)} pending={formatCurrency(filteredPayments.filter((payment) => payment.status === "pending").reduce((total, payment) => total + payment.amountPaid, 0))} outstanding={formatCurrency(filteredOutstanding)} transactions={filteredPayments.length} pendingCount={filteredPayments.filter((payment) => payment.status === "pending").length} openCount={filteredPayments.filter((payment) => payment.status !== "paid").length} />
