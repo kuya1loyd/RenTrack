@@ -407,7 +407,7 @@ export default function LandingPage() {
               >
                 Home
               </a>
-              {/* Rental Management Dropdown */}
+              {/* For Rent Dropdown */}
               <div className="relative" data-nav-dropdown>
                 <button
                   type="button"
@@ -422,7 +422,7 @@ export default function LandingPage() {
                   aria-expanded={openNavDropdown === "rental"}
                   aria-haspopup="true"
                 >
-                  <span>Rental Management</span>
+                  <span>For Rent</span>
                   <ChevronDown
                     className={cn(
                       "h-3.5 w-3.5 transition-transform duration-250",
@@ -442,7 +442,7 @@ export default function LandingPage() {
                       className="absolute left-1/2 top-full mt-2 w-64 -translate-x-1/2 rounded-2xl border border-slate-200/90 bg-white/95 p-2 shadow-[0_16px_36px_rgba(15,23,42,0.12)] backdrop-blur-md z-50"
                     >
                       <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Rental Management
+                        For Rent
                       </div>
                       <a
                         href="#properties"
@@ -551,14 +551,14 @@ export default function LandingPage() {
             >
               Home
             </a>
-            {/* Mobile Rental Management Dropdown */}
+            {/* Mobile For Rent Dropdown */}
             <div className="border-b border-slate-100">
               <button
                 type="button"
                 onClick={() => setMobileRentalOpen((prev) => !prev)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700"
               >
-                <span>Rental Management</span>
+                <span>For Rent</span>
                 <ChevronDown
                   className={cn(
                     "h-4 w-4 text-slate-500 transition-transform duration-200",

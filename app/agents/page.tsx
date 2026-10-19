@@ -10,7 +10,9 @@ import {
   ChevronDown,
   FileText,
   MapPin,
+  Search,
   UserRound,
+  X,
 } from "lucide-react";
 import PublicAgentCard from "@/components/public-agent-card";
 import agentCardStyles from "@/components/public-agent-card.module.css";
@@ -29,6 +31,7 @@ type Agent = {
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [search, setSearch] = useState("");
   const [location, setLocation] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -66,8 +69,12 @@ export default function AgentsPage() {
 
   const locations = Array.from(new Set(agents.map((agent) => agent.location?.trim()).filter((value): value is string => Boolean(value))))
     .sort((first, second) => first.localeCompare(second));
+  const query = search.trim().toLocaleLowerCase();
   const filteredAgents = agents
-    .filter((agent) => (!location || agent.location?.trim().toLocaleLowerCase() === location.toLocaleLowerCase()));
+    .filter((agent) => (
+      (!query || `${agent.name} ${agent.email} ${agent.experience || ""} ${agent.location || ""}`.toLocaleLowerCase().includes(query))
+      && (!location || agent.location?.trim().toLocaleLowerCase() === location.toLocaleLowerCase())
+    ));
 
   return (
     <main className="min-h-screen bg-white text-slate-900">
@@ -139,11 +146,31 @@ export default function AgentsPage() {
               </p>
             </div>
             <p id="agent-search-hint" className="mt-1 text-xs leading-5 text-slate-600">
-              Refine the directory by location.
+              Search by name or refine the directory by location.
             </p>
-            <div className="mt-4">
-              <label className="flex h-11 w-full min-w-0 items-center gap-2 rounded-full border border-slate-300 bg-white px-3.5 text-slate-500 shadow-sm transition focus-within:border-amber-700 focus-within:ring-4 focus-within:ring-amber-100">
-                <MapPin aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-800" />
+            <div className="mt-3.5 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="relative flex-1 min-w-0">
+                <Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search name, email, or skill..."
+                  className="h-9.5 w-full rounded-full border border-slate-300 bg-white pl-8.5 pr-7 text-xs text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-amber-700 focus:ring-2 focus:ring-amber-100"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    aria-label="Clear search"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-4 w-4 items-center justify-center text-slate-400 hover:text-slate-700 cursor-pointer"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <label className="flex h-9.5 w-full sm:w-48 shrink-0 min-w-0 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 text-slate-500 shadow-2xs transition focus-within:border-amber-700 focus-within:ring-2 focus-within:ring-amber-100">
+                <MapPin aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-amber-800" />
                 <span className="sr-only">Filter by location</span>
                 <select
                   value={location}
@@ -153,7 +180,7 @@ export default function AgentsPage() {
                   <option value="">All locations</option>
                   {locations.map((agentLocation) => <option key={agentLocation} value={agentLocation}>{agentLocation}</option>)}
                 </select>
-                <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <ChevronDown aria-hidden="true" className="h-3 w-3 shrink-0 text-slate-400" />
               </label>
             </div>
           </form>
@@ -195,10 +222,10 @@ export default function AgentsPage() {
                 <span aria-hidden="true" className="h-px w-7 bg-amber-600" />
               </p>
               <h2 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-slate-950 sm:text-2xl">
-                {agents.length ? "No agents match this location." : "No owner-managed agents are available yet."}
+                {agents.length ? "No agents match your filter." : "No owner-managed agents are available yet."}
               </h2>
               <p className="mt-2 max-w-md text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
-                {agents.length ? "Try choosing All locations to see all available agents." : "When owner-managed agents join RentTrack, you’ll find their profiles here."}
+                {agents.length ? "Try adjusting your search keyword or selecting All locations." : "When owner-managed agents join RentTrack, you’ll find their profiles here."}
               </p>
             </div>
           ) : (
