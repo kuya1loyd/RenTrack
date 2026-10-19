@@ -213,12 +213,12 @@ export default function AssignTenantModal({
               {/* Step 1: Select Tenant */}
               <Card className="flex flex-col border-slate-200 shadow-xs">
                 <CardHeader className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 items-start">
+                    <div className="flex items-center gap-3 min-w-0">
                       <div className="h-9 w-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
                         <UserPlus className="h-5 w-5" />
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <CardTitle className="text-base font-semibold text-slate-900">Step 1: Select Tenant</CardTitle>
                         <CardDescription className="text-xs text-slate-500">Choose a tenant without a unit assignment</CardDescription>
                       </div>
@@ -231,7 +231,7 @@ export default function AssignTenantModal({
                           onClose();
                           onRequestTenantAccount();
                         }}
-                        className="h-8 gap-1 text-xs border-blue-200 text-blue-700 hover:bg-blue-50"
+                        className="h-8 gap-1 text-xs border-blue-200 text-blue-700 hover:bg-blue-50 self-start sm:self-auto shrink-0"
                       >
                         <Plus className="h-3.5 w-3.5" /> Request Account
                       </Button>

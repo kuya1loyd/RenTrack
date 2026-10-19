@@ -118,34 +118,34 @@ export default function AgentCertificateManager({ agentId }: { agentId: string }
   };
 
   return (
-    <section className="w-full space-y-6" aria-labelledby="saved-certificates-title">
+    <section className="w-full max-w-full min-w-0 space-y-6" aria-labelledby="saved-certificates-title">
 
-      <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-        <h2 className="text-lg font-semibold text-slate-900">Add a certificate</h2>
+      <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-7 shadow-sm max-w-full min-w-0">
+        <h2 className="text-base sm:text-lg font-semibold text-slate-900">Add a certificate</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <label className="text-sm font-medium text-slate-800 sm:col-span-2">
+          <label className="text-sm font-medium text-slate-800 sm:col-span-2 block max-w-full min-w-0">
             Certificate title <span className="text-red-700" aria-hidden="true">*</span>
-            <input required maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} className="mt-1.5 block min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+            <input required maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} className="mt-1.5 block min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-200 text-sm" />
           </label>
-          <label className="text-sm font-medium text-slate-800">
+          <label className="text-sm font-medium text-slate-800 block max-w-full min-w-0">
             Issuer <span className="font-normal text-slate-500">Optional</span>
-            <input maxLength={120} value={issuer} onChange={(event) => setIssuer(event.target.value)} className="mt-1.5 block min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+            <input maxLength={120} value={issuer} onChange={(event) => setIssuer(event.target.value)} className="mt-1.5 block min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-200 text-sm" />
           </label>
-          <label className="text-sm font-medium text-slate-800">
+          <label className="text-sm font-medium text-slate-800 block max-w-full min-w-0">
             Issue date <span className="font-normal text-slate-500">Optional</span>
-            <input type="date" value={issuedOn} onChange={(event) => setIssuedOn(event.target.value)} className="mt-1.5 block min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+            <input type="date" value={issuedOn} onChange={(event) => setIssuedOn(event.target.value)} className="mt-1.5 block min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-200 text-sm" />
           </label>
-          <label htmlFor="agent-certificate-file" className="text-sm font-medium text-slate-800 sm:col-span-2">
+          <label htmlFor="agent-certificate-file" className="text-sm font-medium text-slate-800 sm:col-span-2 block max-w-full min-w-0">
             Certificate document <span className="text-red-700" aria-hidden="true">*</span>
-            <span className="mt-1.5 flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5 transition hover:border-orange-500 hover:bg-orange-50/50 focus-within:border-orange-600 focus-within:ring-2 focus-within:ring-orange-200">
+            <span className="mt-1.5 flex min-h-12 cursor-pointer items-center gap-2.5 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2.5 transition hover:border-orange-500 hover:bg-orange-50/50 focus-within:border-orange-600 focus-within:ring-2 focus-within:ring-orange-200 max-w-full min-w-0">
               <Upload size={18} className="shrink-0 text-orange-800" aria-hidden="true" />
-              <span className="min-w-0 flex-1 truncate text-sm text-slate-700">{file?.name || "Choose a PDF, JPG, or PNG (up to 10 MB)"}</span>
+              <span className="min-w-0 flex-1 truncate text-xs sm:text-sm text-slate-700">{file?.name || "Choose a PDF, JPG, or PNG (up to 10 MB)"}</span>
               <input id="agent-certificate-file" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" className="sr-only" onChange={(event) => onFileChange(event.target.files?.[0] || null)} required aria-required="true" />
             </span>
           </label>
         </div>
         <div className="mt-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-          <button type="submit" disabled={submitting} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-orange-700 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">
+          <button type="submit" disabled={submitting} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-orange-700 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 w-full sm:w-auto">
             {submitting ? <LoaderCircle size={16} className="animate-spin" aria-hidden="true" /> : <Upload size={16} aria-hidden="true" />}
             {submitting ? "Uploading…" : "Upload certificate"}
           </button>
@@ -153,7 +153,7 @@ export default function AgentCertificateManager({ agentId }: { agentId: string }
         </div>
       </form>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7" aria-labelledby="saved-certificates-title">
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-7 shadow-sm max-w-full min-w-0" aria-labelledby="saved-certificates-title">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 id="saved-certificates-title" className="text-lg font-semibold text-slate-900">Your certificates</h2>

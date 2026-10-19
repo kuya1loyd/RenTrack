@@ -292,7 +292,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-      <div className="min-h-screen flex-1 bg-[#f3f7fc]">
+      <div className="min-h-screen flex-1 bg-[#f3f7fc] max-w-full overflow-x-hidden">
       {/* Mobile header */}
       <div className="lg:hidden sticky top-0 z-30 border-b border-slate-200 bg-white/95 px-3 py-2.5 backdrop-blur">
         <div className="flex items-center justify-between gap-2">
@@ -415,7 +415,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
         </div>
       </div>
 
-      <div className="flex h-screen w-full">
+      <div className="flex h-screen w-full max-w-full overflow-x-hidden">
         {/* Sidebar */}
         <div className={cn("hidden lg:flex h-full shrink-0 flex-col border-r border-white/10 bg-[#07111f] text-slate-200 transition-[width] duration-200 motion-reduce:transition-none", sidebarOpen ? "w-56" : "w-16")}>
           <div className="border-b border-white/10 p-4">
@@ -751,8 +751,8 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
         </div>
 
         {/* Mobile main content */}
-        <main className="lg:hidden flex-1 overflow-y-auto bg-[#f3f7fc]">
-          <div className="w-full p-4">
+        <main className="lg:hidden flex-1 overflow-y-auto bg-[#f3f7fc] min-w-0 max-w-full overflow-x-hidden">
+          <div className="w-full max-w-full min-w-0 p-3 sm:p-4">
             {!isAgentVerified ? (
               <AgentVerificationGate user={user} refreshUser={refreshUser} />
             ) : (

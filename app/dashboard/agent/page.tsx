@@ -720,7 +720,7 @@ export default function AgentDashboard() {
   }
 
   return (
-    <div className="w-full">
+    <div className="w-full max-w-full min-w-0 overflow-x-hidden">
             {activeTab === "contracts" && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 <ContractsPanel mode="agent" />

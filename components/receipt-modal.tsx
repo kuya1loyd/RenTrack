@@ -195,40 +195,57 @@ export default function ReceiptModal({ isOpen, onClose, receiptUrl, payment }: R
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm" aria-hidden="true" />
         <div className="min-h-full flex items-center justify-center p-3 sm:p-4">
           <div
-            className="relative w-full max-w-2xl my-auto overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[90vh]"
+            className="relative w-full max-w-2xl my-auto overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[92dvh] sm:max-h-[90vh]"
           >
           {/* Top Bar (Actions & Title) */}
-          <div className="no-print bg-slate-900 px-4 py-3.5 text-white sm:px-6 flex flex-wrap items-center justify-between gap-2.5 border-b border-slate-800 shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xs">
-                <FileText className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base sm:text-lg font-bold tracking-tight">Official Rental Receipt</h2>
-                  <span
-                    className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
-                      isPaid
-                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                        : isPending
-                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                        : "bg-blue-500/20 text-blue-300 border border-blue-500/30"
-                    }`}
-                  >
-                    {isPaid ? "Paid & Verified" : isPending ? "Pending Owner Approval" : "Official Copy"}
-                  </span>
+          <div className="no-print bg-slate-900 px-3.5 py-3 text-white sm:px-6 sm:py-3.5 flex flex-col gap-2.5 border-b border-slate-800 shrink-0">
+            {/* Top Row: Icon, Title & Status, and pinned Close button */}
+            <div className="flex items-center justify-between gap-2.5 w-full">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xs shrink-0">
+                  <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
                 </div>
-                <p className="text-xs text-slate-400">Authentic proof of payment for rental records</p>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                    <h2 className="text-sm sm:text-base md:text-lg font-bold tracking-tight text-white truncate">Official Rental Receipt</h2>
+                    <span
+                      className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${
+                        isPaid
+                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                          : isPending
+                          ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                          : "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                      }`}
+                    >
+                      {isPaid ? "Paid & Verified" : isPending ? "Pending Owner Approval" : "Official Copy"}
+                    </span>
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-slate-400 truncate sm:whitespace-normal">Authentic proof of payment for rental records</p>
+                </div>
               </div>
+
+              {/* Close Button - ALWAYS pinned and visible on top right */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+                className="h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer z-50 pointer-events-auto"
+                aria-label="Close receipt"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
-            <div className="flex items-center gap-2">
-              {rawUrl && (
-                <div className="inline-flex rounded-lg bg-slate-800 p-0.5 border border-slate-700 text-xs">
+            {/* Action Row: View switcher & Print / Save buttons */}
+            <div className="flex items-center justify-between gap-2 w-full pt-0.5">
+              {rawUrl ? (
+                <div className="inline-flex rounded-lg bg-slate-800 p-0.5 border border-slate-700 text-xs flex-1 sm:flex-initial min-w-0">
                   <button
                     type="button"
                     onClick={() => setActiveView("receipt")}
-                    className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+                    className={`flex-1 sm:flex-initial px-2 sm:px-3 py-1.5 rounded-md font-medium text-center transition-colors text-[11px] sm:text-xs truncate ${
                       activeView === "receipt"
                         ? "bg-blue-600 text-white shadow-xs"
                         : "text-slate-300 hover:text-white"
@@ -239,49 +256,39 @@ export default function ReceiptModal({ isOpen, onClose, receiptUrl, payment }: R
                   <button
                     type="button"
                     onClick={() => setActiveView("attachment")}
-                    className={`px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
+                    className={`flex-1 sm:flex-initial px-2 sm:px-3 py-1.5 rounded-md font-medium text-center transition-colors flex items-center justify-center gap-1 text-[11px] sm:text-xs truncate ${
                       activeView === "attachment"
                         ? "bg-blue-600 text-white shadow-xs"
                         : "text-slate-300 hover:text-white"
                     }`}
                   >
-                    <ImageIcon className="h-3 w-3" />
-                    <span>Proof Attachment</span>
+                    <ImageIcon className="h-3 w-3 shrink-0" />
+                    <span className="truncate">Proof Attachment</span>
                   </button>
                 </div>
-              )}
+              ) : <div className="flex-1" />}
 
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/15 transition-colors cursor-pointer"
-                title="Print Receipt"
-              >
-                <Printer className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Print</span>
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/15 transition-colors cursor-pointer"
+                  title="Print Receipt"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Print</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={handleSave}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors cursor-pointer"
-                title="Save Receipt"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Save</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onClose();
-                }}
-                className="h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-colors ml-1 cursor-pointer z-50 pointer-events-auto"
-                aria-label="Close receipt"
-              >
-                <X className="h-4 w-4" />
-              </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors cursor-pointer"
+                  title="Save Receipt"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Save</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -632,23 +639,23 @@ export default function ReceiptModal({ isOpen, onClose, receiptUrl, payment }: R
           </div>
 
           {/* Bottom Footer Actions Bar (Non-print) */}
-          <div className="no-print border-t border-slate-200 bg-white px-5 py-3.5 flex items-center justify-between shrink-0">
+          <div className="no-print border-t border-slate-200 bg-white px-3 sm:px-5 py-2.5 sm:py-3.5 flex items-center justify-between shrink-0">
             <span className="text-xs text-slate-500 hidden sm:inline">
               Need a physical copy? Use the <strong className="text-slate-700">Print</strong> button above.
             </span>
-            <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
               <button
                 type="button"
                 onClick={handlePrint}
-                className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                className="flex-1 sm:flex-initial px-3 sm:px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Printer className="h-3.5 w-3.5" />
-                <span>Print Official Receipt</span>
+                <span className="truncate">Print Receipt</span>
               </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-colors cursor-pointer"
+                className="px-4 sm:px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-colors cursor-pointer"
               >
                 Done
               </button>
