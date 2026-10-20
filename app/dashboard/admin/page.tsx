@@ -182,7 +182,7 @@ export default function AdminDashboard() {
   const [payments] = useAdminDataset("payments");
   const [paymentPeriod, setPaymentPeriod] = useState<"monthly" | "quarterly" | "yearly">("monthly");
   const [paymentReferenceDate, setPaymentReferenceDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [paymentTypeFilter, setPaymentTypeFilter] = useState<"all" | "regular" | "advance">("all");
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState<"all" | "regular" | "advance" | "gcash" | "cash">("all");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [paymentSearch, setPaymentSearch] = useState("");
   const [complaints, setComplaints] = useAdminDataset("complaints");
@@ -344,6 +344,17 @@ export default function AdminDashboard() {
   }, []);
 
   const isAdvancePayment = (payment: Payment) => /advance/i.test(payment.notes || "") || payment.amountPaid > payment.amountDue;
+  const isGcashPayment = (payment: Payment) => {
+    const method = (payment.paymentMethod || "").toLowerCase();
+    return (
+      method === "upload_receipt" ||
+      method === "gcash" ||
+      Boolean(payment.gcashNumber) ||
+      Boolean(payment.receiptUrl) ||
+      Boolean(payment.notes?.toLowerCase().includes("gcash")) ||
+      Boolean(payment.paymentMethodNote?.toLowerCase().includes("gcash"))
+    );
+  };
 
   const filteredPayments = useMemo(() => {
     return payments.filter((payment) => {
@@ -359,7 +370,15 @@ export default function AdminDashboard() {
           : paymentDate.getFullYear() === selectedDate.getFullYear() &&
             paymentDate.getMonth() === selectedDate.getMonth();
       const matchesType = paymentTypeFilter === "all" ||
-        (paymentTypeFilter === "advance" ? isAdvancePayment(payment) : !isAdvancePayment(payment));
+        (paymentTypeFilter === "advance"
+          ? isAdvancePayment(payment)
+          : paymentTypeFilter === "regular"
+          ? !isAdvancePayment(payment)
+          : paymentTypeFilter === "gcash"
+          ? isGcashPayment(payment)
+          : paymentTypeFilter === "cash"
+          ? !isGcashPayment(payment)
+          : true);
       const matchesStatus = paymentStatusFilter === "all" || payment.status === paymentStatusFilter;
       const q = paymentSearch.trim().toLowerCase();
       const matchesSearch = !q || [
@@ -2696,6 +2715,8 @@ export default function AdminDashboard() {
                     className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
                   >
                     <option value="all">All Types</option>
+                    <option value="gcash">GCash</option>
+                    <option value="cash">Cash</option>
                     <option value="regular">Regular</option>
                     <option value="advance">Advance</option>
                   </select>
@@ -2759,36 +2780,54 @@ export default function AdminDashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredPayments.map((p, i) => (
-                        <motion.tr
-                          key={p.id}
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: i * 0.03, duration: 0.2 }}
-                          className="border-b border-gray-100 hover:bg-surface-secondary transition-colors"
-                        >
-                          <TableCell className="pl-6 font-semibold text-gray-900 dark:text-white">{p.tenantName}</TableCell>
-                          <TableCell className="text-text-secondary text-xs">{p.unitId}</TableCell>
-                          <TableCell className="font-semibold text-xs text-gray-900 dark:text-white">{formatCurrency(p.amountPaid || 0)}</TableCell>
-                          <TableCell>
-                            <span className="whitespace-nowrap text-xs text-gray-600">
-                              {isAdvancePayment(p) ? "Advance Payment" : "Regular Payment"}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <span className={cn(
-                              "inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold capitalize",
-                              p.status === "paid" && "bg-green-50 text-green-700 border border-green-200",
-                              p.status === "pending" && "bg-amber-50 text-amber-700 border border-amber-200",
-                              p.status === "overdue" && "bg-red-50 text-red-700 border border-red-200",
-                              p.status === "partial" && "bg-blue-50 text-blue-700 border border-blue-200",
-                            )}>
-                              {p.status}
-                            </span>
-                          </TableCell>
-                          <TableCell className="pr-6 text-text-secondary text-xs">{p.paymentDate ? formatDate(p.paymentDate) : "—"}</TableCell>
-                        </motion.tr>
-                      ))}
+                      {filteredPayments.map((p, i) => {
+                        const unit = units.find((u) => u.id === p.unitId);
+                        const unitText = unit?.unitNumber ? `Unit ${unit.unitNumber}` : p.unitId || "—";
+                        const isGcash = isGcashPayment(p);
+
+                        return (
+                          <motion.tr
+                            key={p.id}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: i * 0.03, duration: 0.2 }}
+                            className="border-b border-gray-100 hover:bg-surface-secondary transition-colors"
+                          >
+                            <TableCell className="pl-6 font-semibold text-gray-900 dark:text-white">{p.tenantName}</TableCell>
+                            <TableCell className="text-text-secondary text-xs">{unitText}</TableCell>
+                            <TableCell className="font-semibold text-xs text-gray-900 dark:text-white">{formatCurrency(p.amountPaid || 0)}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider",
+                                    isGcash
+                                      ? "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800"
+                                      : "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                                  )}
+                                >
+                                  {isGcash ? "GCash" : "Cash"}
+                                </span>
+                                <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                                  • {isAdvancePayment(p) ? "Advance" : "Regular"}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span className={cn(
+                                "inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold capitalize",
+                                p.status === "paid" && "bg-green-50 text-green-700 border border-green-200",
+                                p.status === "pending" && "bg-amber-50 text-amber-700 border border-amber-200",
+                                p.status === "overdue" && "bg-red-50 text-red-700 border border-red-200",
+                                p.status === "partial" && "bg-blue-50 text-blue-700 border border-blue-200",
+                              )}>
+                                {p.status}
+                              </span>
+                            </TableCell>
+                            <TableCell className="pr-6 text-text-secondary text-xs">{p.paymentDate ? formatDate(p.paymentDate) : "—"}</TableCell>
+                          </motion.tr>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>

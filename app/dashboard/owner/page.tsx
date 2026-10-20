@@ -2658,7 +2658,18 @@ export default function OwnerDashboard() {
                           <td className="whitespace-nowrap">{formatDate(payment.paymentDate)}</td>
                           <td><span className={management.tenantCell}><span className={management.initials}>{getInitials(payment.tenantName)}</span>{payment.tenantName}</span></td>
                           <td className="whitespace-nowrap">{unit ? `Unit ${unit.unitNumber}` : payment.unitId || "–"}</td>
-                          <td><span className={management.method}>{payment.paymentMethod === "cash" ? "Cash" : "Receipt upload"}</span></td>
+                          <td>
+                            <span
+                              className={cn(
+                                "inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider",
+                                payment.paymentMethod === "cash"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : "bg-blue-50 text-blue-700 border border-blue-200"
+                              )}
+                            >
+                              {payment.paymentMethod === "cash" ? "Cash" : "GCash"}
+                            </span>
+                          </td>
                           <td className="whitespace-nowrap tabular-nums">{formatCurrency(payment.amountPaid)}</td>
                           <td><PaymentStatus status={payment.status} /></td><td className="max-w-44 truncate" title={payment.id}>{payment.id}</td>
                           <td><span className={management.actions}>

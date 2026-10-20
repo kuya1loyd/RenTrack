@@ -604,7 +604,18 @@ export default function TenantPaymentsPage() {
                           className="grid grid-cols-5 items-center px-6 py-4 hover:bg-slate-50/60 transition-colors text-sm"
                         >
                           <div className="text-slate-700 font-medium">{formatDate(p.paymentDate || "")}</div>
-                          <div className="text-slate-600 capitalize">{typeLabel}</div>
+                          <div className="flex items-center gap-1.5 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                                p.paymentMethod === "cash"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : "bg-blue-50 text-blue-700 border border-blue-200"
+                              }`}
+                            >
+                              {p.paymentMethod === "cash" ? "Cash" : "GCash"}
+                            </span>
+                            <span className="text-xs text-slate-500">({typeLabel})</span>
+                          </div>
                           <div className="font-semibold text-slate-900">{formatCurrency(p.amountPaid || 0)}</div>
                           <div>
                             <span

@@ -222,8 +222,23 @@ export default function PaymentsPage() {
                     <TableCell className="text-right text-sm font-medium">{formatCurrency(payment.amountDue)}</TableCell>
                     <TableCell className="text-right text-sm text-text-secondary">{formatCurrency(0)}</TableCell>
                     <TableCell className="text-right text-sm font-semibold text-foreground">{formatCurrency(payment.amountPaid)}</TableCell>
-                    <TableCell className="text-sm text-text-secondary whitespace-nowrap">{formatDate(payment.dueDate)}</TableCell>
-                    <TableCell><Badge variant="outline" className="whitespace-nowrap">{isAdvance(payment) ? "Advance Payment" : "Regular Payment"}</Badge></TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <span
+                          className={cn(
+                            "inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider",
+                            payment.paymentMethod === "cash"
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-blue-50 text-blue-700 border border-blue-200"
+                          )}
+                        >
+                          {payment.paymentMethod === "cash" ? "Cash" : "GCash"}
+                        </span>
+                        <span className="text-xs text-text-secondary">
+                          • {isAdvance(payment) ? "Advance" : "Regular"}
+                        </span>
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline" className={cn("text-[10px] font-medium px-1.5 py-0.5 capitalize", statusStyles[payment.status])}>
                         {payment.status}

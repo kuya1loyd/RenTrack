@@ -1840,7 +1840,18 @@ export default function AgentDashboard() {
                                   <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDate(payment.paymentDate)}</td>
                                   <td className="px-4 py-3"><span className="font-semibold text-slate-900">{payment.tenantName}</span><span className="mt-0.5 block text-[10px] text-slate-500">{payment.propertyName}</span></td>
                                   <td className="whitespace-nowrap px-4 py-3">Unit {units.find((unit) => unit.id === payment.unitId)?.unitNumber || payment.unitId}</td>
-                                  <td className="whitespace-nowrap px-4 py-3 capitalize">{payment.paymentMethod.replace("_", " ")}</td>
+                                  <td className="whitespace-nowrap px-4 py-3">
+                                    <span
+                                      className={cn(
+                                        "inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider",
+                                        payment.paymentMethod === "cash"
+                                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                          : "bg-blue-50 text-blue-700 border border-blue-200"
+                                      )}
+                                    >
+                                      {payment.paymentMethod === "cash" ? "Cash" : "GCash"}
+                                    </span>
+                                  </td>
                                   <td className="whitespace-nowrap px-4 py-3"><span className="font-semibold tabular-nums text-slate-900">{formatCurrency(payment.amountPaid)}</span><span className="ml-1 text-[10px] text-slate-500">of {formatCurrency(payment.amountDue)}</span></td>
                                   <td className="px-4 py-3"><Badge variant={payment.status === "paid" ? "success" : payment.status === "pending" ? "warning" : payment.status === "partial" ? "info" : "destructive"} className="text-[10px] capitalize">{payment.status}</Badge></td>
                                   <td className="max-w-32 truncate px-4 py-3 font-mono text-[10px] text-slate-500" title={payment.id}>{payment.id}</td>
