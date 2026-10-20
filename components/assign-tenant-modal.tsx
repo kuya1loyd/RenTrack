@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, UserPlus, Home, Search, CheckCircle2, ClipboardCheck,
-  Building2, CalendarDays, Plus, AlertCircle, Loader2,
+  Building2, AlertCircle, Loader2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -36,12 +36,14 @@ export default function AssignTenantModal({
   initialTenant = null,
   initialUnit = null,
   onSuccess,
-  onRequestTenantAccount,
 }: AssignTenantModalProps) {
   const { user } = useAuth();
   const [selectedTenant, setSelectedTenant] = useState<TenantRecord | null>(initialTenant);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(initialUnit);
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [step2Tab, setStep2Tab] = useState<"properties" | "units">("properties");
   const [tenantSearch, setTenantSearch] = useState("");
+  const [searchStep2, setSearchStep2] = useState("");
   const [assignmentPropertyFilter, setAssignmentPropertyFilter] = useState("all");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -52,22 +54,33 @@ export default function AssignTenantModal({
     contractStart: "",
   });
 
+  const vacantUnits = units.filter((unit) => unit.status === "vacant");
+
   // Sync initial selections when modal opens or initial props change
   useEffect(() => {
     if (isOpen) {
       setSelectedTenant(initialTenant);
       setSelectedUnit(initialUnit);
+      if (initialUnit) {
+        const prop = properties.find((p) => p.id === initialUnit.propertyId);
+        setSelectedProperty(prop || null);
+        setStep2Tab("units");
+      } else {
+        setSelectedProperty(null);
+        setStep2Tab(vacantUnits.length > 0 ? "properties" : "properties");
+      }
       setTenantSearch("");
+      setSearchStep2("");
       setAssignmentPropertyFilter("all");
     }
-  }, [isOpen, initialTenant, initialUnit]);
+  }, [isOpen, initialTenant, initialUnit, properties, vacantUnits.length]);
 
   // Update assign form when unit changes
   useEffect(() => {
     if (selectedUnit) {
       const prop = properties.find((p) => p.id === selectedUnit.propertyId);
       setAssignForm({
-        propertyName: prop?.name || "",
+        propertyName: prop?.name || selectedUnit.propertyName || "",
         unitNumber: selectedUnit.unitNumber || "",
         rentAmount: selectedUnit.rentAmount || 0,
         contractStart: new Date().toISOString().slice(0, 10),
@@ -77,10 +90,27 @@ export default function AssignTenantModal({
 
   if (!isOpen) return null;
 
-  const vacantUnits = units.filter((unit) => unit.status === "vacant");
+  const filteredProperties = properties.filter((property) => {
+    const q = searchStep2.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      property.name.toLowerCase().includes(q) ||
+      (property.location && property.location.toLowerCase().includes(q)) ||
+      (property.type && property.type.toLowerCase().includes(q))
+    );
+  });
+
   const filteredVacantUnits = vacantUnits.filter((unit) => {
-    if (assignmentPropertyFilter === "all") return true;
-    return unit.propertyId === assignmentPropertyFilter;
+    if (assignmentPropertyFilter !== "all" && unit.propertyId !== assignmentPropertyFilter) {
+      return false;
+    }
+    const q = searchStep2.toLowerCase().trim();
+    if (!q) return true;
+    const prop = properties.find((p) => p.id === unit.propertyId);
+    return (
+      unit.unitNumber.toLowerCase().includes(q) ||
+      (prop && prop.name.toLowerCase().includes(q))
+    );
   });
 
   // Show unassigned tenants, but if an active tenant was passed as initialTenant, also keep them in list
@@ -94,28 +124,78 @@ export default function AssignTenantModal({
       t.email.toLowerCase().includes(tenantSearch.toLowerCase())
   );
 
+  const handleSelectProperty = (property: Property) => {
+    setSelectedProperty(property);
+    const vacantInProp = units.filter((u) => u.propertyId === property.id && u.status === "vacant");
+    if (vacantInProp.length > 0) {
+      if (!selectedUnit || selectedUnit.propertyId !== property.id) {
+        setSelectedUnit(vacantInProp[0]);
+        setAssignForm({
+          propertyName: property.name,
+          unitNumber: vacantInProp[0].unitNumber,
+          rentAmount: vacantInProp[0].rentAmount,
+          contractStart: assignForm.contractStart || new Date().toISOString().slice(0, 10),
+        });
+      }
+    } else {
+      setSelectedUnit(null);
+      const estimatedRent =
+        property.monthlyRevenue && property.units
+          ? Math.round(property.monthlyRevenue / property.units)
+          : 0;
+      setAssignForm({
+        propertyName: property.name,
+        unitNumber: assignForm.unitNumber || "101",
+        rentAmount: assignForm.rentAmount || estimatedRent,
+        contractStart: assignForm.contractStart || new Date().toISOString().slice(0, 10),
+      });
+    }
+  };
+
+  const handleSelectUnit = (unit: Unit, property?: Property) => {
+    setSelectedUnit(unit);
+    const prop = property || properties.find((p) => p.id === unit.propertyId);
+    if (prop) setSelectedProperty(prop);
+    setAssignForm({
+      propertyName: prop?.name || unit.propertyName || "",
+      unitNumber: unit.unitNumber,
+      rentAmount: unit.rentAmount || 0,
+      contractStart: assignForm.contractStart || new Date().toISOString().slice(0, 10),
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTenant) {
       toast.error("Please select a tenant to assign");
       return;
     }
-    if (!selectedUnit) {
-      toast.error("Please select a vacant unit");
+    if (!selectedUnit && !selectedProperty) {
+      toast.error("Please select a property or unit");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const property = properties.find((p) => p.id === selectedUnit.propertyId);
+      const property = selectedProperty || properties.find((p) => p.id === selectedUnit?.propertyId);
       const propName = assignForm.propertyName || property?.name || "";
-      const unitNum = assignForm.unitNumber || selectedUnit.unitNumber;
+      const unitNum = assignForm.unitNumber || selectedUnit?.unitNumber || "Unit 1";
+
+      let targetUnitId = selectedUnit?.id;
+      if (!targetUnitId && property) {
+        const matched = units.find(
+          (u) =>
+            (u.propertyId === property.id || u.propertyName?.toLowerCase() === property.name?.toLowerCase()) &&
+            u.unitNumber?.toLowerCase() === unitNum.toLowerCase()
+        );
+        if (matched) targetUnitId = matched.id;
+      }
 
       const updated = await updateTenantAssignment(selectedTenant.id, {
-        unitId: selectedUnit.id,
+        unitId: targetUnitId || undefined,
         propertyName: propName,
         unitNumber: unitNum,
-        rentAmount: assignForm.rentAmount || selectedUnit.rentAmount,
+        rentAmount: assignForm.rentAmount || selectedUnit?.rentAmount || (property?.monthlyRevenue && property?.units ? Math.round(property.monthlyRevenue / property.units) : 0),
         contractStart: assignForm.contractStart || undefined,
         assignmentStatus: "pending",
         assignedAgentId: user?.role === "agent" ? user.id : undefined,
@@ -189,7 +269,7 @@ export default function AssignTenantModal({
                     Assign a tenant
                   </h2>
                   <p className="text-xs sm:text-sm text-blue-100 mt-0.5">
-                    Select a tenant and assign them to an available unit
+                    Select a tenant and assign them to an available property or unit
                   </p>
                 </div>
               </div>
@@ -213,29 +293,14 @@ export default function AssignTenantModal({
               {/* Step 1: Select Tenant */}
               <Card className="flex flex-col border-slate-200 shadow-xs">
                 <CardHeader className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 items-start">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-9 w-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                        <UserPlus className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <CardTitle className="text-base font-semibold text-slate-900">Step 1: Select Tenant</CardTitle>
-                        <CardDescription className="text-xs text-slate-500">Choose a tenant without a unit assignment</CardDescription>
-                      </div>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-9 w-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                      <UserPlus className="h-5 w-5" />
                     </div>
-                    {onRequestTenantAccount && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          onClose();
-                          onRequestTenantAccount();
-                        }}
-                        className="h-8 gap-1 text-xs border-blue-200 text-blue-700 hover:bg-blue-50 self-start sm:self-auto shrink-0"
-                      >
-                        <Plus className="h-3.5 w-3.5" /> Request Account
-                      </Button>
-                    )}
+                    <div className="min-w-0">
+                      <CardTitle className="text-base font-semibold text-slate-900">Step 1: Select Tenant</CardTitle>
+                      <CardDescription className="text-xs text-slate-500">Choose a tenant without a unit assignment</CardDescription>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="p-4 sm:p-5 flex-1 flex flex-col">
@@ -298,21 +363,74 @@ export default function AssignTenantModal({
                 </CardContent>
               </Card>
 
-              {/* Step 2: Select Vacant Unit */}
+              {/* Step 2: Select Property & Unit */}
               <Card className="flex flex-col border-slate-200 shadow-xs">
                 <CardHeader className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50">
                   <div className="flex items-center gap-3">
                     <div className="h-9 w-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                      <Home className="h-5 w-5" />
+                      <Building2 className="h-5 w-5" />
                     </div>
                     <div>
-                      <CardTitle className="text-base font-semibold text-slate-900">Step 2: Select Vacant Unit</CardTitle>
-                      <CardDescription className="text-xs text-slate-500">Available units for assignment</CardDescription>
+                      <CardTitle className="text-base font-semibold text-slate-900">Step 2: Select Property & Unit</CardTitle>
+                      <CardDescription className="text-xs text-slate-500">Choose a property and assign a unit</CardDescription>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent className="p-4 sm:p-5 flex-1 flex flex-col">
-                  {vacantUnits.length > 0 && (
+                  {/* Tab Selector */}
+                  <div className="flex items-center p-1 bg-slate-100 rounded-lg mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setStep2Tab("properties")}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md text-xs font-semibold transition-all cursor-pointer",
+                        step2Tab === "properties"
+                          ? "bg-white text-slate-900 shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      <Building2 className="h-3.5 w-3.5 text-blue-600" />
+                      <span>Properties</span>
+                      <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-700 font-medium">
+                        {properties.length}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setStep2Tab("units")}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md text-xs font-semibold transition-all cursor-pointer",
+                        step2Tab === "units"
+                          ? "bg-white text-slate-900 shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      <Home className="h-3.5 w-3.5 text-emerald-600" />
+                      <span>Vacant Units</span>
+                      <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-700 font-medium">
+                        {vacantUnits.length}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Search */}
+                  <div className="relative mb-3">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Input
+                      placeholder={
+                        step2Tab === "properties"
+                          ? "Search properties by name, location..."
+                          : "Search vacant units by number, property..."
+                      }
+                      value={searchStep2}
+                      onChange={(e) => setSearchStep2(e.target.value)}
+                      className="pl-9 h-9.5 text-xs rounded-lg"
+                    />
+                  </div>
+
+                  {/* Property filter (only on vacant units tab when units exist) */}
+                  {step2Tab === "units" && vacantUnits.length > 0 && (
                     <label className="mb-3 space-y-1 block">
                       <span className="text-xs font-medium text-slate-600">Filter by property</span>
                       <select
@@ -333,66 +451,206 @@ export default function AssignTenantModal({
                     </label>
                   )}
 
+                  {/* Content List */}
                   <div className="flex-1 overflow-y-auto space-y-2 max-h-72 min-h-[180px] pr-1">
-                    {properties.length === 0 ? (
-                      <div className="text-center py-10 px-4">
-                        <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-2 text-slate-400">
-                          <Home className="h-5 w-5" />
+                    {step2Tab === "properties" ? (
+                      properties.length === 0 ? (
+                        <div className="text-center py-10 px-4">
+                          <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-2 text-slate-400">
+                            <Building2 className="h-5 w-5" />
+                          </div>
+                          <p className="text-slate-700 font-medium text-xs">No properties available</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Properties will be listed here once registered
+                          </p>
                         </div>
-                        <p className="text-slate-700 font-medium text-xs">No properties to assign yet</p>
-                        <p className="text-[11px] text-slate-500 mt-0.5">Units will be available here after the owner registers a property</p>
-                      </div>
-                    ) : vacantUnits.length === 0 ? (
-                      <div className="text-center py-10 px-4">
-                        <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-2 text-slate-400">
-                          <Home className="h-5 w-5" />
+                      ) : filteredProperties.length === 0 ? (
+                        <div className="text-center py-8 px-4">
+                          <p className="text-slate-700 font-medium text-xs">No matching properties</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">Try a different search term</p>
                         </div>
-                        <p className="text-slate-700 font-medium text-xs">No vacant units available</p>
-                        <p className="text-[11px] text-slate-500 mt-0.5">No registered units are currently marked vacant</p>
-                      </div>
-                    ) : filteredVacantUnits.length === 0 ? (
-                      <div className="text-center py-8 px-4">
-                        <p className="text-slate-700 font-medium text-xs">No vacant units for this property</p>
-                        <p className="text-[11px] text-slate-500 mt-0.5">Choose another property or select all properties</p>
-                      </div>
-                    ) : (
-                      filteredVacantUnits.map((unit) => {
-                        const property = properties.find((p) => p.id === unit.propertyId);
-                        const isSelected = selectedUnit?.id === unit.id;
-                        return (
-                          <div
-                            key={unit.id}
-                            onClick={() => setSelectedUnit(isSelected ? null : unit)}
-                            className={cn(
-                              "p-3 rounded-xl border cursor-pointer transition-all",
-                              isSelected
-                                ? "border-emerald-500 bg-emerald-50/80 shadow-xs ring-1 ring-emerald-400/40"
-                                : "border-slate-200 hover:bg-slate-50 hover:border-slate-300"
-                            )}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-3">
-                                <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
-                                  {unit.unitNumber}
+                      ) : (
+                        filteredProperties.map((property) => {
+                          const isSelected = selectedProperty?.id === property.id;
+                          const propVacantUnits = units.filter(
+                            (u) => u.propertyId === property.id && u.status === "vacant"
+                          );
+                          return (
+                            <div
+                              key={property.id}
+                              onClick={() => {
+                                if (isSelected) {
+                                  setSelectedProperty(null);
+                                  setSelectedUnit(null);
+                                } else {
+                                  handleSelectProperty(property);
+                                }
+                              }}
+                              className={cn(
+                                "p-3 rounded-xl border cursor-pointer transition-all",
+                                isSelected
+                                  ? "border-emerald-500 bg-emerald-50/70 shadow-xs ring-1 ring-emerald-400/40"
+                                  : "border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div
+                                    className={cn(
+                                      "h-9 w-9 rounded-lg flex items-center justify-center shrink-0 shadow-xs",
+                                      isSelected
+                                        ? "bg-gradient-to-br from-emerald-600 to-teal-700 text-white"
+                                        : "bg-emerald-100 text-emerald-700"
+                                    )}
+                                  >
+                                    <Building2 className="h-5 w-5" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-slate-900 leading-snug truncate">
+                                      {property.name}
+                                    </p>
+                                    <p className="text-xs text-slate-500 truncate flex items-center gap-1 mt-0.5">
+                                      <span>{property.location || "Managed Property"}</span>
+                                      {property.type && (
+                                        <>
+                                          <span>•</span>
+                                          <span className="capitalize">{property.type}</span>
+                                        </>
+                                      )}
+                                    </p>
+                                  </div>
                                 </div>
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900 leading-snug">
-                                    {property?.name || "Managed Property"}
-                                  </p>
-                                  <p className="text-xs text-slate-500">Unit #{unit.unitNumber}</p>
-                                </div>
+                                {isSelected ? (
+                                  <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                                ) : (
+                                  <span className="text-[11px] font-medium text-slate-400 shrink-0">Select</span>
+                                )}
                               </div>
-                              {isSelected && (
-                                <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+
+                              <div className="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2 text-[11px]">
+                                <span className="text-slate-500">
+                                  {property.units || 0} Total Units
+                                  {propVacantUnits.length > 0 ? (
+                                    <span className="text-emerald-700 font-semibold ml-1.5">
+                                      ({propVacantUnits.length} vacant)
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 ml-1.5">
+                                      ({property.occupiedUnits || 0} occupied)
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="font-semibold text-slate-700">
+                                  {property.monthlyRevenue ? `${formatCurrency(property.monthlyRevenue)} / mo` : "Active"}
+                                </span>
+                              </div>
+
+                              {/* If selected and property has vacant units, show unit selector */}
+                              {isSelected && propVacantUnits.length > 0 && (
+                                <div
+                                  className="mt-3 pt-2.5 border-t border-emerald-200/60"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <p className="text-[11px] font-semibold text-emerald-900 mb-1.5">
+                                    Choose specific vacant unit:
+                                  </p>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {propVacantUnits.map((u) => {
+                                      const isUnitActive = selectedUnit?.id === u.id;
+                                      return (
+                                        <button
+                                          key={u.id}
+                                          type="button"
+                                          onClick={() => handleSelectUnit(u, property)}
+                                          className={cn(
+                                            "px-2.5 py-1 rounded-md text-xs font-semibold border transition-all cursor-pointer",
+                                            isUnitActive
+                                              ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                              : "bg-white text-slate-700 border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/50"
+                                          )}
+                                        >
+                                          Unit {u.unitNumber} {u.rentAmount ? `(${formatCurrency(u.rentAmount)})` : ""}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
                               )}
                             </div>
-                            <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-[11px]">
-                              <span className="text-slate-500">Floor {unit.floor || "N/A"}</span>
-                              <span className="font-semibold text-emerald-700">{formatCurrency(unit.rentAmount)} / mo</span>
-                            </div>
+                          );
+                        })
+                      )
+                    ) : (
+                      /* Vacant Units Tab */
+                      vacantUnits.length === 0 ? (
+                        <div className="text-center py-8 px-4">
+                          <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-2 text-slate-400">
+                            <Home className="h-5 w-5" />
                           </div>
-                        );
-                      })
+                          <p className="text-slate-700 font-medium text-xs">No vacant units available</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            You can assign a tenant directly using the <strong>Properties</strong> tab.
+                          </p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setStep2Tab("properties")}
+                            className="mt-3 h-8 gap-1.5 text-xs text-blue-700 border-blue-200 hover:bg-blue-50"
+                          >
+                            <Building2 className="h-3.5 w-3.5" /> View Properties ({properties.length})
+                          </Button>
+                        </div>
+                      ) : filteredVacantUnits.length === 0 ? (
+                        <div className="text-center py-8 px-4">
+                          <p className="text-slate-700 font-medium text-xs">No matching vacant units</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">Choose another property or change search</p>
+                        </div>
+                      ) : (
+                        filteredVacantUnits.map((unit) => {
+                          const property = properties.find((p) => p.id === unit.propertyId);
+                          const isSelected = selectedUnit?.id === unit.id;
+                          return (
+                            <div
+                              key={unit.id}
+                              onClick={() => {
+                                if (isSelected) {
+                                  setSelectedUnit(null);
+                                } else {
+                                  handleSelectUnit(unit, property);
+                                }
+                              }}
+                              className={cn(
+                                "p-3 rounded-xl border cursor-pointer transition-all",
+                                isSelected
+                                  ? "border-emerald-500 bg-emerald-50/80 shadow-xs ring-1 ring-emerald-400/40"
+                                  : "border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-3">
+                                  <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                                    {unit.unitNumber}
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-semibold text-slate-900 leading-snug">
+                                      {property?.name || unit.propertyName || "Managed Property"}
+                                    </p>
+                                    <p className="text-xs text-slate-500">Unit #{unit.unitNumber}</p>
+                                  </div>
+                                </div>
+                                {isSelected && (
+                                  <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                                )}
+                              </div>
+                              <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-[11px]">
+                                <span className="text-slate-500">Floor {unit.floor || "N/A"}</span>
+                                <span className="font-semibold text-emerald-700">{formatCurrency(unit.rentAmount)} / mo</span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )
                     )}
                   </div>
                 </CardContent>
@@ -400,7 +658,7 @@ export default function AssignTenantModal({
             </div>
 
             {/* Step 3: Review & Confirm */}
-            {selectedTenant && selectedUnit ? (
+            {selectedTenant && (selectedUnit || selectedProperty) ? (
               <motion.div
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -436,24 +694,30 @@ export default function AssignTenantModal({
                       </div>
 
                       <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-1.5 text-xs">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Selected Unit</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Selected Property & Unit</p>
                         <div className="flex justify-between">
                           <span className="text-slate-500">Property:</span>
                           <span className="font-semibold text-slate-900">
-                            {properties.find((p) => p.id === selectedUnit.propertyId)?.name || "Managed Property"}
+                            {selectedProperty?.name || properties.find((p) => p.id === selectedUnit?.propertyId)?.name || assignForm.propertyName || "Managed Property"}
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-slate-500">Unit Number:</span>
-                          <span className="font-semibold text-slate-900">#{selectedUnit.unitNumber}</span>
+                          <span className="font-semibold text-slate-900">
+                            {assignForm.unitNumber ? `#${assignForm.unitNumber}` : selectedUnit?.unitNumber ? `#${selectedUnit.unitNumber}` : "To be assigned"}
+                          </span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">Floor:</span>
-                          <span className="font-medium text-slate-700">{selectedUnit.floor || "N/A"}</span>
-                        </div>
+                        {selectedUnit?.floor && (
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Floor:</span>
+                            <span className="font-medium text-slate-700">{selectedUnit.floor}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between border-t border-slate-100 pt-1">
                           <span className="text-slate-600 font-medium">Monthly Rent:</span>
-                          <span className="font-bold text-emerald-700">{formatCurrency(selectedUnit.rentAmount)}</span>
+                          <span className="font-bold text-emerald-700">
+                            {formatCurrency(assignForm.rentAmount || selectedUnit?.rentAmount || 0)}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -548,11 +812,11 @@ export default function AssignTenantModal({
                 <div className="flex items-center gap-2">
                   <AlertCircle className="h-4 w-4 text-slate-400" />
                   <span>
-                    {!selectedTenant && !selectedUnit
-                      ? "Select both a tenant and a vacant unit above to proceed to confirmation."
+                    {!selectedTenant && !selectedUnit && !selectedProperty
+                      ? "Select both a tenant and a property or unit above to proceed to confirmation."
                       : !selectedTenant
                       ? "Please select a tenant in Step 1 to proceed."
-                      : "Please select a vacant unit in Step 2 to proceed."}
+                      : "Please select a property or vacant unit in Step 2 to proceed."}
                   </span>
                 </div>
                 <Button
