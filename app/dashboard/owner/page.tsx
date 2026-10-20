@@ -12,6 +12,7 @@ import {
   Shield, ShieldOff, LogOut, MoreVertical, Search, Building2, RotateCcw,
   Copy, MoreHorizontal, Mail, MessageSquare, Phone, MapPinned, MapPin, DoorOpen, Bed,
   LayoutGrid, List, Wallet, History as HistoryIcon,
+  CalendarDays, Check, AlertCircle, XCircle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -187,6 +188,8 @@ export default function OwnerDashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [reviewAssignment, setReviewAssignment] = useState<TenantRecord | null>(null);
   const [returnReason, setReturnReason] = useState("");
+  const [assignmentSearch, setAssignmentSearch] = useState("");
+  const [assignmentPropertyFilter, setAssignmentPropertyFilter] = useState("all");
   const [viewingReceipt, setViewingReceipt] = useState<Payment | null>(null);
   const [viewingReport, setViewingReport] = useState<"rental" | "property" | null>(null);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
@@ -745,6 +748,19 @@ export default function OwnerDashboard() {
   const availableUnits = units.filter((u) => u.status === "vacant");
   const occupiedUnits = units.filter((u) => u.status === "occupied");
   const pendingAssignments = tenants.filter((t) => t.assignmentStatus === "pending" && (t.unitId || t.propertyName));
+  const filteredPendingAssignments = pendingAssignments.filter((tenant) => {
+    if (assignmentPropertyFilter !== "all" && tenant.propertyName !== assignmentPropertyFilter) {
+      return false;
+    }
+    const q = assignmentSearch.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      tenant.name.toLowerCase().includes(q) ||
+      tenant.email.toLowerCase().includes(q) ||
+      (tenant.propertyName && tenant.propertyName.toLowerCase().includes(q)) ||
+      (tenant.unitNumber && tenant.unitNumber.toLowerCase().includes(q))
+    );
+  });
   const pendingPayments = payments.filter((p) => p.status === "pending");
   const overduePayments = payments.filter((p) => p.status === "overdue");
   const normalizedUnitSearch = unitSearch.trim().toLowerCase();
@@ -2001,37 +2017,227 @@ export default function OwnerDashboard() {
             description="Review and manage tenant unit assignments submitted by your agents."
             icon={ClipboardCheck}
           />
-          <Card>
-            <CardContent className="p-6">
-              <div className="space-y-3">
-                {pendingAssignments.length === 0 ? (
-                  <div className="text-center py-12">
-                    <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-3" />
-                    <p className="text-text-secondary font-medium">All caught up!</p>
-                    <p className="text-xs text-text-tertiary mt-1">No pending assignments to review</p>
+
+          {/* Metric Cards */}
+          <section aria-label="Assignment metrics" className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              {
+                label: "Pending Review",
+                value: pendingAssignments.length,
+                icon: Clock,
+                tone: "bg-amber-50 text-amber-700 border-amber-200",
+                subtext: "Awaiting confirmation",
+              },
+              {
+                label: "Confirmed Tenants",
+                value: tenants.filter((t) => t.assignmentStatus === "confirmed").length,
+                icon: CheckCircle2,
+                tone: "bg-emerald-50 text-emerald-700 border-emerald-200",
+                subtext: "Active in units",
+              },
+              {
+                label: "Target Properties",
+                value: new Set(pendingAssignments.map((t) => t.propertyName).filter(Boolean)).size,
+                icon: Building2,
+                tone: "bg-blue-50 text-blue-700 border-blue-200",
+                subtext: "Properties in review",
+              },
+              {
+                label: "Returned to Agent",
+                value: tenants.filter((t) => t.assignmentStatus === "rejected").length,
+                icon: RotateCcw,
+                tone: "bg-slate-50 text-slate-700 border-slate-200",
+                subtext: "Feedback provided",
+              },
+            ].map((metric) => (
+              <div
+                key={metric.label}
+                className="rounded-2xl border border-slate-200/90 bg-white p-3.5 sm:p-4 shadow-sm flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    {metric.label}
+                  </span>
+                  <div className={cn("h-7 w-7 rounded-lg flex items-center justify-center border", metric.tone)}>
+                    <metric.icon className="h-3.5 w-3.5" />
                   </div>
-                ) : (
-                  pendingAssignments.map((tenant) => (
-                    <div key={tenant.id} className="flex items-center justify-between p-4 rounded-xl border border-amber-200 bg-amber-50">
-                      <div className="flex items-center gap-3">
-                        <Avatar src={tenant.avatarUrl} fallback={getInitials(tenant.name)} />
-                        <div>
-                          <p className="font-medium text-foreground">{tenant.name}</p>
-                          <p className="text-xs text-text-secondary">{tenant.propertyName} • {tenant.unitNumber}</p>
-                          <p className="text-xs text-text-tertiary">{formatCurrency(tenant.rentAmount || 0)}/mo</p>
-                          {tenant.phone && <p className="text-xs text-text-secondary">{tenant.phone}</p>}
-                          {tenant.address && <p className="text-xs text-text-tertiary">{tenant.address}</p>}
+                </div>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <span className="text-2xl font-extrabold text-slate-900 tabular-nums">
+                    {metric.value}
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    {metric.subtext}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </section>
+
+          {/* Search & Filter Toolbar */}
+          <div className="flex flex-col sm:flex-row items-center gap-3 rounded-2xl border border-slate-200/90 bg-white p-3 shadow-sm">
+            <div className="relative flex-1 w-full">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                type="search"
+                value={assignmentSearch}
+                onChange={(e) => setAssignmentSearch(e.target.value)}
+                placeholder="Search pending assignments by tenant name, property, or unit..."
+                className="h-10 pl-9 rounded-xl border-slate-200 bg-slate-50/50 text-xs focus:bg-white"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <select
+                value={assignmentPropertyFilter}
+                onChange={(e) => setAssignmentPropertyFilter(e.target.value)}
+                aria-label="Filter assignments by property"
+                className="h-10 w-full sm:w-52 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="all">All Properties ({pendingAssignments.length})</option>
+                {Array.from(new Set(pendingAssignments.map((t) => t.propertyName).filter(Boolean))).map((propName) => (
+                  <option key={propName as string} value={propName as string}>
+                    {propName as string}
+                  </option>
+                ))}
+              </select>
+
+              {(assignmentSearch || assignmentPropertyFilter !== "all") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignmentSearch("");
+                    setAssignmentPropertyFilter("all");
+                  }}
+                  className="h-10 px-3 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 shrink-0 flex items-center gap-1.5"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Assignment List */}
+          <Card className="border-slate-200/90 shadow-sm rounded-2xl overflow-hidden bg-white">
+            <CardContent className="p-4 sm:p-6">
+              {filteredPendingAssignments.length === 0 ? (
+                <div className="text-center py-14 px-4">
+                  <div className="relative mx-auto mb-4 h-16 w-16">
+                    <div className="absolute inset-0 rounded-2xl bg-emerald-100 animate-pulse opacity-60" />
+                    <div className="relative flex h-full w-full items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20">
+                      <CheckCircle2 className="h-8 w-8" />
+                    </div>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                    {pendingAssignments.length === 0 ? "All caught up on assignment reviews!" : "No matching assignments found"}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto mt-1">
+                    {pendingAssignments.length === 0
+                      ? "No pending tenant unit assignments waiting for your review. When your assigned agents submit new tenant placements, they will appear here for confirmation."
+                      : "No assignments match your current search or property filter. Try clearing filters to view all."}
+                  </p>
+                  {pendingAssignments.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setAssignmentSearch("");
+                        setAssignmentPropertyFilter("all");
+                      }}
+                      className="mt-4 text-xs font-semibold rounded-xl"
+                    >
+                      Clear Filters
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3.5">
+                  {filteredPendingAssignments.map((tenant) => {
+                    const isEntireProp = !tenant.unitNumber || tenant.unitNumber.trim() === "" || tenant.unitNumber.toLowerCase() === "entire property";
+
+                    return (
+                      <div
+                        key={tenant.id}
+                        className="group flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl border border-slate-200/90 bg-white hover:bg-slate-50/70 hover:border-blue-300 transition-all duration-150 shadow-xs"
+                      >
+                        {/* Tenant profile */}
+                        <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                          <Avatar
+                            src={tenant.avatarUrl}
+                            fallback={getInitials(tenant.name)}
+                            size="lg"
+                            className="ring-2 ring-blue-500/20 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm sm:text-base font-bold text-slate-900 leading-snug truncate">
+                                {tenant.name}
+                              </p>
+                              <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                                <Clock className="h-3 w-3" /> Pending Review
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-slate-500 truncate flex items-center gap-2 mt-0.5">
+                              <span>{tenant.email}</span>
+                              {tenant.phone && (
+                                <>
+                                  <span>•</span>
+                                  <span>{tenant.phone}</span>
+                                </>
+                              )}
+                            </p>
+
+                            {/* Property & scope badges */}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-700">
+                                <Building2 className="h-3.5 w-3.5 text-blue-600" />
+                                {tenant.propertyName || "Managed Property"}
+                              </span>
+
+                              <span className={cn(
+                                "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-bold",
+                                isEntireProp
+                                  ? "bg-purple-100 text-purple-700"
+                                  : "bg-emerald-100 text-emerald-800"
+                              )}>
+                                <Home className="h-3.5 w-3.5" />
+                                {isEntireProp ? "Entire Property" : `Unit ${tenant.unitNumber}`}
+                              </span>
+
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-extrabold text-emerald-800 bg-emerald-50">
+                                {formatCurrency(tenant.rentAmount || 0)} / mo
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center border-t sm:border-t-0 pt-3 sm:pt-0 w-full sm:w-auto justify-end">
+                          <Button
+                            size="sm"
+                            onClick={() => setReviewAssignment(tenant)}
+                            className="h-9 gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 shadow-sm shadow-blue-500/20"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Review Assignment
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            onClick={() => handleConfirmAssignment(tenant.id)}
+                            className="h-9 gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 shadow-sm shadow-emerald-500/20"
+                          >
+                            <Check className="h-3.5 w-3.5 stroke-[2.5]" />
+                            Approve
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Button size="sm" onClick={() => setReviewAssignment(tenant)} className="bg-blue-600 hover:bg-blue-700 text-white">
-                          <Eye className="h-4 w-4 mr-1" />Review
-                        </Button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </motion.div>
@@ -3211,45 +3417,172 @@ export default function OwnerDashboard() {
 
       {/* Review Assignment Modal */}
       {reviewAssignment && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { setReviewAssignment(null); setReturnReason(""); }} />
-          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-white shadow-2xl">
-            <div className="p-6 border-b border-border flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-foreground">Review Tenant Assignment</h3>
-                <p className="text-sm text-text-secondary">Review the details before confirming</p>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5">
+          <div
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            onClick={() => { setReviewAssignment(null); setReturnReason(""); }}
+          />
+          <div className="relative w-full max-w-xl rounded-3xl border border-slate-200/90 bg-white shadow-2xl overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="relative border-b border-slate-800 bg-gradient-to-r from-slate-950 via-blue-950 to-indigo-950 px-6 py-5 text-white shadow-md">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/20 ring-1 ring-white/20">
+                    <ClipboardCheck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-bold tracking-tight text-white">
+                      Review Tenant Assignment
+                    </h3>
+                    <p className="text-xs sm:text-sm text-slate-300 mt-0.5">
+                      Verify placement details submitted by the agent before confirming
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setReviewAssignment(null); setReturnReason(""); }}
+                  aria-label="Close review dialog"
+                  className="rounded-xl p-2 text-white/70 transition-all hover:bg-white/10 hover:text-white cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-              <button onClick={() => { setReviewAssignment(null); setReturnReason(""); }} className="h-8 w-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-surface-secondary transition-colors">
-                <X className="h-4 w-4" />
-              </button>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="flex items-center gap-3">
-                <Avatar src={reviewAssignment.avatarUrl} fallback={getInitials(reviewAssignment.name)} />
-                <div>
-                  <p className="font-medium text-foreground">{reviewAssignment.name}</p>
-                  <p className="text-sm text-text-secondary">{reviewAssignment.email}</p>
+
+            {/* Modal Body */}
+            <div className="p-5 sm:p-6 space-y-5 overflow-y-auto max-h-[75vh]">
+              {/* Tenant Profile Banner */}
+              <div className="flex items-center gap-3.5 p-4 rounded-2xl border border-slate-200/90 bg-gradient-to-r from-blue-50/60 to-indigo-50/40">
+                <Avatar
+                  src={reviewAssignment.avatarUrl}
+                  fallback={getInitials(reviewAssignment.name)}
+                  size="lg"
+                  className="ring-2 ring-blue-500/30 shrink-0"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-base font-bold text-slate-900 truncate leading-snug">
+                      {reviewAssignment.name}
+                    </p>
+                    <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                      Pending Approval
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 truncate flex items-center gap-1.5 mt-0.5">
+                    <Mail className="h-3 w-3 text-slate-400" />
+                    <span>{reviewAssignment.email}</span>
+                  </p>
+                  {reviewAssignment.phone && (
+                    <p className="text-xs text-slate-500 truncate flex items-center gap-1.5 mt-0.5">
+                      <Phone className="h-3 w-3 text-slate-400" />
+                      <span>{reviewAssignment.phone}</span>
+                    </p>
+                  )}
                 </div>
               </div>
-              <div className="p-4 rounded-xl border border-border space-y-2">
-                <p className="text-sm"><span className="font-medium">Property:</span> {reviewAssignment.propertyName}</p>
-                <p className="text-sm"><span className="font-medium">Unit:</span> {reviewAssignment.unitNumber}</p>
-                {reviewAssignment.phone && (
-                  <p className="text-sm"><span className="font-medium">Phone:</span> {reviewAssignment.phone}</p>
-                )}
-                <p className="text-sm"><span className="font-medium">Address:</span> {reviewAssignment.address || "No address provided"}</p>
-                <p className="text-sm"><span className="font-medium">Rental Rate:</span> {formatCurrency(reviewAssignment.rentAmount || 0)}/mo</p>
-                <p className="text-sm"><span className="font-medium">Status:</span> {reviewAssignment.assignmentStatus}</p>
+
+              {/* Assignment Details Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                {/* Property */}
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3.5 space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Property
+                  </span>
+                  <p className="text-sm font-bold text-slate-900 flex items-center gap-1.5 truncate">
+                    <Building2 className="h-4 w-4 text-blue-600 shrink-0" />
+                    <span>{reviewAssignment.propertyName || "Managed Property"}</span>
+                  </p>
+                </div>
+
+                {/* Scope / Unit */}
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3.5 space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Assigned Unit / Scope
+                  </span>
+                  <p className="text-sm font-bold text-slate-900 flex items-center gap-1.5 truncate">
+                    <Home className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>
+                      {reviewAssignment.unitNumber && reviewAssignment.unitNumber.trim() && reviewAssignment.unitNumber.toLowerCase() !== "entire property"
+                        ? `Unit #${reviewAssignment.unitNumber}`
+                        : "Entire Property"}
+                    </span>
+                  </p>
+                </div>
+
+                {/* Rental Rate */}
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3.5 space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Monthly Rental Rate
+                  </span>
+                  <p className="text-base font-extrabold text-emerald-700">
+                    {formatCurrency(reviewAssignment.rentAmount || 0)} <span className="text-xs font-normal text-slate-500">/ month</span>
+                  </p>
+                </div>
+
+                {/* Contract Start */}
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3.5 space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Contract Start Date
+                  </span>
+                  <p className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                    <CalendarDays className="h-4 w-4 text-indigo-600 shrink-0" />
+                    <span>{reviewAssignment.contractStart ? formatDate(reviewAssignment.contractStart) : "Upon confirmation"}</span>
+                  </p>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Reason for returning (if applicable)</label>
-                <textarea value={returnReason} onChange={(e) => setReturnReason(e.target.value)} className="w-full h-20 px-3 py-2 rounded-xl border border-border bg-surface-secondary text-sm resize-none" placeholder="Enter reason if returning to agent..." />
+
+              {/* Address detail if present */}
+              {reviewAssignment.address && (
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3 text-xs flex items-start gap-2 text-slate-600">
+                  <MapPin className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+                  <span className="truncate">{reviewAssignment.address}</span>
+                </div>
+              )}
+
+              {/* Reason for returning section */}
+              <div className="rounded-2xl border border-amber-200/80 bg-amber-50/40 p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800">
+                    Need revisions? Return to agent:
+                  </label>
+                  <span className="text-[10px] text-slate-500">Optional feedback</span>
+                </div>
+                <textarea
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                  className="w-full h-20 px-3 py-2 rounded-xl border border-amber-200 bg-white text-xs outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100 resize-none transition-all"
+                  placeholder="Explain what needs adjustment (e.g. incorrect rent rate, choose a different unit)..."
+                />
               </div>
             </div>
-            <div className="p-6 border-t border-border flex gap-3">
-              <Button variant="outline" onClick={() => { setReviewAssignment(null); setReturnReason(""); }} className="flex-1">Cancel</Button>
-              <Button variant="outline" onClick={handleReturnAssignment} className="flex-1 text-red-600 hover:text-red-700">Return to Agent</Button>
-              <Button onClick={() => handleConfirmAssignment(reviewAssignment.id)} className="flex-1 bg-green-600 hover:bg-green-700 text-white">Confirm Assignment</Button>
+
+            {/* Actions Footer */}
+            <div className="p-4 sm:p-5 border-t border-slate-200 bg-slate-50/80 flex flex-wrap items-center justify-end gap-2.5">
+              <Button
+                variant="outline"
+                onClick={() => { setReviewAssignment(null); setReturnReason(""); }}
+                className="h-10 text-xs px-4 rounded-xl border-slate-200"
+              >
+                Cancel
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={handleReturnAssignment}
+                className="h-10 text-xs px-4 rounded-xl text-rose-600 border-rose-200 hover:bg-rose-50 gap-1.5 font-semibold"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Return to Agent
+              </Button>
+
+              <Button
+                onClick={() => handleConfirmAssignment(reviewAssignment.id)}
+                className="h-10 gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold px-5 rounded-xl shadow-md shadow-emerald-500/20"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Confirm & Approve Assignment
+              </Button>
             </div>
           </div>
         </div>
