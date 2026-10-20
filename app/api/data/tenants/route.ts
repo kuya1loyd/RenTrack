@@ -189,146 +189,31 @@ export async function PATCH(request: NextRequest) {
       if (value === undefined || value === null) continue;
       cleaned[snake] = value;
     }
-if (auth.user.role === "agent") {
-      cleaned.assigned_agent_id = cleaned.assigned_agent_id || auth.userId;
-    }
-    if (cleaned.unit_id && auth.user.role === "agent") {
+
+    // Link agent to property if agent is assigning
+    if (auth.user.role === "agent") {
       try {
-        const { data: targetUnit } = await getAdminSupabase().from("units").select("property_id").eq("id", cleaned.unit_id).maybeSingle();
-        if (targetUnit?.property_id) {
-          const { data: targetProp } = await getAdminSupabase().from("properties").select("agent_id").eq("id", targetUnit.property_id).maybeSingle();
-          if (!targetProp?.agent_id) {
-            await getAdminSupabase().from("properties").update({ agent_id: auth.userId }).eq("id", targetUnit.property_id);
+        if (cleaned.unit_id) {
+          const { data: targetUnit } = await getAdminSupabase().from("units").select("property_id").eq("id", cleaned.unit_id).maybeSingle();
+          if (targetUnit?.property_id) {
+            const { data: targetProp } = await getAdminSupabase().from("properties").select("agent_id").eq("id", targetUnit.property_id).maybeSingle();
+            if (!targetProp?.agent_id) {
+              await getAdminSupabase().from("properties").update({ agent_id: auth.userId }).eq("id", targetUnit.property_id);
+            }
+          }
+        } else if (cleaned.property_name) {
+          const { data: targetProp } = await getAdminSupabase().from("properties").select("id, agent_id").ilike("name", cleaned.property_name).maybeSingle();
+          if (targetProp && !targetProp.agent_id) {
+            await getAdminSupabase().from("properties").update({ agent_id: auth.userId }).eq("id", targetProp.id);
           }
         }
       } catch (pErr) {
         console.warn("Could not link agent to property:", pErr);
       }
     }
-
 
-    const { data, error } = await getAdminSupabase()
-      .from("tenants")
-      .update(cleaned)
-      .eq("id", tenantId)
-      .select("*")
-      .single();
-
-    if (error) {
-      const code = String((error as any)?.code || "");
-      const message = String(error?.message || "");
-      const details = String((error as any)?.details || "");
-
-      if (code === "PGRST116" || message.includes("0 rows") || details.includes("0 rows")) {
-        const { data: userRow, error: userError } = await getAdminSupabase()
-          .schema("public").from("users")
-          .select("*")
-          .eq("id", tenantId)
-          .eq("role", "tenant")
-          .maybeSingle();
-
-        if (userError || !userRow) throw error;
-
-        const { data: existingTenant } = await getAdminSupabase()
-          .from("tenants")
-          .select("*")
-          .eq("id", tenantId)
-          .maybeSingle();
-
-        const mapTenant = (row: any) => sanitizeResponse({
-          id: row.id,
-          name: row.name,
-          email: row.email,
-          phone: row.phone,
-          address: row.address,
-          occupation: row.occupation,
-          emergencyContact: row.emergency_contact,
-          emergencyPhone: row.emergency_phone,
-          unitId: row.unit_id,
-          propertyName: row.property_name,
-          unitNumber: row.unit_number,
-          contractStart: row.contract_start,
-          contractEnd: row.contract_end,
-          rentAmount: row.rent_amount,
-          status: row.status,
-          assignmentStatus: row.assignment_status,
-          createdBy: row.created_by,
-          createdAt: row.created_at,
-          assignedAgentId: row.assigned_agent_id || null,
-          avatarUrl: null,
-          idVerificationUrl: null,
-          idVerificationStatus: null,
-        });
-
-        if (!existingTenant) {
-          const { error: insertError } = await getAdminSupabase().from("tenants").insert({
-            id: tenantId,
-            name: (userRow as any).name,
-            email: (userRow as any).email,
-            phone: (userRow as any).phone || null,
-            address: (userRow as any).address || null,
-            status: "active",
-            ...cleaned,
-          });
-          if (insertError) throw insertError;
-          const { data: inserted, error: insertedError } = await getAdminSupabase().from("tenants").select("*").eq("id", tenantId).single();
-          if (insertedError) throw insertedError;
-          return NextResponse.json({ success: true, tenant: mapTenant(inserted) });
-        }
-
-        const { data: relinked, error: relinkError } = await getAdminSupabase()
-          .from("tenants")
-          .update(cleaned)
-          .eq("id", tenantId)
-          .select("*")
-          .single();
-        if (relinkError) throw relinkError;
-        return NextResponse.json({ success: true, tenant: mapTenant(relinked) });
-      }
-
-      if (code === "PGRST204" || message.includes("assignmentStatus") || details.includes("assignmentStatus") || (message.toLowerCase().includes("column") && message.toLowerCase().includes("does not exist"))) {
-        const mapTenant = (row: any) => sanitizeResponse({
-          id: row.id,
-          name: row.name,
-          email: row.email,
-          phone: row.phone,
-          address: row.address,
-          occupation: row.occupation,
-          emergencyContact: row.emergency_contact,
-          emergencyPhone: row.emergency_phone,
-          unitId: row.unit_id,
-          propertyName: row.property_name,
-          unitNumber: row.unit_number,
-          contractStart: row.contract_start,
-          contractEnd: row.contract_end,
-          rentAmount: row.rent_amount,
-          status: row.status,
-          assignmentStatus: row.assignment_status,
-          createdBy: row.created_by,
-          createdAt: row.created_at,
-          assignedAgentId: row.assigned_agent_id || null,
-          avatarUrl: null,
-          idVerificationUrl: null,
-          idVerificationStatus: null,
-        });
-
-        try {
-          await getAdminSupabase().rpc("exec_sql", { sql: `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS assignment_status TEXT DEFAULT '' CHECK (assignment_status IN ('', 'pending', 'confirmed', 'rejected'))`, params: [] });
-        } catch {
-          // ignore migration errors from cached RPC
-        }
-        const { data: retryData, error: retryError } = await getAdminSupabase()
-          .from("tenants")
-          .update(cleaned)
-          .eq("id", tenantId)
-          .select("*")
-          .single();
-        if (retryError) throw retryError;
-        return NextResponse.json({ success: true, tenant: mapTenant(retryData) });
-      }
-
-      throw error;
-    }
+    // Never send assigned_agent_id to tenants table as it does not exist in schema cache
+    delete cleaned.assigned_agent_id;
 
     const mapTenant = (row: any) => sanitizeResponse({
       id: row.id,
@@ -349,14 +234,131 @@ if (auth.user.role === "agent") {
       assignmentStatus: row.assignment_status,
       createdBy: row.created_by,
       createdAt: row.created_at,
-      assignedAgentId: row.assigned_agent_id || null,
+      assignedAgentId: auth.user.role === "agent" ? auth.userId : row.assigned_agent_id || null,
       avatarUrl: null,
       idVerificationUrl: null,
       idVerificationStatus: null,
     });
 
+    let payloadToUpdate = { ...cleaned };
+
+    let { data, error } = await getAdminSupabase()
+      .from("tenants")
+      .update(payloadToUpdate)
+      .eq("id", tenantId)
+      .select("*")
+      .maybeSingle();
+
+    if (error) {
+      const code = String((error as any)?.code || "");
+      const message = String(error?.message || "");
+      const details = String((error as any)?.details || "");
+
+      // If a column is missing in schema cache, strip it and retry safely
+      if (
+        code === "PGRST204" ||
+        message.toLowerCase().includes("schema cache") ||
+        message.toLowerCase().includes("column") ||
+        details.toLowerCase().includes("column")
+      ) {
+        const missingMatch = message.match(/'([^']+)' column/i);
+        if (missingMatch && missingMatch[1]) {
+          delete payloadToUpdate[missingMatch[1]];
+        }
+        delete payloadToUpdate.assigned_agent_id;
+
+        const retryResult = await getAdminSupabase()
+          .from("tenants")
+          .update(payloadToUpdate)
+          .eq("id", tenantId)
+          .select("*")
+          .maybeSingle();
+
+        if (!retryResult.error && retryResult.data) {
+          data = retryResult.data;
+          error = null;
+        } else if (retryResult.error) {
+          // If assignment_status is also missing from cache, strip and try once more
+          delete payloadToUpdate.assignment_status;
+          const retry2 = await getAdminSupabase()
+            .from("tenants")
+            .update(payloadToUpdate)
+            .eq("id", tenantId)
+            .select("*")
+            .maybeSingle();
+          if (!retry2.error && retry2.data) {
+            data = retry2.data;
+            error = null;
+          } else {
+            error = retry2.error;
+          }
+        }
+      }
+
+      if (error && (code === "PGRST116" || message.includes("0 rows") || details.includes("0 rows"))) {
+        const { data: userRow, error: userError } = await getAdminSupabase()
+          .schema("public").from("users")
+          .select("*")
+          .eq("id", tenantId)
+          .eq("role", "tenant")
+          .maybeSingle();
+
+        if (userError || !userRow) throw error;
+
+        const { data: existingTenant } = await getAdminSupabase()
+          .from("tenants")
+          .select("*")
+          .eq("id", tenantId)
+          .maybeSingle();
+
+        delete payloadToUpdate.assigned_agent_id;
+
+        if (!existingTenant) {
+          const { error: insertError } = await getAdminSupabase().from("tenants").insert({
+            id: tenantId,
+            name: (userRow as any).name,
+            email: (userRow as any).email,
+            phone: (userRow as any).phone || null,
+            address: (userRow as any).address || null,
+            status: "active",
+            ...payloadToUpdate,
+          });
+          if (insertError) {
+            delete payloadToUpdate.assignment_status;
+            const { error: insertError2 } = await getAdminSupabase().from("tenants").insert({
+              id: tenantId,
+              name: (userRow as any).name,
+              email: (userRow as any).email,
+              phone: (userRow as any).phone || null,
+              address: (userRow as any).address || null,
+              status: "active",
+              ...payloadToUpdate,
+            });
+            if (insertError2) throw insertError2;
+          }
+          const { data: inserted, error: insertedError } = await getAdminSupabase().from("tenants").select("*").eq("id", tenantId).single();
+          if (insertedError) throw insertedError;
+          return NextResponse.json({ success: true, tenant: mapTenant(inserted) });
+        }
+
+        const { data: relinked, error: relinkError } = await getAdminSupabase()
+          .from("tenants")
+          .update(payloadToUpdate)
+          .eq("id", tenantId)
+          .select("*")
+          .single();
+        if (relinkError) throw relinkError;
+        return NextResponse.json({ success: true, tenant: mapTenant(relinked) });
+      }
+
+      if (error) {
+        console.error("Patch tenant error after retry:", error);
+        throw error;
+      }
+    }
+
     if (cleaned.unit_id !== undefined || cleaned.assignment_status !== undefined) {
-      await syncTenantUnit(tenantId, cleaned.unit_id || data.unit_id || null, cleaned.assignment_status || data.assignment_status || "");
+      await syncTenantUnit(tenantId, cleaned.unit_id || data?.unit_id || null, cleaned.assignment_status || data?.assignment_status || "");
     }
     if (cleaned.name || cleaned.phone !== undefined || cleaned.address !== undefined) {
       try {
