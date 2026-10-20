@@ -831,12 +831,12 @@ export default function AssignTenantModal({
                           </span>
                         </div>
 
-                        {/* If it's a property without a specific unit, do NOT display a fake unit number! */}
+                        {/* If it's a property without a specific unit, show Property Location / Address instead of Unit Number */}
                         {isTargetPropertyOnly ? (
                           <div className="flex justify-between items-center">
-                            <span className="text-slate-500">Assignment Scope:</span>
-                            <span className="inline-flex items-center gap-1 font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md">
-                              {assignForm.unitNumber.trim() ? `Unit #${assignForm.unitNumber.trim()}` : "Entire Property"}
+                            <span className="text-slate-500">Location / Address:</span>
+                            <span className="font-semibold text-slate-800 truncate max-w-[220px]">
+                              {selectedProperty?.location || "Managed Property"}
                             </span>
                           </div>
                         ) : (
@@ -879,23 +879,32 @@ export default function AssignTenantModal({
                           />
                         </div>
 
-                        {/* Dynamic Unit field: If property is chosen, unit is optional; if unit is chosen, it's specific */}
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                            {isTargetPropertyOnly ? "Unit / House No. (Optional)" : "Unit Number"}
-                            {isTargetPropertyOnly && (
-                              <span className="text-slate-400 font-normal text-[11px] ml-1.5">
-                                (Leave blank for Entire Property)
-                              </span>
-                            )}
-                          </label>
-                          <Input
-                            value={assignForm.unitNumber}
-                            onChange={(e) => setAssignForm({ ...assignForm, unitNumber: e.target.value })}
-                            placeholder={isTargetPropertyOnly ? "e.g. Entire Property, Unit 1, or leave blank" : "Unit number"}
-                            className="h-10 text-xs rounded-xl bg-white border-slate-200"
-                          />
-                        </div>
+                        {/* Dynamic Field: If property is chosen, show Property Location / Address; if unit is chosen, show Unit Number */}
+                        {isTargetPropertyOnly ? (
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                              Property Location / Address
+                            </label>
+                            <Input
+                              value={selectedProperty?.location || ""}
+                              readOnly
+                              placeholder="Property location / address"
+                              className="h-10 text-xs rounded-xl bg-slate-50 border-slate-200 text-slate-700 cursor-default"
+                            />
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                              Unit Number
+                            </label>
+                            <Input
+                              value={assignForm.unitNumber}
+                              onChange={(e) => setAssignForm({ ...assignForm, unitNumber: e.target.value })}
+                              placeholder="Unit number"
+                              className="h-10 text-xs rounded-xl bg-white border-slate-200"
+                            />
+                          </div>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
