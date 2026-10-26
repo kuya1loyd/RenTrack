@@ -121,6 +121,11 @@ export interface Property {
   condition?: string;
   maintenanceReason?: string;
   availabilityStatus?: "Available" | "Occupied" | "Reserved" | "Under Maintenance";
+  address?: string;
+  city?: string;
+  province?: string;
+  rentAmount?: number;
+  monthlyRent?: number;
 }
 
 export interface Unit {

@@ -599,7 +599,7 @@ export default function AdminDashboard() {
         const rate = propUnits.length ? Math.round((occ / propUnits.length) * 100) : 0;
         return [
           p.name,
-          p.location || p.address || "â€”",
+          p.location || p.address || "—",
           p.type === "condominium" ? "Condominium" : "Residential House",
           propUnits.length,
           occ,
@@ -2574,7 +2574,7 @@ export default function AdminDashboard() {
                             <TableCell className="px-2 py-2.5 max-w-[200px] truncate">
                               <div className="flex items-center gap-1 text-gray-600 dark:text-gray-300 text-xs truncate">
                                 <MapPin className="h-3.5 w-3.5 shrink-0 text-red-500" />
-                                <span className="truncate">{p.location || p.address || "â€”"}</span>
+                                <span className="truncate">{p.location || p.address || "—"}</span>
                               </div>
                             </TableCell>
 
