@@ -6,7 +6,7 @@ import {
   Users, Settings, Activity, FileText, Stethoscope,
   Heart, CheckCircle2, XCircle, Search, Trash2,
   UserPlus, RefreshCw, Sliders,
-  Bell, Home, Building2, CreditCard, Star, Plus,
+  Bell, Home, Building2, CreditCard, Star, Plus, BarChart3, DoorOpen,
   LayoutDashboard, MapPinned, HeartPulse, SlidersHorizontal,
   Eye, Pencil, KeyRound, Copy, Mail, MessageSquare, Phone,
   Shield, ShieldOff, RotateCcw, Download, ChevronDown, MoreHorizontal, ShieldCheck,
@@ -201,6 +201,10 @@ export default function AdminDashboard() {
   const [propertySearch, setPropertySearch] = useState("");
   const [propertyTypeFilter, setPropertyTypeFilter] = useState("all");
   const [propertyStatusFilter, setPropertyStatusFilter] = useState("all");
+  const [occupancySearch, setOccupancySearch] = useState("");
+  const [occupancyFilter, setOccupancyFilter] = useState<"all" | "full" | "partial" | "vacant">("all");
+  const [occupancyTypeFilter, setOccupancyTypeFilter] = useState("all");
+  const [occupancySort, setOccupancySort] = useState<"rate-desc" | "rate-asc" | "name-asc" | "units-desc">("rate-desc");
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "owner" | "agent" | "tenant">("all");
   const [userStatusFilter, setUserStatusFilter] = useState<"all" | "verified" | "pending" | "unverified" | "not_required">("all");
@@ -266,7 +270,7 @@ export default function AdminDashboard() {
   const [customMaintenanceReason, setCustomMaintenanceReason] = useState<string>("");
   const [isUpdatingMaintenance, setIsUpdatingMaintenance] = useState(false);
   const [maintenanceCustomNote, setMaintenanceCustomNote] = useState("");
-  const [maintenanceDuration, setMaintenanceDuration] = useState("30 to 60 minutes");
+  const [maintenanceDuration, setMaintenanceDuration] = useState("10 minutes");
   const [showMaintenanceConfirmModal, setShowMaintenanceConfirmModal] = useState(false);
   const [enableMaintenanceInModal, setEnableMaintenanceInModal] = useState(true);
 
@@ -274,7 +278,10 @@ export default function AdminDashboard() {
     if (systemConfig?.maintenance_reason) {
       setMaintenanceReason(systemConfig.maintenance_reason);
     }
-  }, [systemConfig?.maintenance_reason]);
+    if (systemConfig?.maintenance_estimated_downtime) {
+      setMaintenanceDuration(systemConfig.maintenance_estimated_downtime);
+    }
+  }, [systemConfig?.maintenance_reason, systemConfig?.maintenance_estimated_downtime]);
   const [announcementTitle, setAnnouncementTitle] = useState("");
   const [announcementMessage, setAnnouncementMessage] = useState("");
   const [isSendingAnnouncement, setIsSendingAnnouncement] = useState(false);
@@ -541,6 +548,69 @@ export default function AdminDashboard() {
       return haystack.includes(q);
     });
   }, [ratings, ratingSearch, ratingTargetFilter, ratingScoreFilter]);
+
+  const filteredOccupancyProperties = useMemo(() => {
+    return properties.filter((property) => {
+      if (occupancySearch) {
+        const q = occupancySearch.toLowerCase();
+        const matchName = property.name?.toLowerCase().includes(q);
+        const matchLocation = property.location?.toLowerCase().includes(q);
+        const matchAddress = property.address?.toLowerCase().includes(q);
+        const matchCity = property.city?.toLowerCase().includes(q);
+        if (!matchName && !matchLocation && !matchAddress && !matchCity) return false;
+      }
+      if (occupancyTypeFilter !== "all") {
+        if (property.type?.toLowerCase() !== occupancyTypeFilter.toLowerCase()) return false;
+      }
+      const propUnits = units.filter((u) => u.propertyId === property.id);
+      const occupied = propUnits.filter((u) => u.status === "occupied").length;
+      const rate = propUnits.length ? Math.round((occupied / propUnits.length) * 100) : 0;
+      if (occupancyFilter === "full" && (rate < 100 || propUnits.length === 0)) return false;
+      if (occupancyFilter === "partial" && (rate <= 0 || rate >= 100)) return false;
+      if (occupancyFilter === "vacant" && rate > 0) return false;
+      return true;
+    }).sort((a, b) => {
+      const aUnits = units.filter((u) => u.propertyId === a.id);
+      const bUnits = units.filter((u) => u.propertyId === b.id);
+      const aOccupied = aUnits.filter((u) => u.status === "occupied").length;
+      const bOccupied = bUnits.filter((u) => u.status === "occupied").length;
+      const aRate = aUnits.length ? Math.round((aOccupied / aUnits.length) * 100) : 0;
+      const bRate = bUnits.length ? Math.round((bOccupied / bUnits.length) * 100) : 0;
+
+      if (occupancySort === "rate-desc") return bRate - aRate;
+      if (occupancySort === "rate-asc") return aRate - bRate;
+      if (occupancySort === "units-desc") return bUnits.length - aUnits.length;
+      return a.name.localeCompare(b.name);
+    });
+  }, [properties, units, occupancySearch, occupancyTypeFilter, occupancyFilter, occupancySort]);
+
+  const totalPortfolioUnits = units.length;
+  const totalPortfolioOccupied = units.filter((u) => u.status === "occupied").length;
+  const totalPortfolioVacant = units.filter((u) => u.status === "vacant").length;
+  const portfolioOccupancyRate = totalPortfolioUnits > 0 ? Math.round((totalPortfolioOccupied / totalPortfolioUnits) * 100) : 0;
+
+  const downloadAdminOccupancyExport = () => {
+    const rows: Array<Array<string | number>> = [
+      ["Property Name", "Location", "Property Type", "Total Units", "Occupied Units", "Vacant Units", "Occupancy Rate (%)", "Status"],
+      ...filteredOccupancyProperties.map((p) => {
+        const propUnits = units.filter((u) => u.propertyId === p.id);
+        const occ = propUnits.filter((u) => u.status === "occupied").length;
+        const vac = propUnits.filter((u) => u.status === "vacant").length;
+        const rate = propUnits.length ? Math.round((occ / propUnits.length) * 100) : 0;
+        return [
+          p.name,
+          p.location || p.address || "â€”",
+          p.type === "condominium" ? "Condominium" : "Residential House",
+          propUnits.length,
+          occ,
+          vac,
+          `${rate}%`,
+          p.status || "active",
+        ];
+      }),
+    ];
+    downloadExcelReport(`admin-occupancy-${new Date().toISOString().slice(0, 10)}.xls`, [{ name: "Occupancy", rows }]);
+  };
 
   const filteredProperties = useMemo(() => {
     const q = propertySearch.trim().toLowerCase();
@@ -2252,6 +2322,363 @@ export default function AdminDashboard() {
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
+                            </TableCell>
+                          </motion.tr>
+                        );
+                      })}
+                    </TableBody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Occupancy Tab */}
+      {activeTab === "occupancy" && (
+        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="space-y-6">
+          <ManagementBanner
+            category="PORTFOLIO HEALTH"
+            title="Occupancy Overview"
+            description="Real-time availability, tenant occupancy, and unit progress tracks across all properties in the portfolio."
+            icon={BarChart3}
+            actions={
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push("/dashboard/admin?tab=properties")}
+                  className="gap-2 bg-white text-slate-700 hover:bg-slate-50 border-slate-200 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 cursor-pointer shadow-2xs"
+                >
+                  <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <span>View Properties</span>
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={downloadAdminOccupancyExport}
+                  className="gap-2 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-xs"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Export Report</span>
+                </Button>
+              </div>
+            }
+          />
+
+          {/* KPI Metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="border-gray-200 dark:border-gray-800 p-4 shadow-xs bg-white dark:bg-gray-900">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Occupancy Rate</span>
+                <div className="p-2 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400">
+                  <BarChart3 className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-slate-900 dark:text-white">{portfolioOccupancyRate}%</span>
+                <span className="text-xs text-slate-500">portfolio wide</span>
+              </div>
+              <div className="mt-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all duration-500",
+                    portfolioOccupancyRate >= 80 ? "bg-emerald-500" : portfolioOccupancyRate >= 50 ? "bg-blue-500" : "bg-amber-500"
+                  )}
+                  style={{ width: `${Math.min(portfolioOccupancyRate, 100)}%` }}
+                />
+              </div>
+            </Card>
+
+            <Card className="border-gray-200 dark:border-gray-800 p-4 shadow-xs bg-white dark:bg-gray-900">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Properties</span>
+                <div className="p-2 rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400">
+                  <Building2 className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-slate-900 dark:text-white">{properties.length}</span>
+                <span className="text-xs text-slate-500">{totalPortfolioUnits} total units</span>
+              </div>
+              <p className="mt-3 text-xs text-slate-500 truncate">Across all registered developments</p>
+            </Card>
+
+            <Card className="border-gray-200 dark:border-gray-800 p-4 shadow-xs bg-white dark:bg-gray-900">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Occupied Units</span>
+                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+                  <CheckCircle2 className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{totalPortfolioOccupied}</span>
+                <span className="text-xs text-slate-500">leased units</span>
+              </div>
+              <p className="mt-3 text-xs text-slate-500 truncate">Active tenancy agreements</p>
+            </Card>
+
+            <Card className="border-gray-200 dark:border-gray-800 p-4 shadow-xs bg-white dark:bg-gray-900">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Vacant Units</span>
+                <div className="p-2 rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
+                  <DoorOpen className="h-4 w-4" />
+                </div>
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-amber-600 dark:text-amber-400">{totalPortfolioVacant}</span>
+                <span className="text-xs text-slate-500">available now</span>
+              </div>
+              <p className="mt-3 text-xs text-slate-500 truncate">Ready for new tenant placement</p>
+            </Card>
+          </div>
+
+          {/* Filter Toolbar */}
+          <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-xs dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Input
+                  value={occupancySearch}
+                  onChange={(e) => setOccupancySearch(e.target.value)}
+                  placeholder="Search occupancy by property name or location..."
+                  className="h-10 w-full rounded-xl border-gray-200 bg-gray-50/50 pl-10 text-sm focus:border-blue-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800"
+                />
+                {occupancySearch && (
+                  <button onClick={() => setOccupancySearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-gray-400 hover:text-gray-600 cursor-pointer">
+                    <XCircle className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <AnimatedFilterDropdown
+                  label="Occupancy"
+                  value={occupancyFilter}
+                  onChange={(e) => setOccupancyFilter(e.target.value as any)}
+                  options={[
+                    { value: "all", label: "All Occupancies" },
+                    { value: "full", label: "100% Fully Occupied" },
+                    { value: "partial", label: "Partially Occupied" },
+                    { value: "vacant", label: "0% Vacant" },
+                  ]}
+                />
+
+                <AnimatedFilterDropdown
+                  label="Type"
+                  value={occupancyTypeFilter}
+                  onChange={(e) => setOccupancyTypeFilter(e.target.value)}
+                  options={[
+                    { value: "all", label: "All Types" },
+                    { value: "house", label: "House / Residential" },
+                    { value: "condominium", label: "Condominium" },
+                  ]}
+                />
+
+                <AnimatedFilterDropdown
+                  label="Sort"
+                  value={occupancySort}
+                  onChange={(e) => setOccupancySort(e.target.value as any)}
+                  options={[
+                    { value: "rate-desc", label: "Highest Occupancy" },
+                    { value: "rate-asc", label: "Lowest Occupancy" },
+                    { value: "name-asc", label: "Property Name (A-Z)" },
+                    { value: "units-desc", label: "Most Units" },
+                  ]}
+                />
+
+                {(occupancySearch || occupancyFilter !== "all" || occupancyTypeFilter !== "all" || occupancySort !== "rate-desc") && (
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => {
+                      setOccupancySearch("");
+                      setOccupancyFilter("all");
+                      setOccupancyTypeFilter("all");
+                      setOccupancySort("rate-desc");
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:border-gray-400 hover:text-gray-900 cursor-pointer"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Reset
+                  </motion.button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Breakdown Table */}
+          <Card className="overflow-hidden border border-gray-200 shadow-sm dark:border-gray-800">
+            <CardHeader className="border-b border-gray-100 bg-gray-50/60 px-6 py-4 dark:border-gray-800 dark:bg-gray-800/40">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base font-bold text-gray-900 dark:text-white">Property Occupancy Breakdown</CardTitle>
+                  <CardDescription className="text-xs">Showing {filteredOccupancyProperties.length} of {properties.length} properties</CardDescription>
+                </div>
+                <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 font-semibold text-xs">
+                  {filteredOccupancyProperties.length} properties
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {filteredOccupancyProperties.length === 0 ? (
+                <div className="py-12 text-center text-sm text-gray-500">No properties match your occupancy search or filter.</div>
+              ) : (
+                <div className="table-scroll-box w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[680px]">
+                  <table className="w-full min-w-[1050px] border-collapse text-left caption-bottom text-xs">
+                    <TableHeader className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-800/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-800 shadow-2xs">
+                      <TableRow className="bg-transparent text-[10px] uppercase tracking-wider text-gray-500 font-semibold whitespace-nowrap">
+                        <TableHead className="pl-4 pr-2 py-2.5 h-10 font-semibold">Photo</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Property Name</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Location / Address</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Type</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold text-center">Total Units</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold text-center">Occupied</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold text-center">Vacant</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold min-w-[180px]">Occupancy Rate</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Status</TableHead>
+                        <TableHead className="pr-4 pl-2 py-2.5 h-10 text-right font-semibold">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredOccupancyProperties.map((p, i) => {
+                        const propUnits = units.filter((u) => u.propertyId === p.id);
+                        const occ = propUnits.filter((u) => u.status === "occupied").length;
+                        const vac = propUnits.filter((u) => u.status === "vacant").length;
+                        const rate = propUnits.length ? Math.round((occ / propUnits.length) * 100) : 0;
+                        const propImgs = p.imageUrls?.length ? p.imageUrls : p.imageUrl ? [p.imageUrl] : [];
+
+                        return (
+                          <motion.tr
+                            key={p.id}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: i * 0.02, duration: 0.2 }}
+                            className="border-b border-gray-100 hover:bg-surface-secondary transition-colors"
+                          >
+                            <TableCell className="pl-4 pr-2 py-2">
+                              <UnitImageCarousel
+                                images={propImgs}
+                                alt={p.name}
+                                title={p.name}
+                                subtitle={p.location}
+                                className="h-10 w-14 shrink-0 rounded-lg"
+                              />
+                            </TableCell>
+
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <div className="font-semibold text-gray-900 dark:text-white text-xs">{p.name}</div>
+                              <span className="text-[10px] text-gray-400">ID: {p.id.slice(0, 10)}</span>
+                            </TableCell>
+
+                            <TableCell className="px-2 py-2.5 max-w-[200px] truncate">
+                              <div className="flex items-center gap-1 text-gray-600 dark:text-gray-300 text-xs truncate">
+                                <MapPin className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                                <span className="truncate">{p.location || p.address || "â€”"}</span>
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800">
+                                {p.type || "residential"}
+                              </span>
+                            </TableCell>
+
+                            <TableCell className="px-2 py-2.5 text-center font-bold text-gray-800 dark:text-gray-200">
+                              {propUnits.length}
+                            </TableCell>
+
+                            <TableCell className="px-2 py-2.5 text-center">
+                              <span className="inline-flex items-center justify-center min-w-[24px] h-6 rounded-md bg-emerald-50 text-emerald-700 font-semibold text-xs border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
+                                {occ}
+                              </span>
+                            </TableCell>
+
+                            <TableCell className="px-2 py-2.5 text-center">
+                              <span className="inline-flex items-center justify-center min-w-[24px] h-6 rounded-md bg-amber-50 text-amber-700 font-semibold text-xs border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
+                                {vac}
+                              </span>
+                            </TableCell>
+
+                            <TableCell className="px-2 py-2.5">
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="font-bold text-slate-800 dark:text-slate-200">{rate}%</span>
+                                  <span className="text-[10px] text-slate-400">{occ}/{propUnits.length} units</span>
+                                </div>
+                                <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2 overflow-hidden">
+                                  <div
+                                    className={cn(
+                                      "h-full rounded-full transition-all duration-300",
+                                      rate >= 80 ? "bg-emerald-500" : rate >= 50 ? "bg-blue-500" : "bg-amber-500"
+                                    )}
+                                    style={{ width: `${Math.min(rate, 100)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <span className={cn(
+                                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize",
+                                rate === 100 && propUnits.length > 0 && "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
+                                rate > 0 && rate < 100 && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300",
+                                (rate === 0 || propUnits.length === 0) && "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300",
+                              )}>
+                                <span className={cn(
+                                  "h-1.5 w-1.5 rounded-full",
+                                  rate === 100 && propUnits.length > 0 ? "bg-emerald-500" : rate > 0 ? "bg-blue-500" : "bg-amber-500"
+                                )} />
+                                {rate === 100 && propUnits.length > 0 ? "Fully Occupied" : rate > 0 ? "Partially Occupied" : "Vacant"}
+                              </span>
+                            </TableCell>
+
+                            <TableCell className="pr-4 pl-2 py-2.5 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setUnitPropertyFilter(p.id);
+                                    router.push("/dashboard/admin?tab=units");
+                                  }}
+                                  className="h-7 text-xs px-2.5 gap-1 text-blue-600 border-blue-200 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 cursor-pointer"
+                                >
+                                  <DoorOpen className="h-3.5 w-3.5" />
+                                  <span>View Units</span>
+                                </Button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <motion.button
+                                      whileHover={{ scale: 1.1 }}
+                                      whileTap={{ scale: 0.95 }}
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600 focus:outline-none dark:border-gray-700 dark:text-gray-400 cursor-pointer"
+                                      aria-label="Property actions"
+                                    >
+                                      <MoreHorizontal className="h-3.5 w-3.5" />
+                                    </motion.button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-xl">
+                                    <DropdownMenuItem
+                                      onSelect={() => setSelectedPropertyDetails(p)}
+                                      className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
+                                    >
+                                      <Eye className="h-3.5 w-3.5 text-blue-500" />
+                                      <span>View Property Details</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onSelect={() => {
+                                        navigator.clipboard.writeText(p.id);
+                                        toast.success("Property ID copied to clipboard");
+                                      }}
+                                      className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
+                                    >
+                                      <Copy className="h-3.5 w-3.5 text-gray-500" />
+                                      <span>Copy Property ID</span>
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
                             </TableCell>
                           </motion.tr>
                         );
@@ -3984,7 +4411,7 @@ export default function AdminDashboard() {
                         <Button
                           size="sm"
                           disabled={isUpdatingMaintenance}
-                          onClick={() => handleMaintenanceChange(true)}
+                          onClick={() => handleMaintenanceChange(true, undefined, maintenanceDuration, maintenanceReason)}
                           className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold h-8.5 gap-1.5 shadow-xs"
                         >
                           {isUpdatingMaintenance ? (

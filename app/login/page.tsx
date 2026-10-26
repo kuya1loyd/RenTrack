@@ -112,7 +112,7 @@ function LoginContent() {
             reason: data.reason || "Unit Repair & Renovation (Scheduled unit repairs)",
             date: data.date || new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
             time: data.time || new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
-            estimatedDowntime: data.estimatedDowntime || "30 to 60 minutes",
+            estimatedDowntime: data.estimatedDowntime || "",
             message: data.error || "The system is currently under scheduled maintenance. Only administrators can sign in at this time.",
           });
           return;
@@ -381,10 +381,10 @@ function LoginContent() {
                   <div>
                     <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-zinc-400">
                       <Calendar className="h-3.5 w-3.5 text-emerald-500" />
-                      <span>Duration</span>
+                      <span>{maintenanceModal.estimatedDowntime ? "Duration" : "Status"}</span>
                     </div>
                     <p className="mt-1 text-xs sm:text-sm font-semibold text-gray-900 dark:text-white">
-                      {maintenanceModal.estimatedDowntime || "30 to 60 minutes"}
+                      {maintenanceModal.estimatedDowntime || "In Progress"}
                     </p>
                   </div>
                 </div>

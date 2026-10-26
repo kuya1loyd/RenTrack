@@ -216,17 +216,72 @@ export default function LandingPage() {
   const propertyTypes = Array.from(new Set(properties.map((property: any) => property.type).filter(Boolean)));
   const minPrice = minPriceFilter ? Number(minPriceFilter) : 0;
   const maxPrice = maxPriceFilter ? Number(maxPriceFilter) : Number.POSITIVE_INFINITY;
+  const getRoomCountDisplay = (item: any, kind: "bedroom" | "bathroom"): string => {
+    if (!item) return "Not specified";
+
+    const directKeys = [
+      `${kind}s`,
+      kind,
+      `${kind}Count`,
+      `${kind}_count`,
+      `${kind}s_count`,
+      `total_${kind}s`,
+      `num_${kind}s`,
+    ];
+    for (const key of directKeys) {
+      const val = item[key];
+      if (val !== undefined && val !== null && val !== "" && !isNaN(Number(val))) {
+        const num = Number(val);
+        if (num > 0) {
+          return `${num} ${num === 1 ? (kind === "bedroom" ? "Bedroom" : "Bathroom") : (kind === "bedroom" ? "Bedrooms" : "Bathrooms")}`;
+        }
+      }
+    }
+
+    const features: string[] = Array.isArray(item.features)
+      ? item.features
+      : (typeof item.features === "string" ? [item.features] : []);
+
+    for (const f of features) {
+      if (typeof f !== "string") continue;
+      const match = f.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*\\+?\\s*${kind === "bedroom" ? "bed(room)?" : "bath(room)?"}s?`, "i"));
+      if (match) {
+        const num = match[1];
+        const hasPlus = f.includes("+");
+        return `${num}${hasPlus ? "+" : ""} ${Number(num) === 1 && !hasPlus ? (kind === "bedroom" ? "Bedroom" : "Bathroom") : (kind === "bedroom" ? "Bedrooms" : "Bathrooms")}`;
+      }
+      if (kind === "bedroom") {
+        const brMatch = f.match(/(\d+)\s*br\b/i);
+        if (brMatch) {
+          const num = brMatch[1];
+          return `${num} ${Number(num) === 1 ? "Bedroom" : "Bedrooms"}`;
+        }
+      }
+      if (kind === "bathroom") {
+        const baMatch = f.match(/(\d+(?:\.\d+)?)\s*(ba|tb|t&b)\b/i);
+        if (baMatch) {
+          const num = baMatch[1];
+          return `${num} ${Number(num) === 1 ? "Bathroom" : "Bathrooms"}`;
+        }
+      }
+    }
+
+    return "Not specified";
+  };
+
+  const getRoomCountNumber = (item: any, kind: "bedroom" | "bathroom"): number | null => {
+    const text = getRoomCountDisplay(item, kind);
+    const match = text.match(/^(\d+(?:\.\d+)?)/);
+    return match ? Number(match[1]) : null;
+  };
+
   const matchesRoomCount = (property: any, kind: "bedroom" | "bathroom", filter: string) => {
     if (!filter) return true;
-    const directValue = Number(property?.[`${kind}s`]);
-    const featureText = (Array.isArray(property?.features) ? property.features : [])
-      .filter((feature: unknown): feature is string => typeof feature === "string")
-      .join(" ");
-    const match = featureText.match(new RegExp(`(\\d+)\\s*\\+?\\s*${kind}s?`, "i"));
-    const count = Number.isFinite(directValue) && directValue > 0 ? directValue : match ? Number(match[1]) : null;
+    const count = getRoomCountNumber(property, kind);
     if (count === null) return false;
     return filter === "4+" ? count >= 4 : count === Number(filter);
   };
+
   const matchesFurnishing = (property: any) => {
     if (!furnishingFilter) return true;
     return Array.isArray(property?.features) && property.features.some((feature: unknown) => {
@@ -236,6 +291,11 @@ export default function LandingPage() {
         ? /^(fully\s+|semi\s+)?furnished\b/.test(normalized)
         : /^unfurnished\b/.test(normalized);
     });
+  };
+
+  const isCondominiumProperty = (p: any) => {
+    const t = String(p?.type || "").toLowerCase();
+    return t === "condominium" || t === "condo";
   };
 
   const matchesPropertyTypeFilter = (rawType: any, isUnit = false) => {
@@ -258,15 +318,21 @@ export default function LandingPage() {
   };
 
   const matchesPropertyFilters = (property: any, unit?: any) => {
+    // Hide parent condominium properties from separate property cards;
+    // only its individual registered rental units will be displayed.
+    if (isCondominiumProperty(property)) return false;
     if (propertyTypeFilter === "units") return false;
+    if (propertyTypeFilter === "condominium" || propertyTypeFilter === "condo") return false;
+
     const propertyName = property?.name || "";
     const propertyLocation = property?.location || property?.city || property?.province || unit?.location || unit?.propertyLocation || "";
-    const propertyType = property?.type || unit?.type || "";
+    const propertyType = property?.type || unit?.type || "house";
     const propUnits = units.filter((u: any) => (u.propertyId || u.property_id) === property?.id);
     const rents = propUnits.map((u: any) => Number(u.rentAmount ?? u.rent_amount ?? 0)).filter(Boolean);
     const rentAmount = rents.length ? Math.min(...rents) : Number(unit?.rentAmount ?? unit?.rent_amount ?? property?.monthlyRevenue ?? property?.rentAmount ?? property?.monthlyRent ?? 0);
     const haystack = [propertyName, propertyLocation, property?.address, property?.city, property?.province, propertyType, unit?.unitNumber, unit?.unit_number, unit?.status]
       .filter(Boolean).join(" ").toLowerCase();
+
     return (!normalizedSearch || haystack.includes(normalizedSearch))
       && (!locationFilter || propertyLocation.toLowerCase().includes(locationFilter.toLowerCase()))
       && matchesPropertyTypeFilter(propertyType, false)
@@ -279,11 +345,13 @@ export default function LandingPage() {
 
   const matchesUnitFilters = (unit: any) => {
     if (propertyTypeFilter === "properties") return false;
+    if (propertyTypeFilter === "house") return false;
+
     const parentProperty = properties.find((p) => p.id === (unit.propertyId || unit.property_id));
     const unitNumber = String(unit.unitNumber || unit.unit_number || "");
     const propertyName = parentProperty?.name || "";
     const unitLocation = unit.address || parentProperty?.location || parentProperty?.city || parentProperty?.province || "";
-    const unitType = parentProperty?.type || unit.type || "";
+    const unitType = parentProperty?.type || unit.type || "condominium";
     const rentAmount = Number(unit.rentAmount ?? unit.rent_amount ?? parentProperty?.rentAmount ?? parentProperty?.monthlyRent ?? 0);
     const haystack = [unitNumber, `unit ${unitNumber}`, propertyName, unitLocation, unit.address, unitType, unit.status, unit.floor ? `floor ${unit.floor}` : ""]
       .filter(Boolean).join(" ").toLowerCase();
@@ -293,9 +361,9 @@ export default function LandingPage() {
       && matchesPropertyTypeFilter(unitType, true)
       && (minPrice === 0 || rentAmount >= minPrice)
       && rentAmount <= maxPrice
-      && matchesRoomCount(parentProperty, "bedroom", bedroomFilter)
-      && matchesRoomCount(parentProperty, "bathroom", bathroomFilter)
-      && matchesFurnishing(parentProperty);
+      && matchesRoomCount(parentProperty || unit, "bedroom", bedroomFilter)
+      && matchesRoomCount(parentProperty || unit, "bathroom", bathroomFilter)
+      && matchesFurnishing(parentProperty || unit);
   };
 
   const filteredProperties = properties.filter((property: any) => matchesPropertyFilters(property));
@@ -1398,8 +1466,8 @@ export default function LandingPage() {
                     const rents = propertyUnits.map((unit: any) => Number(unit.rentAmount ?? unit.rent_amount ?? 0)).filter(Boolean);
                     const price = rents.length ? Math.min(...rents) : Number(property.monthlyRevenue || property.monthly_revenue || property.rentAmount || property.rent_amount || 0);
                     const isAvailable = propertyUnits.length === 0 || propertyUnits.some((unit: any) => (unit.status || "vacant") === "vacant");
-                    const bedrooms = (property.features || []).find((feature: string) => /bedroom/i.test(feature)) || "Bedrooms";
-                    const bathrooms = (property.features || []).find((feature: string) => /bathroom/i.test(feature)) || "Bathrooms";
+                    const bedrooms = getRoomCountDisplay(property, "bedroom");
+                    const bathrooms = getRoomCountDisplay(property, "bathroom");
 
                     return (
                       <motion.div
@@ -1416,11 +1484,11 @@ export default function LandingPage() {
                             <UnitImageCarousel images={propertyImages} fallbackImage={img} alt={property.name} className="h-full w-full" imageClassName="object-cover" />
                           </motion.div>
                           <div className="pointer-events-none absolute left-4 top-4 flex max-w-[calc(100%-2rem)] items-center gap-1.5 rounded-[10px] bg-slate-900/85 px-3 py-2 text-xs font-bold uppercase tracking-wide text-white shadow-sm backdrop-blur-sm">
-                            <Building2 className="h-4 w-4 text-blue-400 shrink-0" />
-                            <span className="truncate">Property</span>
+                            <Home className="h-4 w-4 text-blue-400 shrink-0" />
+                            <span className="truncate">HOUSE</span>
                           </div>
                           <div className="pointer-events-none absolute right-4 top-4 rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-bold text-slate-800 shadow-sm backdrop-blur-sm">
-                            {propertyType}
+                            House
                           </div>
                         </div>
 
@@ -1435,7 +1503,7 @@ export default function LandingPage() {
                           </div>
 
                           <h3 className="mt-2 text-lg font-semibold leading-snug text-slate-950 transition-colors group-hover:text-blue-700 truncate">
-                            {property.name} <span className="font-normal text-slate-500">— {propertyType}</span>
+                            {property.name}
                           </h3>
 
                           <p className="mb-4 mt-2 flex items-start gap-1 text-sm leading-5 text-slate-600">
@@ -1487,8 +1555,15 @@ export default function LandingPage() {
                   const rent = Number(unit.rentAmount ?? unit.rent_amount ?? parentProperty?.rentAmount ?? 0);
                   const isAvailable = (unit.status || "vacant").toLowerCase() === "vacant";
                   const floorLabel = unit.floor ? `Floor ${unit.floor}` : null;
-                  const propName = parentProperty?.name || "Independent Unit";
-                  const bedrooms = (parentProperty?.features || []).find((feature: string) => /bedroom/i.test(feature));
+                  const propName = parentProperty?.name || "ARC Towers Cebu";
+                  const rawUnitNum = String(unit.unitNumber || unit.unit_number || "").trim();
+                  const unitDisplayName = rawUnitNum.toLowerCase().startsWith("unit") ? rawUnitNum : `Unit ${rawUnitNum}`;
+                  const unitBedrooms = getRoomCountDisplay(unit, "bedroom") !== "Not specified"
+                    ? getRoomCountDisplay(unit, "bedroom")
+                    : getRoomCountDisplay(parentProperty, "bedroom");
+                  const unitBathrooms = getRoomCountDisplay(unit, "bathroom") !== "Not specified"
+                    ? getRoomCountDisplay(unit, "bathroom")
+                    : getRoomCountDisplay(parentProperty, "bathroom");
 
                   return (
                     <motion.div
@@ -1498,21 +1573,19 @@ export default function LandingPage() {
                       viewport={{ once: true }}
                       transition={{ duration: 0.5, delay: (i % 6) * 0.08 }}
                       whileHover={{ y: -6 }}
-                      className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_4px_16px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-indigo-200 hover:shadow-[0_18px_42px_rgba(99,102,241,0.14)]"
+                      className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_4px_16px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-blue-200 hover:shadow-[0_18px_42px_rgba(37,99,235,0.14)]"
                     >
                       <div className="relative h-60 overflow-hidden bg-slate-100">
                         <motion.div className="relative h-full w-full" whileHover={{ scale: 1.04 }} transition={{ duration: 0.45, ease: "easeOut" }}>
-                          <UnitImageCarousel images={unitImagesList} fallbackImage={fallbackImg} alt={`Unit ${unit.unitNumber}`} className="h-full w-full" imageClassName="object-cover" />
+                          <UnitImageCarousel images={unitImagesList} fallbackImage={fallbackImg} alt={unitDisplayName} className="h-full w-full" imageClassName="object-cover" />
                         </motion.div>
                         <div className="pointer-events-none absolute left-4 top-4 flex max-w-[calc(100%-2rem)] items-center gap-1.5 rounded-[10px] bg-slate-900/85 px-3 py-2 text-xs font-bold uppercase tracking-wide text-white shadow-sm backdrop-blur-sm">
-                          <DoorOpen className="h-4 w-4 text-indigo-400 shrink-0" />
-                          <span className="truncate">{String(unit.unitNumber || "").toLowerCase().startsWith("unit") ? unit.unitNumber : `Unit ${unit.unitNumber}`}</span>
+                          <Building2 className="h-4 w-4 text-blue-400 shrink-0" />
+                          <span className="truncate">CONDOMINIUM</span>
                         </div>
-                        {floorLabel && (
-                          <div className="pointer-events-none absolute right-4 top-4 rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-bold text-slate-800 shadow-sm backdrop-blur-sm">
-                            {floorLabel}
-                          </div>
-                        )}
+                        <div className="pointer-events-none absolute right-4 top-4 rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-bold text-slate-800 shadow-sm backdrop-blur-sm">
+                          {floorLabel || "Condo Unit"}
+                        </div>
                       </div>
 
                       <div className="relative p-5">
@@ -1520,31 +1593,33 @@ export default function LandingPage() {
                           <p className="text-2xl font-bold tracking-tight text-slate-950">
                             ₱{rent.toLocaleString()}<span className="ml-1 text-sm font-medium text-slate-500">/mo</span>
                           </p>
-                          <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide", isAvailable ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200")}>
+                          <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide", isAvailable ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-amber-50 text-amber-700 border border-amber-200")}>
                             {isAvailable ? "Available" : "Occupied"}
                           </span>
                         </div>
 
-                        <h4 className="mt-2 text-lg font-semibold leading-snug text-slate-950 transition-colors group-hover:text-indigo-700 truncate">
-                          {String(unit.unitNumber || "").toLowerCase().startsWith("unit") ? unit.unitNumber : `Unit ${unit.unitNumber}`} <span className="font-normal text-slate-500">— {propName}</span>
+                        <h4 className="mt-2 text-lg font-semibold leading-snug text-slate-950 transition-colors group-hover:text-blue-700 truncate">
+                          {unitDisplayName} <span className="font-normal text-slate-500">— {propName}</span>
                         </h4>
 
                         <div className="mt-2.5 flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                          <Building2 className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                          <Building2 className="h-3.5 w-3.5 text-blue-600 shrink-0" />
                           <span className="truncate">{propName}</span>
                         </div>
 
                         <p className="mb-4 mt-1.5 flex items-start gap-1 text-sm leading-5 text-slate-600">
-                          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-600" />
+                          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" />
                           <span className="truncate">{location}</span>
                         </p>
 
                         <div className="flex items-center justify-between border-t border-slate-200 pt-4 text-xs text-slate-500">
                           <span className="flex items-center gap-2 text-sm text-slate-700">
-                            {floorLabel && <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium">{floorLabel}</span>}
-                            {bedrooms && <span className="flex items-center gap-1 text-xs text-slate-600"><BedDouble className="h-3.5 w-3.5 text-indigo-600" />{bedrooms}</span>}
+                            <BedDouble className="h-4 w-4 text-blue-600 shrink-0" />
+                            <span>{unitBedrooms}</span>
+                            <Bath className="ml-2 h-4 w-4 text-blue-600 shrink-0" />
+                            <span>{unitBathrooms}</span>
                           </span>
-                          <motion.button whileHover={{ x: 4 }} onClick={() => setSelectedUnit(unit)} className="font-semibold text-indigo-600 transition-colors hover:text-indigo-800 flex items-center gap-1">
+                          <motion.button whileHover={{ x: 4 }} onClick={() => setSelectedUnit(unit)} className="font-semibold text-blue-600 transition-colors hover:text-blue-800 flex items-center gap-1 cursor-pointer">
                             View Details <ArrowRight className="h-3.5 w-3.5" />
                           </motion.button>
                         </div>
@@ -2208,7 +2283,7 @@ export default function LandingPage() {
                               <Building2 className="h-3 w-3 text-slate-500" /> {parentProperty.name}
                             </span>
                           )}
-                          <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide", isAvailable ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200")}>
+                          <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide", isAvailable ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-amber-50 text-amber-700 border border-amber-200")}>
                             {isAvailable ? "Available for Rent" : "Currently Occupied"}
                           </span>
                         </div>
@@ -2220,24 +2295,33 @@ export default function LandingPage() {
                         </p>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-y border-gray-200 py-4">
-                        <div className="rounded-xl bg-slate-50 p-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 border-y border-gray-200 py-4">
+                        <div className="rounded-xl bg-slate-50 p-2.5">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Monthly Rent</p>
-                          <p className="mt-1 text-lg font-bold text-slate-900">₱{rent.toLocaleString()}<span className="text-xs font-normal text-slate-500">/mo</span></p>
+                          <p className="mt-1 text-base font-bold text-slate-900">₱{rent.toLocaleString()}<span className="text-xs font-normal text-slate-500">/mo</span></p>
                         </div>
-                        <div className="rounded-xl bg-slate-50 p-3">
+                        <div className="rounded-xl bg-slate-50 p-2.5">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Floor Level</p>
-                          <p className="mt-1 text-lg font-bold text-slate-900">{selectedUnit.floor ? `Floor ${selectedUnit.floor}` : "Ground Floor"}</p>
+                          <p className="mt-1 text-base font-bold text-slate-900">{selectedUnit.floor ? `Floor ${selectedUnit.floor}` : "Ground Floor"}</p>
                         </div>
-                        <div className="rounded-xl bg-slate-50 p-3">
+                        <div className="rounded-xl bg-slate-50 p-2.5">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Bedrooms</p>
+                          <p className="mt-1 text-base font-bold text-slate-900">{getRoomCountDisplay(selectedUnit, "bedroom") !== "Not specified" ? getRoomCountDisplay(selectedUnit, "bedroom") : getRoomCountDisplay(parentProperty, "bedroom")}</p>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 p-2.5">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Bathrooms</p>
+                          <p className="mt-1 text-base font-bold text-slate-900">{getRoomCountDisplay(selectedUnit, "bathroom") !== "Not specified" ? getRoomCountDisplay(selectedUnit, "bathroom") : getRoomCountDisplay(parentProperty, "bathroom")}</p>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 p-2.5">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Status</p>
-                          <p className="mt-1 text-lg font-bold text-emerald-700">{isAvailable ? "Available" : "Occupied"}</p>
+                          <p className="mt-1 text-base font-bold text-emerald-700">{isAvailable ? "Available" : "Occupied"}</p>
                         </div>
-                        <div className="rounded-xl bg-slate-50 p-3">
+                        <div className="rounded-xl bg-slate-50 p-2.5">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Type</p>
-                          <p className="mt-1 text-lg font-bold text-slate-900 capitalize">{parentProperty?.type || "Unit"}</p>
+                          <p className="mt-1 text-base font-bold text-slate-900 capitalize">{parentProperty?.type || "Condo Unit"}</p>
                         </div>
                       </div>
+
 
                       {parentProperty?.features && Array.isArray(parentProperty.features) && parentProperty.features.length > 0 && (
                         <div>

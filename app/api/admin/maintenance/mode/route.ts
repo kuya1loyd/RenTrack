@@ -45,7 +45,11 @@ export async function POST(request: NextRequest) {
     const customMessage = body.customMessage
       ? String(body.customMessage).trim()
       : (body.message ? String(body.message).trim() : undefined);
-    const estimatedDowntime = body.estimatedDowntime ? String(body.estimatedDowntime).trim() : "30 to 60 minutes";
+    const existingConfig = await getSystemConfig();
+    const rawDowntime = body.estimatedDowntime || body.duration;
+    const estimatedDowntime = rawDowntime
+      ? String(rawDowntime).trim()
+      : (existingConfig.maintenance_estimated_downtime || "10 minutes");
     const title = body.title ? String(body.title).trim() : undefined;
 
     await setMaintenanceMode(enabled);

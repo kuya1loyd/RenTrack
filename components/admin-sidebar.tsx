@@ -13,6 +13,8 @@ import {
   Users,
   Home,
   Building2,
+  BarChart3,
+  DoorOpen,
   CreditCard,
   FileText,
   HeartPulse,
@@ -31,12 +33,12 @@ interface NavItem {
   label: string;
   href: string;
   tab: string;
-  icon: typeof LayoutDashboard;
+  icon: any;
   children?: {
     label: string;
     href: string;
     tab: string;
-    icon: typeof Building2;
+    icon: any;
   }[];
 }
 
@@ -49,7 +51,7 @@ const navSections: NavSection[] = [
   {
     title: "Main",
     items: [
-    { label: "Dashboard", href: "/dashboard/admin", tab: "overview", icon: LayoutDashboard },
+      { label: "Dashboard", href: "/dashboard/admin", tab: "overview", icon: LayoutDashboard },
       { label: "Accounts", href: "/dashboard/admin?tab=users", tab: "users", icon: Users },
     ],
   },
@@ -57,14 +59,16 @@ const navSections: NavSection[] = [
     title: "Management",
     items: [
       {
-        label: "Units",
-        href: "/dashboard/admin?tab=units",
-        tab: "units",
-        icon: Home,
+        label: "Rental Management",
+        href: "/dashboard/admin?tab=properties",
+        tab: "properties",
+        icon: Building2,
         children: [
-          { label: "Properties", href: "/dashboard/admin?tab=properties", tab: "properties", icon: Building2 },
+          { label: "Properties", href: "/dashboard/admin?tab=properties", tab: "properties", icon: Home },
+          { label: "Occupancy", href: "/dashboard/admin?tab=occupancy", tab: "occupancy", icon: BarChart3 },
         ],
       },
+      { label: "Units", href: "/dashboard/admin?tab=units", tab: "units", icon: DoorOpen },
       { label: "Property Map", href: "/dashboard/admin?tab=map", tab: "map", icon: MapPinned },
       { label: "Payments", href: "/dashboard/admin?tab=payments", tab: "payments", icon: CreditCard },
     ],
@@ -102,7 +106,13 @@ export default function AdminSidebar({
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const reduceMotion = useReducedMotion();
-  const [unitsDropdownOpen, setUnitsDropdownOpen] = useState(false);
+  const [rentalManagementOpen, setRentalManagementOpen] = useState(true);
+
+  useEffect(() => {
+    if (activeTab === "properties" || activeTab === "occupancy") {
+      setRentalManagementOpen(true);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -206,7 +216,7 @@ export default function AdminSidebar({
                    const Icon = item.icon;
 
                    if (item.children && item.children.length > 0) {
-                     const isOpen = unitsDropdownOpen;
+                     const isOpen = rentalManagementOpen;
                      return (
                        <div key={item.tab} className="space-y-1">
                          <div
@@ -223,7 +233,7 @@ export default function AdminSidebar({
                              type="button"
                              onClick={() => {
                                navigateTo(item.tab);
-                               setUnitsDropdownOpen((prev) => !prev);
+                               setRentalManagementOpen((prev) => !prev);
                              }}
                              className="flex flex-1 items-center gap-2 px-3 py-2 text-left focus-visible:outline-none cursor-pointer"
                            >
@@ -238,7 +248,7 @@ export default function AdminSidebar({
                              onClick={(e) => {
                                e.preventDefault();
                                e.stopPropagation();
-                               setUnitsDropdownOpen((prev) => !prev);
+                               setRentalManagementOpen((prev) => !prev);
                              }}
                              className={cn(
                                "p-2 pr-2.5 rounded-r-xl transition-colors cursor-pointer",
@@ -281,9 +291,9 @@ export default function AdminSidebar({
                                          : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 font-medium"
                                      )}
                                    >
-                                     <SubIcon className={cn("h-3.5 w-3.5 shrink-0 transition-colors", isSubActive ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600")} />
+                                     <SubIcon className={cn("h-4 w-4 shrink-0 transition-colors", isSubActive ? "text-white" : "text-slate-400 group-hover:text-slate-600")} />
                                      <span className="truncate">{sub.label}</span>
-                                     {isSubActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-600" />}
+                                     
                                    </button>
                                  );
                                })}
@@ -399,7 +409,7 @@ export default function AdminSidebar({
                         const isChildActive = item.children?.some((child) => child.tab === activeTab);
 
                         if (item.children && item.children.length > 0) {
-                          const isOpen = unitsDropdownOpen;
+                          const isOpen = rentalManagementOpen;
                           return (
                             <div key={item.tab} className="space-y-1">
                               <div
@@ -416,7 +426,7 @@ export default function AdminSidebar({
                                   type="button"
                                   onClick={() => {
                                     navigateTo(item.tab);
-                                    setUnitsDropdownOpen((prev) => !prev);
+                                    setRentalManagementOpen((prev) => !prev);
                                     onMobileClose();
                                   }}
                                   className="flex flex-1 items-center gap-2.5 px-3 py-2 text-left focus-visible:outline-none cursor-pointer"
@@ -430,7 +440,7 @@ export default function AdminSidebar({
                                   onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    setUnitsDropdownOpen((prev) => !prev);
+                                    setRentalManagementOpen((prev) => !prev);
                                   }}
                                   className={cn(
                                     "p-2 pr-2.5 rounded-r-xl transition-colors cursor-pointer",
@@ -468,9 +478,9 @@ export default function AdminSidebar({
                                               : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 font-medium"
                                           )}
                                         >
-                                          <SubIcon className={cn("h-3.5 w-3.5 shrink-0 transition-colors", isSubActive ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600")} />
+                                          <SubIcon className={cn("h-4 w-4 shrink-0 transition-colors", isSubActive ? "text-white" : "text-slate-400 group-hover:text-slate-600")} />
                                           <span className="truncate">{sub.label}</span>
-                                          {isSubActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-600" />}
+                                          
                                         </button>
                                       );
                                     })}

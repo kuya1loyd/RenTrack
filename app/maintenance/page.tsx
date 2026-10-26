@@ -15,7 +15,7 @@ export default function MaintenancePage() {
   const [isOperational, setIsOperational] = useState(false);
   const [reason, setReason] = useState<string>("Property & Units Repair (Scheduled repair & maintenance across properties and units)");
   const [startedAt, setStartedAt] = useState<string | null>(null);
-  const [downtime, setDowntime] = useState<string>("30 to 60 minutes");
+  const [downtime, setDowntime] = useState<string>("10 minutes");
 
   const isStaff = user?.role === "admin";
 
@@ -130,7 +130,7 @@ export default function MaintenancePage() {
             )}
             <div className="flex items-center justify-between text-xs sm:text-sm pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
               <span className="text-slate-500 dark:text-slate-400 font-medium">Estimated Downtime</span>
-              <span className="font-semibold text-slate-900 dark:text-white">{downtime || "30 to 60 minutes"}</span>
+              <span className="font-semibold text-slate-900 dark:text-white">{downtime || "10 minutes"}</span>
             </div>
             <div className="flex items-center justify-between text-xs sm:text-sm pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
               <span className="text-slate-500 dark:text-slate-400 font-medium">Your Data &amp; Payments</span>

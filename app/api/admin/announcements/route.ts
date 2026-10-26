@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/api-security";
-import { getAllUsers, createNotification } from "@/lib/db";
+import { getAllUsers, createNotification, updateSystemConfig } from "@/lib/db";
 import { broadcastAnnouncementEmailToAllUsers } from "@/lib/mail";
 import { withSecurityHeaders, withCorsHeaders } from "@/lib/security-headers";
 
@@ -17,6 +17,13 @@ export async function POST(request: NextRequest) {
 
     if (!title || !message) {
       return NextResponse.json({ success: false, error: "Title and message are required" }, { status: 400 });
+    }
+
+    if (duration) {
+      await updateSystemConfig("maintenance_estimated_downtime", duration).catch(() => {});
+    }
+    if (reason) {
+      await updateSystemConfig("maintenance_reason", reason).catch(() => {});
     }
 
     const users = await getAllUsers();

@@ -1747,15 +1747,6 @@ export default function OwnerDashboard() {
             title="Occupancy Overview"
             description="Real-time availability, tenant occupancy, and unit progress tracks across your property portfolio."
             icon={BarChart3}
-            actions={
-              <Button
-                onClick={downloadOccupancyExport}
-                className="h-9 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer shadow-xs transition-colors flex items-center gap-1.5 px-3.5"
-              >
-                <Download className="h-4 w-4" />
-                Export Report
-              </Button>
-            }
           />
 
           <section id="occupancy-section" className="space-y-4">
@@ -1805,9 +1796,7 @@ export default function OwnerDashboard() {
                 <button type="button" className={management.reset} onClick={() => { setOccupancySearch(""); setOccupancyFilter("all"); setOccupancyTypeFilter("all"); }}>
                   <RotateCcw aria-hidden="true" />Reset
                 </button>
-                <Button onClick={downloadOccupancyExport} className={management.export}>
-                  <Download className="h-4 w-4" />Export
-                </Button>
+
               </div>
             </div>
 
