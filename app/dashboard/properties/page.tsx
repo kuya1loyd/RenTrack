@@ -25,6 +25,21 @@ const PROPERTY_FEATURES = ["1 Bedroom", "2 Bedrooms", "3 Bedrooms", "4+ Bedrooms
 const PROPERTY_CONDITIONS = ["Excellent – Ready to Move In", "Very Good – Well Maintained", "Good – Minor Wear and Tear", "Fair – Some Repairs Needed", "Needs Improvement – Repairs Required"];
 const AVAILABILITY_STATUSES = ["Available", "Occupied", "Reserved", "Under Maintenance"] as const;
 
+const initialFormData = {
+  name: "",
+  location: "",
+  latitude: "",
+  longitude: "",
+  monthlyRevenue: 0,
+  type: "house" as "house" | "residential" | "building" | "condominium" | string,
+  units: 0,
+  features: [] as string[],
+  condition: "",
+  availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number],
+  maintenanceReason: PROPERTY_MAINTENANCE_REASONS[0] as string,
+  imageUrl: "",
+};
+
 function FeaturePicker({ value, onChange }: { value: string[]; onChange: (features: string[]) => void }) {
   return <div className="rounded-xl border border-border bg-surface-secondary p-3">
     <select value="" onChange={(e) => e.target.value && onChange(value.includes(e.target.value) ? value : [...value, e.target.value])} className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm">
@@ -49,20 +64,7 @@ export default function PropertiesPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [historyProperty, setHistoryProperty] = useState<Property | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [formData, setFormData] = useState({
-    name: "",
-    location: "",
-    latitude: "",
-    longitude: "",
-    monthlyRevenue: 0,
-    type: "house" as "house" | "residential" | "building" | "condominium" | string,
-    units: 0,
-    features: [] as string[],
-    condition: "",
-    availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number],
-    maintenanceReason: PROPERTY_MAINTENANCE_REASONS[0] as string,
-    imageUrl: "",
-  });
+  const [formData, setFormData] = useState(initialFormData);
   const [propertyImage, setPropertyImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
@@ -142,20 +144,7 @@ export default function PropertiesPage() {
         setProperties(props);
       }
       setShowAddModal(false);
-      setFormData({
-        name: "",
-        location: "",
-        latitude: "",
-        longitude: "",
-        monthlyRevenue: 0,
-        type: "house",
-        units: 0,
-        features: [],
-        condition: "",
-        availabilityStatus: "Available",
-        maintenanceReason: PROPERTY_MAINTENANCE_REASONS[0],
-        imageUrl: "",
-      });
+      setFormData(initialFormData);
       setPropertyImage(null);
       setImagePreview("");
       notifyAdmins({ title: "New Property Created", message: `${formData.name} was added by ${user.name}`, type: "property", read: false });
@@ -251,7 +240,7 @@ export default function PropertiesPage() {
             <p className="text-white/70 text-sm mt-1.5">Manage your rental properties and their units</p>
           </div>
           {canManage && (
-              <Button onClick={() => { setFormData({ name: "", location: "", latitude: "", longitude: "", monthlyRevenue: 0, type: "house", units: 0, features: [], condition: "", availabilityStatus: "Available", imageUrl: "" }); setPropertyImage(null); setImagePreview(""); setShowAddModal(true); }}
+              <Button onClick={() => { setFormData(initialFormData); setPropertyImage(null); setImagePreview(""); setShowAddModal(true); }}
               className="bg-white text-orange-700 hover:bg-orange-50 shadow-lg"><Plus className="h-4 w-4 mr-1.5" />Add Property</Button>
           )}
         </div>
