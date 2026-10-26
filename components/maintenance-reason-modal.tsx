@@ -33,7 +33,7 @@ export function MaintenanceReasonModal({
   }, []);
 
   const filteredGroups = useMemo(() => {
-    let groups = MAINTENANCE_REASON_GROUPS;
+    let groups: Array<{ group: string; reasons: readonly string[] }> = [...MAINTENANCE_REASON_GROUPS];
 
     if (activeCategory !== "All") {
       groups = groups.filter((g) => g.group === activeCategory);
