@@ -9,6 +9,8 @@ export interface AnimatedFilterOption {
   value: string;
   label: string;
   dotColor?: string;
+  badge?: string;
+  [key: string]: any;
 }
 
 export interface AnimatedFilterDropdownProps extends React.SelectHTMLAttributes<HTMLSelectElement> {

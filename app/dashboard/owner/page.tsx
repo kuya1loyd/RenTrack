@@ -1268,7 +1268,8 @@ export default function OwnerDashboard() {
               <AnimatedFilterDropdown
                 label="Status"
                 value={unitStatusFilter}
-                onChange={(val) => {
+                onChange={(e) => {
+                  const val = e.target.value;
                   setUnitStatusFilter(val);
                   if (val !== "maintenance") setUnitMaintenanceReasonFilter("all");
                 }}
@@ -1282,7 +1283,8 @@ export default function OwnerDashboard() {
               <AnimatedFilterDropdown
                 label="Repair Reason"
                 value={unitMaintenanceReasonFilter}
-                onChange={(val) => {
+                onChange={(e) => {
+                  const val = e.target.value;
                   setUnitMaintenanceReasonFilter(val);
                   if (val !== "all") setUnitStatusFilter("maintenance");
                 }}
@@ -1470,7 +1472,7 @@ export default function OwnerDashboard() {
               <AnimatedFilterDropdown
                 label="Property type"
                 value={propertyTypeFilter}
-                onChange={setPropertyTypeFilter}
+                onChange={(e) => setPropertyTypeFilter(e.target.value)}
                 options={[
                   { value: "all", label: "All types" },
                   { value: "house", label: "House / Residential" },
@@ -1480,7 +1482,8 @@ export default function OwnerDashboard() {
               <AnimatedFilterDropdown
                 label="Status"
                 value={propertyStatusFilter}
-                onChange={(val) => {
+                onChange={(e) => {
+                  const val = e.target.value;
                   setPropertyStatusFilter(val);
                   if (val !== "maintenance") setPropertyMaintenanceReasonFilter("all");
                 }}
@@ -1494,7 +1497,8 @@ export default function OwnerDashboard() {
               <AnimatedFilterDropdown
                 label="House Repair Reason"
                 value={propertyMaintenanceReasonFilter}
-                onChange={(val) => {
+                onChange={(e) => {
+                  const val = e.target.value;
                   setPropertyMaintenanceReasonFilter(val);
                   if (val !== "all") setPropertyStatusFilter("maintenance");
                 }}
@@ -1779,7 +1783,7 @@ export default function OwnerDashboard() {
               <AnimatedFilterDropdown
                 label="Occupancy"
                 value={occupancyFilter}
-                onChange={(val) => setOccupancyFilter(val as any)}
+                onChange={(e) => setOccupancyFilter(e.target.value as any)}
                 options={[
                   { value: "all", label: "All occupancies" },
                   { value: "full", label: "100% Fully Occupied" },
@@ -1790,7 +1794,7 @@ export default function OwnerDashboard() {
               <AnimatedFilterDropdown
                 label="Property type"
                 value={occupancyTypeFilter}
-                onChange={setOccupancyTypeFilter}
+                onChange={(e) => setOccupancyTypeFilter(e.target.value)}
                 options={[
                   { value: "all", label: "All types" },
                   { value: "house", label: "House / Residential" },
@@ -2203,7 +2207,7 @@ export default function OwnerDashboard() {
               <AnimatedFilterDropdown
                 label="Property"
                 value={assignmentPropertyFilter}
-                onChange={setAssignmentPropertyFilter}
+                onChange={(e) => setAssignmentPropertyFilter(e.target.value)}
                 options={[
                   { value: "all", label: `All Properties (${pendingAssignments.length})` },
                   ...Array.from(new Set(pendingAssignments.map((t) => t.propertyName).filter(Boolean))).map((propName) => ({
@@ -2384,7 +2388,7 @@ export default function OwnerDashboard() {
               <AnimatedFilterDropdown
                 label="Status"
                 value={moveOutStatusFilter}
-                onChange={(val) => setMoveOutStatusFilter(val as any)}
+                onChange={(e) => setMoveOutStatusFilter(e.target.value as any)}
                 options={[
                   { value: "all", label: `All Statuses (${moveOutCounts.all})` },
                   { value: "pending", label: `Pending (${moveOutCounts.pending})` },
@@ -2399,7 +2403,7 @@ export default function OwnerDashboard() {
               <AnimatedFilterDropdown
                 label="Property"
                 value={moveOutPropertyFilter}
-                onChange={setMoveOutPropertyFilter}
+                onChange={(e) => setMoveOutPropertyFilter(e.target.value)}
                 options={[
                   { value: "all", label: "All Properties" },
                   ...Array.from(new Set(moveOutRequests.map((r) => r.property_name).filter(Boolean))).map((propName) => ({
@@ -2884,7 +2888,7 @@ export default function OwnerDashboard() {
                 <AnimatedFilterDropdown
                   label="Date Range"
                   value={financialDateRange}
-                  onChange={setFinancialDateRange}
+                  onChange={(e) => setFinancialDateRange(e.target.value)}
                   options={[
                     { value: "all", label: "All dates" },
                     { value: "30", label: "Last 30 days" },
@@ -2896,7 +2900,7 @@ export default function OwnerDashboard() {
                 <AnimatedFilterDropdown
                   label="Payment Method"
                   value={financialMethodFilter}
-                  onChange={setFinancialMethodFilter}
+                  onChange={(e) => setFinancialMethodFilter(e.target.value)}
                   options={[
                     { value: "all", label: "All methods" },
                     { value: "cash", label: "Cash" },
@@ -2907,7 +2911,7 @@ export default function OwnerDashboard() {
                 <AnimatedFilterDropdown
                   label="Status"
                   value={financialStatusFilter}
-                  onChange={setFinancialStatusFilter}
+                  onChange={(e) => setFinancialStatusFilter(e.target.value)}
                   options={[
                     { value: "all", label: "All statuses" },
                     { value: "paid", label: "Verified / Paid" },
@@ -2920,7 +2924,7 @@ export default function OwnerDashboard() {
                 <AnimatedFilterDropdown
                   label="Unit"
                   value={financialUnitFilter}
-                  onChange={setFinancialUnitFilter}
+                  onChange={(e) => setFinancialUnitFilter(e.target.value)}
                   options={[
                     { value: "all", label: "All units" },
                     ...units.map((unit) => ({

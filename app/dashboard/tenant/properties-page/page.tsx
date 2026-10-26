@@ -286,7 +286,8 @@ export default function TenantPropertiesPage() {
           <AnimatedFilterDropdown
             label="Unit"
             value={selectedUnitFilter}
-            onChange={(val) => {
+            onChange={(e) => {
+              const val = e.target.value;
               setSelectedUnitFilter(val);
               if (val !== "all") {
                 const targetUnit = units.find((u) => u.id === val);
