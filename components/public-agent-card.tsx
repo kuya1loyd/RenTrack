@@ -199,6 +199,10 @@ export default function PublicAgentCard({
             <Link href={profileHref}>{agent.name}</Link>
           </Heading>
           <p className={styles.compactRole}>Owner-Managed Agent</p>
+          <p className={styles.compactLocation} title={agent.location || undefined}>
+            <MapPin aria-hidden="true" size={13} className={styles.compactLocationIcon} />
+            <span>{agent.location || "Location not listed"}</span>
+          </p>
         </div>
         <Link href={`${profileHref}#message`} className={styles.compactInquire}>
           <Mail aria-hidden="true" size={16} />

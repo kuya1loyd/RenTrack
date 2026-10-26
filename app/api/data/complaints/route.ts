@@ -1,3 +1,4 @@
+// Touch route for Turbopack cache rebuild
 import { NextRequest, NextResponse } from "next/server";
 import { createComplaint, getComplaints, getComplaintById, updateComplaintStatus, createNotification, getAdminSupabase } from "@/lib/db";
 import { requireAuth, validateApiRequest, withSecurityHeaders, withCorsHeaders, sanitizeObject, getClientIp } from "@/lib/api-security";

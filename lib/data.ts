@@ -4,6 +4,102 @@
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
+export const UNIT_MAINTENANCE_REASONS = [
+  "Unit Repair & Renovation (Scheduled unit repairs)",
+  "System Update: HVAC, Aircon & Thermostat Upgrade",
+  "Plumbing, Water Lines & Leak Repairs",
+  "Electrical Wiring & Lighting Works",
+  "Painting, Walls & Ceiling Refurbishment",
+  "Flooring, Tiling & Baseboard Replacement",
+  "Door, Lock & Window Hardware Repairs",
+  "Appliance Repair & System Replacement",
+  "General Unit Repair & Maintenance",
+  "Other / Custom Unit Repair",
+] as const;
+
+export const PROPERTY_MAINTENANCE_REASONS = [
+  "House Repair & Renovation (Scheduled house repairs)",
+  "System Update & Utility Upgrades (Power, Water, Security)",
+  "Roofing, Gutters & Waterproofing Repairs",
+  "Plumbing, Septic Tank & Water Pipe Overhaul",
+  "Electrical Main, Wiring & Generator Servicing",
+  "House Exterior Painting & Siding Repairs",
+  "Foundation, Structural & Termite Inspection",
+  "Perimeter Fence, Gate & Garage Door Repairs",
+  "Drainage, Yard & Landscape Maintenance",
+  "Painting, Walls & Ceiling Refurbishment",
+  "Door, Lock & Window Hardware Repairs",
+  "General House Repair & Maintenance",
+  "Other / Custom House Repair",
+] as const;
+
+export const SYSTEM_MAINTENANCE_REASONS = [
+  "Unit Repair & Renovation (Scheduled unit repairs)",
+  "House Repair & Renovation (Scheduled house repairs)",
+  "System Update: HVAC, Aircon & Thermostat Upgrade",
+  "System Update & Upgrade (Platform enhancements, new features, and technical updates)",
+  "Plumbing, Water Lines & Leak Repairs",
+  "Electrical Wiring & Lighting Works",
+  "Painting, Walls & Ceiling Refurbishment",
+  "Flooring, Tiling & Baseboard Replacement",
+  "Door, Lock & Window Hardware Repairs",
+  "Appliance Repair & System Replacement",
+  "General Unit Repair & Maintenance",
+  "Roofing, Gutters & Waterproofing Repairs (House)",
+  "Plumbing, Septic Tank & Water Pipe Overhaul (House)",
+  "House Exterior Painting & Siding Repairs",
+  "General House Repair & Maintenance",
+  "System Upgrade & Performance Optimization",
+  "System Security Update & Database Patching",
+  "Other / Custom Maintenance Reason",
+] as const;
+
+export const MAINTENANCE_REASON_GROUPS = [
+  {
+    group: "Unit Repairs & Upgrades",
+    reasons: [
+      "Unit Repair & Renovation (Scheduled unit repairs)",
+      "System Update: HVAC, Aircon & Thermostat Upgrade",
+      "Plumbing, Water Lines & Leak Repairs",
+      "Electrical Wiring & Lighting Works",
+      "Painting, Walls & Ceiling Refurbishment",
+      "Flooring, Tiling & Baseboard Replacement",
+      "Door, Lock & Window Hardware Repairs",
+      "Appliance Repair & System Replacement",
+      "General Unit Repair & Maintenance",
+    ],
+  },
+  {
+    group: "House & Property Maintenance",
+    reasons: [
+      "House Repair & Renovation (Scheduled house repairs)",
+      "System Update & Utility Upgrades (Power, Water, Security)",
+      "Roofing, Gutters & Waterproofing Repairs",
+      "Plumbing, Septic Tank & Water Pipe Overhaul",
+      "Electrical Main, Wiring & Generator Servicing",
+      "House Exterior Painting & Siding Repairs",
+      "Foundation, Structural & Termite Inspection",
+      "Perimeter Fence, Gate & Garage Door Repairs",
+      "Drainage, Yard & Landscape Maintenance",
+      "General House Repair & Maintenance",
+    ],
+  },
+  {
+    group: "System Updates & Upgrades",
+    reasons: [
+      "System Update & Upgrade (Platform enhancements, new features, and technical updates)",
+      "System Upgrade & Performance Optimization",
+      "System Security Update & Database Patching",
+    ],
+  },
+  {
+    group: "Other / Custom",
+    reasons: [
+      "Other / Custom Maintenance Reason",
+    ],
+  },
+] as const;
+
 export interface Property {
   id: string;
   name: string;
@@ -23,6 +119,7 @@ export interface Property {
   agentId?: string;
   features?: string[];
   condition?: string;
+  maintenanceReason?: string;
   availabilityStatus?: "Available" | "Occupied" | "Reserved" | "Under Maintenance";
 }
 
@@ -37,6 +134,7 @@ export interface Unit {
   rentAmount: number;
   type?: string;
   condition?: string;
+  maintenanceReason?: string;
   tenantName?: string;
   tenantId?: string;
   leaseEnd?: string;

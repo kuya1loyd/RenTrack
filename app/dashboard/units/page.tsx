@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
-import { Home, Plus, Search, Edit, Check, Trash2, Image as ImageIcon, X, History as HistoryIcon } from "lucide-react";
+import { Home, Plus, Search, Edit, Check, Trash2, Image as ImageIcon, X, History as HistoryIcon, Wrench } from "lucide-react";
 import { TenancyHistoryModal } from "@/components/tenancy-history-modal";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Modal } from "@/components/ui/modal";
+import { AnimatedFilterDropdown } from "@/components/ui/animated-filter-dropdown";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { getUnits, getProperties, addUnit, updateUnit, deleteUnit, safeParseJson, Unit, Property, notifyAdmins } from "@/lib/data";
+import { getUnits, getProperties, addUnit, updateUnit, deleteUnit, safeParseJson, Unit, Property, notifyAdmins, UNIT_MAINTENANCE_REASONS } from "@/lib/data";
 import { toast } from "sonner";
 import UnitImageCarousel from "@/components/unit-image-carousel";
 
@@ -49,9 +50,21 @@ export default function UnitsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
+  const [maintenanceReasonFilter, setMaintenanceReasonFilter] = useState("all");
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
-  const [editForm, setEditForm] = useState({ propertyId: "", unitNumber: "", floor: "", status: "vacant" as Unit["status"], rentAmount: "", type: "condo", condition: "", imageUrl: "", imageUrls: [] as string[] });
+  const [editForm, setEditForm] = useState({
+    propertyId: "",
+    unitNumber: "",
+    floor: "",
+    status: "vacant" as Unit["status"],
+    rentAmount: "",
+    type: "condo",
+    condition: "",
+    maintenanceReason: UNIT_MAINTENANCE_REASONS[0] as string,
+    imageUrl: "",
+    imageUrls: [] as string[],
+  });
   const [isSaving, setIsSaving] = useState(false);
   const [showImageModal, setShowImageModal] = useState<string | null>(null);
   const [formData, setFormData] = useState({ propertyId: "", unitNumber: "", floor: 0, rentAmount: 0, type: "condo", condition: "", imageUrl: "", imageUrls: [] as string[] });
@@ -80,7 +93,10 @@ export default function UnitsPage() {
     const matchesSearch = u.unitNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (u.tenantName && u.tenantName.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesTab = activeTab === "all" || u.status === activeTab;
-    return matchesSearch && matchesTab;
+    const matchesReason = maintenanceReasonFilter === "all" ||
+      u.maintenanceReason === maintenanceReasonFilter ||
+      (u.condition && u.condition.toLowerCase().includes(maintenanceReasonFilter.toLowerCase()));
+    return matchesSearch && matchesTab && matchesReason;
   });
 
   const handleAdd = async (event: React.FormEvent) => {
@@ -106,6 +122,7 @@ export default function UnitsPage() {
 
   const openEdit = (unit: Unit) => {
     setEditingUnit(unit);
+    const existingReason = unit.maintenanceReason || (unit.condition?.startsWith("Maintenance: ") ? unit.condition.replace("Maintenance: ", "") : UNIT_MAINTENANCE_REASONS[0]);
     setEditForm({
       propertyId: unit.propertyId || "",
       unitNumber: unit.unitNumber,
@@ -114,6 +131,7 @@ export default function UnitsPage() {
       rentAmount: unit.rentAmount.toString(),
       type: unit.type || "condo",
       condition: unit.condition || "",
+      maintenanceReason: existingReason,
       imageUrl: unit.imageUrl || "",
       imageUrls: unit.imageUrls || (unit.imageUrl ? [unit.imageUrl] : []),
     });
@@ -127,19 +145,29 @@ export default function UnitsPage() {
     }
     setIsSaving(true);
     try {
+      const activeReason = editForm.maintenanceReason || UNIT_MAINTENANCE_REASONS[0];
       const savedUnit = await updateUnit(editingUnit.id, {
         propertyId: editForm.propertyId,
         unitNumber: editForm.unitNumber.trim(),
         floor: editForm.floor === "" ? undefined : Number(editForm.floor),
         type: editForm.type || "condo",
-        condition: editForm.condition || undefined,
+        condition: editForm.status === "maintenance" ? `Maintenance: ${activeReason}` : (editForm.condition || undefined),
+        maintenanceReason: editForm.status === "maintenance" ? activeReason : undefined,
         status: editForm.status,
         rentAmount: Number(editForm.rentAmount),
         imageUrl: editForm.imageUrl.trim() || undefined,
         imageUrls: editForm.imageUrls,
       });
       if (!savedUnit) throw new Error("Failed to update unit");
-      const updatedUnit = { ...editingUnit, ...editForm, floor: editForm.floor === "" ? undefined : Number(editForm.floor), rentAmount: Number(editForm.rentAmount), imageUrl: editForm.imageUrl.trim() || undefined };
+      const updatedUnit = {
+        ...editingUnit,
+        ...editForm,
+        floor: editForm.floor === "" ? undefined : Number(editForm.floor),
+        rentAmount: Number(editForm.rentAmount),
+        condition: editForm.status === "maintenance" ? `Maintenance: ${activeReason}` : editForm.condition,
+        maintenanceReason: editForm.status === "maintenance" ? activeReason : undefined,
+        imageUrl: editForm.imageUrl.trim() || undefined,
+      };
       setUnits((current) => current.map((unit) => unit.id === editingUnit.id ? (updatedUnit as Unit) : unit));
       setEditingUnit(null);
       toast.success("Unit updated successfully");
@@ -228,14 +256,35 @@ export default function UnitsPage() {
 
       <div className="rounded-xl border border-[#dce8f5] bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList>
-              <TabsTrigger value="all">All ({units.length})</TabsTrigger>
-              <TabsTrigger value="occupied">Occupied ({units.filter((u) => u.status === "occupied").length})</TabsTrigger>
-              <TabsTrigger value="vacant">Vacant ({units.filter((u) => u.status === "vacant").length})</TabsTrigger>
-              <TabsTrigger value="maintenance">Maintenance ({units.filter((u) => u.status === "maintenance").length})</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex items-center gap-3 flex-wrap">
+            <Tabs value={activeTab} onValueChange={(val) => { setActiveTab(val); if (val !== "maintenance") setMaintenanceReasonFilter("all"); }}>
+              <TabsList>
+                <TabsTrigger value="all">All ({units.length})</TabsTrigger>
+                <TabsTrigger value="occupied">Occupied ({units.filter((u) => u.status === "occupied").length})</TabsTrigger>
+                <TabsTrigger value="vacant">Vacant ({units.filter((u) => u.status === "vacant").length})</TabsTrigger>
+                <TabsTrigger value="maintenance">Maintenance ({units.filter((u) => u.status === "maintenance").length})</TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            {activeTab === "maintenance" && (
+              <AnimatedFilterDropdown
+                label="Repair Reason"
+                icon={<Wrench className="h-3.5 w-3.5 text-amber-500" />}
+                value={maintenanceReasonFilter}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setMaintenanceReasonFilter(val);
+                }}
+                pulseOnMaintenance={maintenanceReasonFilter !== "all"}
+                containerClassName={maintenanceReasonFilter !== "all" ? "border-amber-300 bg-amber-50/50" : undefined}
+                options={[
+                  { value: "all", label: "All Repair Reasons" },
+                  ...UNIT_MAINTENANCE_REASONS.map((r) => ({ value: r, label: r })),
+                ]}
+              />
+            )}
+          </div>
+
           <label className="relative w-full lg:max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input placeholder="Search units or tenants..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="h-9 rounded-lg border-slate-200 pl-9" aria-label="Search units or tenants" />
@@ -280,14 +329,32 @@ export default function UnitsPage() {
                         imageClassName="group-hover:scale-100"
                       />
                       <div className="p-5">
-                        <div className="flex items-start justify-between gap-3 mb-5">
+                        <div className="flex items-start justify-between gap-3 mb-4">
                           <div className="min-w-0">
                             <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Unit Number</p>
                             <h3 className="mt-1 text-xl font-semibold text-foreground wrap-break-word">{unit.unitNumber}</h3>
                             <p className="mt-1 text-sm text-text-secondary truncate">{property?.name || "Unknown property"}</p>
+                            {unit.status === "maintenance" && (
+                              <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                <Wrench className="h-3 w-3 text-amber-600 shrink-0" />
+                                <span className="truncate max-w-[200px]" title={unit.maintenanceReason || (unit.condition?.startsWith("Maintenance: ") ? unit.condition.replace("Maintenance: ", "") : "Routine Turnover Inspection")}>
+                                  {unit.maintenanceReason || (unit.condition?.startsWith("Maintenance: ") ? unit.condition.replace("Maintenance: ", "") : "Routine Turnover Inspection")}
+                                </span>
+                              </div>
+                            )}
                           </div>
-                          <Badge variant="outline" className={cn("shrink-0 text-xs font-medium px-2.5 py-1 capitalize", statusColors[unit.status])}>
-                            {unit.status}
+                          <Badge variant="outline" className={cn("shrink-0 text-xs font-semibold px-2.5 py-1 capitalize", statusColors[unit.status])}>
+                            {unit.status === "maintenance" ? (
+                              <span className="flex items-center gap-1.5">
+                                <span className="relative flex h-2 w-2">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                                </span>
+                                Maintenance
+                              </span>
+                            ) : (
+                              unit.status
+                            )}
                           </Badge>
                         </div>
                         {canManage && (
@@ -433,6 +500,34 @@ export default function UnitsPage() {
               </select>
             </div>
           </div>
+
+          {editForm.status === "maintenance" && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl border border-amber-300 bg-amber-50/70 p-3.5 space-y-1.5 dark:border-amber-800 dark:bg-amber-950/30"
+            >
+              <label className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                <Wrench className="h-3.5 w-3.5 text-amber-600" />
+                Chosen Reason for Unit Maintenance *
+              </label>
+              <select
+                value={editForm.maintenanceReason || UNIT_MAINTENANCE_REASONS[0]}
+                onChange={(e) => setEditForm({ ...editForm, maintenanceReason: e.target.value })}
+                className="h-10 w-full rounded-lg border border-amber-300 bg-white px-3 text-xs font-semibold text-amber-950 shadow-xs focus:border-amber-500 focus:outline-none dark:border-amber-700 dark:bg-gray-800 dark:text-amber-100"
+              >
+                {UNIT_MAINTENANCE_REASONS.map((reason) => (
+                  <option key={reason} value={reason}>
+                    {reason}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                This reason will be visible on the unit card, maintenance dashboard, and reporting tables.
+              </p>
+            </motion.div>
+          )}
+
           <div className="rounded-xl border border-border bg-surface-secondary/40 p-3.5 space-y-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Classification &amp; Unit Condition</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

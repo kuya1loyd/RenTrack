@@ -218,7 +218,7 @@ export default function AssignTenantModal({
           message: `${selectedTenant.name} has been assigned to ${propName} (${scopeText}) by agent ${agentName}. Please review and confirm.`,
           type: "tenant",
           read: false,
-          recipientRole: "both",
+          recipientRole: "owner",
           targetUserId: property?.createdBy,
         } as any).catch(() => {});
 

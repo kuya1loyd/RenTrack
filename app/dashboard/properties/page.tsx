@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import {
-  Building2, Plus, Search, MapPin, Home, Users, DollarSign, Edit, Trash2, Eye, X, Check, Upload, History as HistoryIcon,
+  Building2, Plus, Search, MapPin, Home, Users, DollarSign, Edit, Trash2, Eye, X, Check, Upload, History as HistoryIcon, Wrench, RotateCcw,
 } from "lucide-react";
 import { TenancyHistoryModal } from "@/components/tenancy-history-modal";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,9 +13,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Modal } from "@/components/ui/modal";
+import { AnimatedFilterDropdown } from "@/components/ui/animated-filter-dropdown";
 import { cn, formatCurrency } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { getProperties, getUnits, addProperty, deleteProperty, safeParseJson, Property, Unit, notifyAdmins } from "@/lib/data";
+import { getProperties, getUnits, addProperty, deleteProperty, safeParseJson, Property, Unit, notifyAdmins, PROPERTY_MAINTENANCE_REASONS } from "@/lib/data";
 import { toast } from "sonner";
 import UnitImageCarousel from "@/components/unit-image-carousel";
 
@@ -39,13 +40,29 @@ export default function PropertiesPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [maintenanceReasonFilter, setMaintenanceReasonFilter] = useState("all");
   const [, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [historyProperty, setHistoryProperty] = useState<Property | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [formData, setFormData] = useState({ name: "", location: "", latitude: "", longitude: "", monthlyRevenue: 0, type: "house" as "house" | "residential" | "building" | "condominium" | string, units: 0, features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "" });
+  const [formData, setFormData] = useState({
+    name: "",
+    location: "",
+    latitude: "",
+    longitude: "",
+    monthlyRevenue: 0,
+    type: "house" as "house" | "residential" | "building" | "condominium" | string,
+    units: 0,
+    features: [] as string[],
+    condition: "",
+    availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number],
+    maintenanceReason: PROPERTY_MAINTENANCE_REASONS[0] as string,
+    imageUrl: "",
+  });
   const [propertyImage, setPropertyImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
@@ -67,9 +84,20 @@ export default function PropertiesPage() {
     })();
   }, [user]);
 
-  const filteredProperties = properties.filter((p) =>
-    p && p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProperties = properties.filter((p) => {
+    if (!p) return false;
+    const matchesSearch = !searchTerm ||
+      p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.location?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === "all" ||
+      p.availabilityStatus === statusFilter ||
+      p.status === statusFilter;
+    const matchesType = typeFilter === "all" || p.type === typeFilter;
+    const matchesReason = maintenanceReasonFilter === "all" ||
+      p.maintenanceReason === maintenanceReasonFilter ||
+      (p.condition && p.condition.toLowerCase().includes(maintenanceReasonFilter.toLowerCase()));
+    return matchesSearch && matchesStatus && matchesType && matchesReason;
+  });
 
   const handleDelete = async (id: string, name: string) => {
     if (confirm(`Delete "${name}"? This action cannot be undone.`)) {
@@ -90,8 +118,11 @@ export default function PropertiesPage() {
     }
     if (!user) return;
     try {
+      const activeReason = formData.maintenanceReason || PROPERTY_MAINTENANCE_REASONS[0];
       const submitData = {
         ...formData,
+        condition: formData.availabilityStatus === "Under Maintenance" ? `Maintenance: ${activeReason}` : (formData.condition || undefined),
+        maintenanceReason: formData.availabilityStatus === "Under Maintenance" ? activeReason : undefined,
         latitude: formData.latitude ? Number(formData.latitude) : undefined,
         longitude: formData.longitude ? Number(formData.longitude) : undefined,
       };
@@ -111,7 +142,20 @@ export default function PropertiesPage() {
         setProperties(props);
       }
       setShowAddModal(false);
-      setFormData({ name: "", location: "", latitude: "", longitude: "", monthlyRevenue: 0, type: "house", units: 0, features: [], condition: "", availabilityStatus: "Available", imageUrl: "" });
+      setFormData({
+        name: "",
+        location: "",
+        latitude: "",
+        longitude: "",
+        monthlyRevenue: 0,
+        type: "house",
+        units: 0,
+        features: [],
+        condition: "",
+        availabilityStatus: "Available",
+        maintenanceReason: PROPERTY_MAINTENANCE_REASONS[0],
+        imageUrl: "",
+      });
       setPropertyImage(null);
       setImagePreview("");
       notifyAdmins({ title: "New Property Created", message: `${formData.name} was added by ${user.name}`, type: "property", read: false });
@@ -130,8 +174,11 @@ export default function PropertiesPage() {
     }
     setIsSaving(true);
     try {
+      const activeReason = formData.maintenanceReason || PROPERTY_MAINTENANCE_REASONS[0];
       const submitData = {
         ...formData,
+        condition: formData.availabilityStatus === "Under Maintenance" ? `Maintenance: ${activeReason}` : (formData.condition || undefined),
+        maintenanceReason: formData.availabilityStatus === "Under Maintenance" ? activeReason : undefined,
         latitude: formData.latitude ? Number(formData.latitude) : undefined,
         longitude: formData.longitude ? Number(formData.longitude) : undefined,
       };
@@ -165,7 +212,21 @@ export default function PropertiesPage() {
 
   const openEdit = (property: Property) => {
     setSelectedProperty(property);
-    setFormData({ name: property.name, location: property.location, latitude: property.latitude?.toString() || "", longitude: property.longitude?.toString() || "", monthlyRevenue: property.monthlyRevenue || (property as any).rentAmount || 0, type: (property.type as any) || "house", units: property.units, features: property.features || [], condition: property.condition || "", availabilityStatus: property.availabilityStatus || "Available", imageUrl: property.imageUrl || "" });
+    const existingReason = property.maintenanceReason || (property.condition?.startsWith("Maintenance: ") ? property.condition.replace("Maintenance: ", "") : PROPERTY_MAINTENANCE_REASONS[0]);
+    setFormData({
+      name: property.name,
+      location: property.location,
+      latitude: property.latitude?.toString() || "",
+      longitude: property.longitude?.toString() || "",
+      monthlyRevenue: property.monthlyRevenue || (property as any).rentAmount || 0,
+      type: (property.type as any) || "house",
+      units: property.units,
+      features: property.features || [],
+      condition: property.condition || "",
+      availabilityStatus: property.availabilityStatus || "Available",
+      maintenanceReason: existingReason,
+      imageUrl: property.imageUrl || "",
+    });
     setImagePreview(property.imageUrl || "");
     setPropertyImage(null);
     setShowEditModal(true);
@@ -195,10 +256,78 @@ export default function PropertiesPage() {
           )}
         </div>
       </div>
-      <div className="flex gap-3">
-        <div className="relative flex-1 max-w-md">
+      {/* Filter Toolbar */}
+      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between flex-wrap">
+        <div className="relative flex-1 min-w-[240px] max-w-md">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
-          <Input placeholder="Search properties..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 h-10" />
+          <Input placeholder="Search properties by name or location..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 h-10" />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <AnimatedFilterDropdown
+            label="Type"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            options={[
+              { value: "all", label: "All Types" },
+              { value: "house", label: "House / Villa" },
+              { value: "residential", label: "Residential" },
+              { value: "building", label: "Commercial / Building" },
+              { value: "condominium", label: "Condominium" },
+            ]}
+          />
+
+          <AnimatedFilterDropdown
+            label="Status"
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              if (e.target.value !== "Under Maintenance") setMaintenanceReasonFilter("all");
+            }}
+            options={[
+              { value: "all", label: "All Statuses" },
+              { value: "Available", label: "Available" },
+              { value: "Occupied", label: "Occupied" },
+              { value: "Reserved", label: "Reserved" },
+              { value: "Under Maintenance", label: "Under Maintenance" },
+            ]}
+          />
+
+          <AnimatedFilterDropdown
+            label="House Repair Reason"
+            icon={<Wrench className="h-3.5 w-3.5 text-amber-500" />}
+            value={maintenanceReasonFilter}
+            onChange={(e) => {
+              const val = e.target.value;
+              setMaintenanceReasonFilter(val);
+              if (val !== "all") {
+                setStatusFilter("Under Maintenance");
+              }
+            }}
+            pulseOnMaintenance={maintenanceReasonFilter !== "all" || statusFilter === "Under Maintenance"}
+            containerClassName={maintenanceReasonFilter !== "all" ? "border-amber-300 bg-amber-50/50" : undefined}
+            options={[
+              { value: "all", label: "All House Repair Reasons" },
+              ...PROPERTY_MAINTENANCE_REASONS.map((r) => ({ value: r, label: r })),
+            ]}
+          />
+
+          {(searchTerm || statusFilter !== "all" || typeFilter !== "all" || maintenanceReasonFilter !== "all") && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                setSearchTerm("");
+                setStatusFilter("all");
+                setTypeFilter("all");
+                setMaintenanceReasonFilter("all");
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 hover:border-gray-400 hover:text-gray-900"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset
+            </motion.button>
+          )}
         </div>
       </div>
 
@@ -226,15 +355,27 @@ export default function PropertiesPage() {
                         className="h-full w-full"
                         imageClassName="object-cover"
                       />
-                      <div className="absolute top-4 right-4">
+                      <div className="absolute top-4 right-4 flex flex-col items-end gap-1.5">
                         <Badge variant="outline" className={cn(
-                          "bg-white/90 backdrop-blur-sm",
-                          property.status === "active" ? "text-green-600 border-green-200" : "text-gray-600 border-gray-200"
+                          "backdrop-blur-sm font-semibold shadow-xs",
+                          property.availabilityStatus === "Under Maintenance"
+                            ? "bg-amber-50/95 text-amber-800 border-amber-300"
+                            : property.status === "active" ? "bg-white/90 text-green-600 border-green-200" : "bg-white/90 text-gray-600 border-gray-200"
                         )}>
-                          {property.status === "active" ? "Active" : "Inactive"}
+                          {property.availabilityStatus === "Under Maintenance" ? (
+                            <span className="flex items-center gap-1.5">
+                              <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                              </span>
+                              Under Maintenance
+                            </span>
+                          ) : (
+                            property.availabilityStatus || (property.status === "active" ? "Active" : "Inactive")
+                          )}
                         </Badge>
                       </div>
-                      <div className="absolute bottom-4 left-4 flex items-center gap-2 min-w-0">
+                      <div className="absolute bottom-4 left-4 flex items-center gap-2 min-w-0 pr-4">
                         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 text-white shadow-lg flex-shrink-0">
                           <Building2 className="h-5 w-5" />
                         </div>
@@ -243,6 +384,14 @@ export default function PropertiesPage() {
                           <div className="flex items-center gap-1 text-xs text-white/80 truncate">
                             <MapPin className="h-3 w-3 flex-shrink-0" />{property.location}
                           </div>
+                          {property.availabilityStatus === "Under Maintenance" && (
+                            <div className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-500/90 backdrop-blur-xs px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
+                              <Wrench className="h-2.5 w-2.5 shrink-0" />
+                              <span className="truncate max-w-[190px]" title={property.maintenanceReason || (property.condition?.startsWith("Maintenance: ") ? property.condition.replace("Maintenance: ", "") : "Building Infrastructure Servicing")}>
+                                {property.maintenanceReason || (property.condition?.startsWith("Maintenance: ") ? property.condition.replace("Maintenance: ", "") : "Building Infrastructure Servicing")}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -343,6 +492,34 @@ export default function PropertiesPage() {
               </select>
             </div>
           </div>
+
+          {formData.availabilityStatus === "Under Maintenance" && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl border border-amber-300 bg-amber-50/70 p-3.5 space-y-1.5 dark:border-amber-800 dark:bg-amber-950/30"
+            >
+              <label className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                <Wrench className="h-3.5 w-3.5 text-amber-600" />
+                Chosen Reason for Property Maintenance *
+              </label>
+              <select
+                value={formData.maintenanceReason || PROPERTY_MAINTENANCE_REASONS[0]}
+                onChange={(e) => setFormData({ ...formData, maintenanceReason: e.target.value })}
+                className="h-10 w-full rounded-lg border border-amber-300 bg-white px-3 text-xs font-semibold text-amber-950 shadow-xs focus:border-amber-500 focus:outline-none dark:border-amber-700 dark:bg-gray-800 dark:text-amber-100"
+              >
+                {PROPERTY_MAINTENANCE_REASONS.map((reason) => (
+                  <option key={reason} value={reason}>
+                    {reason}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                This reason is displayed across the portfolio view and communicated in maintenance summaries.
+              </p>
+            </motion.div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Monthly Rent (₱)</label>
             <Input type="number" min="0" value={formData.monthlyRevenue || ""} onChange={(e) => setFormData({ ...formData, monthlyRevenue: parseInt(e.target.value) || 0 })} placeholder="e.g. 15000" />
@@ -461,6 +638,34 @@ export default function PropertiesPage() {
               </select>
             </div>
           </div>
+
+          {formData.availabilityStatus === "Under Maintenance" && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl border border-amber-300 bg-amber-50/70 p-3.5 space-y-1.5 dark:border-amber-800 dark:bg-amber-950/30"
+            >
+              <label className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                <Wrench className="h-3.5 w-3.5 text-amber-600" />
+                Chosen Reason for Property Maintenance *
+              </label>
+              <select
+                value={formData.maintenanceReason || PROPERTY_MAINTENANCE_REASONS[0]}
+                onChange={(e) => setFormData({ ...formData, maintenanceReason: e.target.value })}
+                className="h-10 w-full rounded-lg border border-amber-300 bg-white px-3 text-xs font-semibold text-amber-950 shadow-xs focus:border-amber-500 focus:outline-none dark:border-amber-700 dark:bg-gray-800 dark:text-amber-100"
+              >
+                {PROPERTY_MAINTENANCE_REASONS.map((reason) => (
+                  <option key={reason} value={reason}>
+                    {reason}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                This reason is displayed across the portfolio view and communicated in maintenance summaries.
+              </p>
+            </motion.div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Monthly Rent (₱)</label>
             <Input type="number" min="0" value={formData.monthlyRevenue || ""} onChange={(e) => setFormData({ ...formData, monthlyRevenue: parseInt(e.target.value) || 0 })} placeholder="e.g. 15000" />

@@ -35,6 +35,7 @@ import {
   toggleFavoriteProperty,
 } from "@/lib/tenant-property-storage";
 import { ManagementBanner } from "@/components/management-panel";
+import { AnimatedFilterDropdown } from "@/components/ui/animated-filter-dropdown";
 
 type SortOption =
   | "price-asc"
@@ -282,41 +283,32 @@ export default function TenantPropertiesPage() {
         {/* Right action buttons: Unit Dropdown, Filter & Sort */}
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Unit Dropdown Selector */}
-          <div className="relative">
-            <select
-              value={selectedUnitFilter}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSelectedUnitFilter(val);
-                if (val !== "all") {
-                  const targetUnit = units.find((u) => u.id === val);
-                  if (targetUnit && targetUnit.propertyId) {
-                    setSelectedUnitByProperty((prev) => ({
-                      ...prev,
-                      [targetUnit.propertyId as string]: targetUnit.id,
-                    }));
-                  }
+          <AnimatedFilterDropdown
+            label="Unit"
+            value={selectedUnitFilter}
+            onChange={(val) => {
+              setSelectedUnitFilter(val);
+              if (val !== "all") {
+                const targetUnit = units.find((u) => u.id === val);
+                if (targetUnit && targetUnit.propertyId) {
+                  setSelectedUnitByProperty((prev) => ({
+                    ...prev,
+                    [targetUnit.propertyId as string]: targetUnit.id,
+                  }));
                 }
-              }}
-              aria-label="Filter by unit"
-              className="h-11 pl-3.5 pr-8 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-medium shadow-xs focus:outline-hidden focus:ring-2 focus:ring-blue-500 cursor-pointer appearance-none transition-colors"
-            >
-              <option value="all">All Units ({units.length})</option>
-              {myAssignedUnit && (
-                <option value={myAssignedUnit.id}>
-                  Unit {myAssignedUnit.unitNumber} • Your Home
-                </option>
-              )}
-              {units
+              }
+            }}
+            options={[
+              { value: "all", label: `All Units (${units.length})` },
+              ...(myAssignedUnit ? [{ value: myAssignedUnit.id, label: `Unit ${myAssignedUnit.unitNumber} • Your Home`, badge: "Home" }] : []),
+              ...units
                 .filter((u) => u.status === "vacant" && u.id !== myAssignedUnit?.id)
-                .map((u) => (
-                  <option key={u.id} value={u.id}>
-                    Unit {u.unitNumber} {u.floor ? `(Floor ${u.floor})` : ""} • Vacant
-                  </option>
-                ))}
-            </select>
-            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-          </div>
+                .map((u) => ({
+                  value: u.id,
+                  label: `Unit ${u.unitNumber} ${u.floor ? `(Floor ${u.floor})` : ""} • Vacant`,
+                })),
+            ]}
+          />
 
           {/* Filter button */}
           <button

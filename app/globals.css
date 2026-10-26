@@ -149,7 +149,6 @@ input[type="range"]:not(:disabled),
 [role="radio"]:not([aria-disabled="true"]),
 [role="combobox"]:not([aria-disabled="true"]),
 [role="link"]:not([aria-disabled="true"]),
-[data-clickable="true"],
 [clickable],
 .clickable,
 .cursor-pointer {
@@ -160,8 +159,7 @@ input[type="range"]:not(:disabled),
 button:not(:disabled) *,
 [role="button"]:not([aria-disabled="true"]) *,
 a *,
-label:not([aria-disabled="true"]) *,
-[data-clickable="true"] * {
+label:not([aria-disabled="true"]) * {
   cursor: inherit;
 }
 

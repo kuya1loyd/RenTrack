@@ -14,22 +14,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Title and message are required" }, { status: 400 });
     }
 
-    const targetRoles =
-      recipientRole === "both" || type === "tenant" || type === "payment"
-        ? ["owner", "admin"]
-        : recipientRole === "owner"
-        ? ["owner"]
-        : ["admin"];
+    const recipientIds = new Set<string>();
 
-    const { data: users } = await getAdminSupabase()
-      .schema("public")
-      .from("users")
-      .select("id")
-      .in("role", targetRoles);
-
-    const recipientIds = new Set<string>((users || []).map((u: any) => u.id));
     if (body.targetUserId) {
       recipientIds.add(body.targetUserId);
+    } else {
+      const targetRoles =
+        recipientRole === "owner"
+          ? ["owner"]
+          : recipientRole === "both" || type === "payment"
+          ? ["owner", "admin"]
+          : ["admin"];
+
+      const { data: users } = await getAdminSupabase()
+        .schema("public")
+        .from("users")
+        .select("id")
+        .in("role", targetRoles);
+
+      (users || []).forEach((u: any) => recipientIds.add(u.id));
     }
 
     if (recipientIds.size === 0) {

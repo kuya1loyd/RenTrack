@@ -42,13 +42,13 @@ type OwnerNavLink = {
 const navItems: OwnerNavLink[] = [
   { label: "Dashboard", tab: "overview", href: "/dashboard/owner#overview", icon: LayoutDashboard },
   {
-    label: "Units",
+    label: "Rental Management",
     tab: "units",
-    href: "/dashboard/owner#units",
-    icon: ClipboardCheck,
+    href: "/dashboard/owner#properties",
+    icon: Building2,
     group: "Management",
     children: [
-      { label: "Properties", tab: "properties", href: "/dashboard/owner#properties", icon: Building2 },
+      { label: "Properties", tab: "properties", href: "/dashboard/owner#properties", icon: Home },
       { label: "Occupancy", tab: "occupancy", href: "/dashboard/owner#occupancy", icon: BarChart3 },
     ],
   },
@@ -119,7 +119,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [unitsDropdownOpen, setUnitsDropdownOpen] = useState(false);
+  const [unitsDropdownOpen, setUnitsDropdownOpen] = useState(true);
 
   const unreadMessagesCount = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 
@@ -173,7 +173,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
         })
         .catch(() => {});
       getTenants(user).then((tenants) => {
-        const pending = tenants.filter((t: any) => t.assignmentStatus === "pending" && t.unitId).length;
+        const pending = tenants.filter((t: any) => t.assignmentStatus === "pending" && (t.unitId || t.propertyName)).length;
         setPendingAssignmentsCount(pending);
       }).catch(() => setPendingAssignmentsCount(0));
       getPendingPaymentsCount().then(setPendingPaymentsCount).catch(() => setPendingPaymentsCount(0));
@@ -238,7 +238,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
         .catch(() => { });
       refreshNotificationsCount();
       getTenants(user).then((tenants) => {
-        const pending = tenants.filter((t: any) => t.assignmentStatus === "pending" && t.unitId).length;
+        const pending = tenants.filter((t: any) => t.assignmentStatus === "pending" && (t.unitId || t.propertyName)).length;
         setPendingAssignmentsCount(pending);
       }).catch(() => { });
       getPendingPaymentsCount().then(setPendingPaymentsCount).catch(() => { });
@@ -271,7 +271,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     const refreshPending = () => {
-      if (user) getTenants(user).then((tenants) => setPendingAssignmentsCount(tenants.filter((tenant: any) => tenant.assignmentStatus === "pending" && tenant.unitId).length)).catch(() => { });
+      if (user) getTenants(user).then((tenants) => setPendingAssignmentsCount(tenants.filter((tenant: any) => tenant.assignmentStatus === "pending" && (tenant.unitId || tenant.propertyName)).length)).catch(() => { });
     };
     window.addEventListener("owner-data-changed", refreshPending);
     return () => window.removeEventListener("owner-data-changed", refreshPending);
@@ -279,7 +279,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     const refreshProfile = () => {
-      if (user) getTenants(user).then((tenants) => setPendingAssignmentsCount(tenants.filter((tenant: any) => tenant.assignmentStatus === "pending" && tenant.unitId).length)).catch(() => { });
+      if (user) getTenants(user).then((tenants) => setPendingAssignmentsCount(tenants.filter((tenant: any) => tenant.assignmentStatus === "pending" && (tenant.unitId || tenant.propertyName)).length)).catch(() => { });
     };
     window.addEventListener("renttrack-profile-updated", refreshProfile);
     return () => window.removeEventListener("renttrack-profile-updated", refreshProfile);
@@ -375,6 +375,9 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
     if (activeButton) {
       activeButton.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
+    if (activeTab === "properties" || activeTab === "occupancy" || activeTab === "units") {
+      setUnitsDropdownOpen(true);
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -412,7 +415,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
 
       if (item.children) {
         const isExactActive = activeTab === item.tab;
-        const isChildActive = item.children.some((c) => c.tab === activeTab);
+        const isChildActive = item.children.some((c) => c.tab === activeTab) || activeTab === "units";
         const isOpen = unitsDropdownOpen;
 
         return (
@@ -425,48 +428,34 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
               </div>
             )}
             <div className="space-y-1">
-              <div
+              <button
+                type="button"
+                id={`${mobile ? "mobile-" : ""}sidebar-${item.tab}`}
+                title={expanded ? undefined : item.label}
+                onClick={() => setUnitsDropdownOpen((prev) => !prev)}
                 className={cn(
-                  "group relative flex w-full items-center justify-between rounded-xl text-[13px] font-medium transition-all duration-150",
-                  isExactActive
-                    ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/20"
+                  "group relative flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
+                  isOpen
+                    ? "bg-slate-800/70 text-white font-semibold shadow-2xs"
                     : isChildActive
-                      ? "bg-white/[0.08] text-white font-semibold"
-                      : "text-slate-300 hover:bg-white/[0.08] hover:text-white"
+                      ? "bg-slate-800/40 text-slate-200 hover:bg-slate-800/60 hover:text-white font-medium"
+                      : "text-slate-300 hover:bg-white/[0.08] hover:text-white",
+                  !expanded && "justify-center px-0 py-2.5"
                 )}
               >
-                <Link
-                  id={`${mobile ? "mobile-" : ""}sidebar-${item.tab}`}
-                  title={expanded ? undefined : item.label}
-                  href={item.href || "/dashboard/owner#units"}
-                  onClick={() => {
-                    handleNavigationClick("units", false);
-                    setUnitsDropdownOpen((prev) => !prev);
-                  }}
-                  className={cn(
-                    "flex flex-1 items-center gap-3 px-3 py-2.5 min-w-0 focus-visible:outline-none rounded-xl cursor-pointer",
-                    !expanded && "justify-center px-0 py-2.5 w-full"
-                  )}
-                >
-                  <Icon className={cn("h-4 w-4 shrink-0 transition-colors", (isExactActive || isChildActive) ? "text-white" : "text-slate-400 group-hover:text-white")} />
+                <div className={cn("flex items-center gap-3 min-w-0", !expanded && "justify-center")}>
+                  <Icon className={cn("h-4 w-4 shrink-0 transition-colors", isOpen || isChildActive ? "text-white" : "text-slate-400 group-hover:text-white")} />
                   {expanded && <span className="truncate">{item.label}</span>}
-                </Link>
+                </div>
                 {expanded && (
-                  <button
-                    type="button"
-                    aria-label="Toggle properties and occupancy dropdown"
-                    title={isOpen ? "Collapse dropdown" : "Expand dropdown"}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setUnitsDropdownOpen((prev) => !prev);
-                    }}
-                    className="p-2.5 pr-3 text-slate-400 hover:text-white transition-colors cursor-pointer rounded-r-xl"
-                  >
-                    <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-200", isOpen && "rotate-180", (isExactActive || isChildActive) && "text-white")} />
-                  </button>
+                  <ChevronDown
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+                      isOpen ? "rotate-180 text-white" : "text-slate-400 group-hover:text-white"
+                    )}
+                  />
                 )}
-              </div>
+              </button>
 
               <AnimatePresence initial={false}>
                 {expanded && isOpen && (
@@ -476,7 +465,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.22, ease: [0.04, 0.62, 0.23, 0.98] }}
-                    className="overflow-hidden space-y-1 pl-3.5 ml-4 border-l border-slate-800/80 my-1"
+                    className="overflow-hidden space-y-1 pt-1"
                   >
                     {item.children.map((sub, subIdx) => {
                       const isSubActive = activeTab === sub.tab;
@@ -484,23 +473,23 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                       return (
                         <motion.div
                           key={sub.tab}
-                          initial={{ opacity: 0, x: -8 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          exit={{ opacity: 0, x: -8 }}
-                          transition={{ duration: 0.18, delay: subIdx * 0.04 }}
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.15, delay: subIdx * 0.03 }}
                         >
                           <Link
                             id={`${mobile ? "mobile-" : ""}sidebar-${sub.tab}`}
                             href={sub.href}
                             onClick={() => handleNavigationClick(sub.tab, mobile)}
                             className={cn(
-                              "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors cursor-pointer",
+                              "group flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-[13px] font-medium transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
                               isSubActive
-                                ? "bg-blue-600 text-white font-semibold shadow-xs shadow-blue-500/20"
+                                ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/25"
                                 : "text-slate-400 hover:text-white hover:bg-white/[0.06]"
                             )}
                           >
-                            <SubIcon className={cn("h-3.5 w-3.5 shrink-0 transition-colors", isSubActive ? "text-white" : "text-slate-400 group-hover:text-white")} />
+                            <SubIcon className={cn("h-4 w-4 shrink-0 transition-colors", isSubActive ? "text-white" : "text-slate-400 group-hover:text-white")} />
                             <span className="truncate">{sub.label}</span>
                           </Link>
                         </motion.div>
@@ -671,7 +660,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
 
       <div className="flex h-[calc(100dvh-53px)] lg:h-screen w-full overflow-hidden">
         {/* Sidebar */}
-        <aside className={cn("hidden h-full shrink-0 flex-col border-r border-slate-800/80 bg-[#0a1120] text-slate-200 transition-[width] duration-200 motion-reduce:transition-none lg:flex", desktopSidebarOpen ? "w-60" : "w-16")}>
+        <aside className={cn("hidden h-full shrink-0 flex-col border-r border-slate-800/80 bg-[#0a1120] text-slate-200 shadow-xs transition-[width] duration-200 motion-reduce:transition-none lg:flex", desktopSidebarOpen ? "w-60" : "w-16")}>
           {/* Header */}
           <div className={cn("flex items-center gap-3 border-b border-slate-800/80 py-4", desktopSidebarOpen ? "px-4" : "justify-center px-2")}>
             <Link href="/dashboard/owner" className="flex items-center gap-3 min-w-0">

@@ -35,8 +35,8 @@ const navItems = [
   { label: "Contact", href: "#contact" },
 ];
 const unitTypeChoices = [
-  { label: "Properties", value: "properties" },
-  { label: "Units", value: "units" },
+  { label: "House", value: "house" },
+  { label: "Condominium", value: "condominium" },
 ];
 
 const unitImages = [
@@ -242,17 +242,17 @@ export default function LandingPage() {
     if (!propertyTypeFilter) return true;
     const filter = propertyTypeFilter.toLowerCase();
     const type = String(rawType || "").toLowerCase();
+    if (filter === "house") {
+      return type === "house" || type === "residential" || (!type && !isUnit);
+    }
+    if (filter === "condominium" || filter === "condo") {
+      return type === "condominium" || type === "condo";
+    }
     if (filter === "properties") {
       return !isUnit;
     }
     if (filter === "units") {
       return isUnit;
-    }
-    if (filter === "house") {
-      return !isUnit && (type === "house" || !type);
-    }
-    if (filter === "condominium") {
-      return type === "condominium";
     }
     return type === filter;
   };
@@ -447,45 +447,39 @@ export default function LandingPage() {
                       <a
                         href="#properties"
                         onClick={() => {
-                          selectUnitType("properties");
+                          selectUnitType("house");
                           setOpenNavDropdown(null);
                         }}
                         className={cn(
                           "group flex items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold transition-all duration-150",
-                          propertyTypeFilter === "properties"
+                          propertyTypeFilter === "house"
                             ? "bg-blue-50 text-blue-700 font-bold"
                             : "text-slate-700 hover:bg-slate-50 hover:text-blue-600"
                         )}
                       >
                         <div>
-                          <div className="font-semibold text-slate-800 group-hover:text-blue-600">Properties</div>
-                          <div className="text-[10px] font-normal text-slate-500">Houses & condominiums</div>
+                          <div className="font-semibold text-slate-800 group-hover:text-blue-600">House Rentals</div>
+                          <div className="text-[10px] font-normal text-slate-500">Houses & residential homes</div>
                         </div>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                          {filteredProperties.length}
-                        </span>
                       </a>
 
                       <a
                         href="#properties"
                         onClick={() => {
-                          selectUnitType("units");
+                          selectUnitType("condominium");
                           setOpenNavDropdown(null);
                         }}
                         className={cn(
                           "group mt-1 flex items-center justify-between rounded-xl px-3 py-2.5 text-xs font-semibold transition-all duration-150",
-                          propertyTypeFilter === "units"
+                          propertyTypeFilter === "condominium"
                             ? "bg-indigo-50 text-indigo-700 font-bold"
                             : "text-slate-700 hover:bg-slate-50 hover:text-indigo-600"
                         )}
                       >
                         <div>
-                          <div className="font-semibold text-slate-800 group-hover:text-indigo-600">Units</div>
-                          <div className="text-[10px] font-normal text-slate-500">Individual unit listings</div>
+                          <div className="font-semibold text-slate-800 group-hover:text-indigo-600">Condominium Rentals</div>
+                          <div className="text-[10px] font-normal text-slate-500">Condo units & suites</div>
                         </div>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                          {filteredUnits.length}
-                        </span>
                       </a>
                     </motion.div>
                   )}
@@ -572,33 +566,31 @@ export default function LandingPage() {
                     href="#properties"
                     onClick={(e) => {
                       scrollToSection(e, "properties");
-                      selectUnitType("properties");
+                      selectUnitType("house");
                       setMobileMenuOpen(false);
                       setMobileRentalOpen(false);
                     }}
                     className={cn(
                       "flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition cursor-pointer",
-                      propertyTypeFilter === "properties" ? "bg-blue-50 text-blue-700 font-semibold" : "text-slate-700 hover:bg-slate-100"
+                      propertyTypeFilter === "house" ? "bg-blue-50 text-blue-700 font-semibold" : "text-slate-700 hover:bg-slate-100"
                     )}
                   >
-                    <span>Properties</span>
-                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] text-slate-600">{filteredProperties.length}</span>
+                    <span>House Rentals</span>
                   </a>
                   <a
                     href="#properties"
                     onClick={(e) => {
                       scrollToSection(e, "properties");
-                      selectUnitType("units");
+                      selectUnitType("condominium");
                       setMobileMenuOpen(false);
                       setMobileRentalOpen(false);
                     }}
                     className={cn(
                       "flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition cursor-pointer",
-                      propertyTypeFilter === "units" ? "bg-indigo-50 text-indigo-700 font-semibold" : "text-slate-700 hover:bg-slate-100"
+                      propertyTypeFilter === "condominium" ? "bg-indigo-50 text-indigo-700 font-semibold" : "text-slate-700 hover:bg-slate-100"
                     )}
                   >
-                    <span>Units</span>
-                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] text-slate-600">{filteredUnits.length}</span>
+                    <span>Condominium Rentals</span>
                   </a>
                 </div>
               )}
@@ -946,11 +938,15 @@ export default function LandingPage() {
                   >
                     <div className="flex items-center gap-2 truncate">
                       <span className="truncate">
-                        {propertyTypeFilter === "properties"
-                          ? "Properties"
-                          : propertyTypeFilter === "units"
-                            ? "Units"
-                            : "Any Type"}
+                        {propertyTypeFilter === "house"
+                          ? "House"
+                          : propertyTypeFilter === "condominium"
+                            ? "Condominium"
+                            : propertyTypeFilter === "properties"
+                              ? "House"
+                              : propertyTypeFilter === "units"
+                                ? "Condominium"
+                                : "Any Type"}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -978,11 +974,11 @@ export default function LandingPage() {
                         className="absolute left-0 top-[calc(100%+8px)] min-w-54 rounded-2xl border border-slate-200/90 bg-white/95 p-1.5 shadow-[0_16px_36px_rgba(15,23,42,0.14)] backdrop-blur-md z-50"
                       >
                         {[
-                          { label: "Any Type", value: "", count: filteredProperties.length + filteredUnits.length },
-                          { label: "Properties", value: "properties", count: filteredProperties.length },
-                          { label: "Units", value: "units", count: filteredUnits.length },
+                          { label: "Any Type", value: "" },
+                          { label: "House", value: "house" },
+                          { label: "Condominium", value: "condominium" },
                         ].map((item) => {
-                          const isSelected = propertyTypeFilter === item.value;
+                          const isSelected = propertyTypeFilter === item.value || (!propertyTypeFilter && item.value === "");
                           return (
                             <motion.button
                               key={item.label}
@@ -991,20 +987,16 @@ export default function LandingPage() {
                               whileTap={{ scale: 0.98 }}
                               onClick={() => {
                                 setPropertyTypeFilter(item.value);
-                                if (item.value === "properties") setActiveCategoryTab("properties");
-                                else if (item.value === "units") setActiveCategoryTab("units");
-                                else setActiveCategoryTab("all");
                                 setOpenDropdown(null);
                               }}
                               className={cn(
                                 "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-medium transition-colors text-left",
                                 isSelected
                                   ? "bg-blue-50 text-blue-700 font-bold"
-                                  : "text-slate-700"
+                                  : "text-slate-700 hover:bg-slate-50"
                               )}
                             >
                               <span>{item.label}</span>
-                              <span className="text-[11px] font-normal text-slate-400">({item.count})</span>
                             </motion.button>
                           );
                         })}
@@ -1338,7 +1330,17 @@ export default function LandingPage() {
             </p>
             {propertyTypeFilter && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                <span>{propertyTypeFilter === "properties" ? "Properties only" : "Units only"}</span>
+                <span>
+                  {propertyTypeFilter === "house"
+                    ? "House only"
+                    : propertyTypeFilter === "condominium"
+                      ? "Condominium only"
+                      : propertyTypeFilter === "properties"
+                        ? "Properties only"
+                        : propertyTypeFilter === "units"
+                          ? "Units only"
+                          : `${propertyTypeFilter} only`}
+                </span>
                 <button
                   type="button"
                   onClick={() => setPropertyTypeFilter("")}

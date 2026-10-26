@@ -417,24 +417,24 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
 
       <div className="flex h-screen w-full max-w-full overflow-x-hidden">
         {/* Sidebar */}
-        <div className={cn("hidden lg:flex h-full shrink-0 flex-col border-r border-white/10 bg-[#07111f] text-slate-200 transition-[width] duration-200 motion-reduce:transition-none", sidebarOpen ? "w-56" : "w-16")}>
-          <div className="border-b border-white/10 p-4">
+        <div className={cn("hidden lg:flex h-full shrink-0 flex-col border-r border-slate-200/90 bg-white text-slate-800 shadow-xs transition-[width] duration-200 motion-reduce:transition-none", sidebarOpen ? "w-56" : "w-16")}>
+          <div className="border-b border-slate-100 p-4">
             <Link href="/dashboard/agent" className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-full overflow-hidden">
                 <Image src="/images/landing/logo.png" alt="RentTrack" width={32} height={32} className="h-full w-full object-contain" />
               </div>
-              {sidebarOpen && <span className="min-w-0"><span className="block text-sm font-bold leading-tight text-white">RentTrack</span><span className="mt-0.5 block text-[10px] leading-tight text-slate-400">Property Management</span></span>}
+              {sidebarOpen && <span className="min-w-0"><span className="block text-sm font-bold leading-tight text-slate-900">RentTrack</span><span className="mt-0.5 block text-[10px] leading-tight text-slate-500">Property Management</span></span>}
             </Link>
           </div>
           <nav aria-label="Agent navigation" className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
             {!isAgentVerified && (
-              <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-200">
+              <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
                 <div className="flex items-center gap-2 font-semibold">
-                  <ShieldAlert className="h-4 w-4 text-amber-400 shrink-0" />
+                  <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
                   {sidebarOpen && <span>ID Verification Required</span>}
                 </div>
                 {sidebarOpen && (
-                  <p className="mt-1 text-[11px] text-amber-300/80 leading-snug">
+                  <p className="mt-1 text-[11px] text-amber-800/80 leading-snug">
                     {user?.idVerificationStatus === "pending"
                       ? "Awaiting owner approval"
                       : user?.idVerificationStatus === "rejected"
@@ -461,41 +461,41 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                     window.location.hash = item.tab;
                   }}
                   className={cn(
-                    "w-full flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 motion-reduce:transition-none motion-reduce:hover:translate-x-0",
+                    "w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
                     !isAgentVerified
-                      ? "opacity-45 cursor-not-allowed text-slate-500 hover:bg-transparent"
+                      ? "opacity-45 cursor-not-allowed text-slate-400 hover:bg-transparent"
                       : isActive
-                      ? "bg-blue-600 text-white shadow-[0_4px_12px_rgba(37,99,235,0.22)]"
-                      : "text-slate-400 hover:translate-x-0.5 hover:bg-white/[0.06] hover:text-white"
+                      ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/25"
+                      : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
                   )}
                   title={!isAgentVerified ? `Locked: Owner ID verification required to access ${item.label}` : undefined}
                 >
-                  <Icon className={cn("h-4 w-4 shrink-0", !isAgentVerified ? "text-slate-600" : isActive ? "text-white" : "text-slate-500")} />
+                  <Icon className={cn("h-4 w-4 shrink-0", !isAgentVerified ? "text-slate-400" : isActive ? "text-white" : "text-slate-400")} />
                   {sidebarOpen && <span className="truncate">{item.label}</span>}
                   {!isAgentVerified ? (
-                    sidebarOpen && <Lock className="ml-auto h-3.5 w-3.5 text-slate-500 shrink-0" />
+                    sidebarOpen && <Lock className="ml-auto h-3.5 w-3.5 text-slate-400 shrink-0" />
                   ) : item.tab === "inquiries" && unreadInquiryCount > 0 ? (
                     <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
                       {unreadInquiryCount}
                     </span>
                   ) : null}
                   {isActive && sidebarOpen && isAgentVerified && (
-                    <span aria-hidden="true" className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.4)]" />
+                    <span aria-hidden="true" className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-white" />
                   )}
                 </button>
               );
             })}
           </nav>
-          <div className="mt-auto space-y-2 border-t border-white/10 p-3">
+          <div className="mt-auto space-y-2 border-t border-slate-100 p-3">
             <button
               onClick={() => setShowLogoutModal(true)}
-              className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+              className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 cursor-pointer"
             >
               <LogOut className="h-4 w-4 shrink-0" />
               {sidebarOpen && <span className="truncate">Logout</span>}
             </button>
           </div>
-          </div>
+        </div>
 
         {/* Mobile sidebar */}
         <AnimatePresence>
@@ -505,7 +505,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
               animate={{ x: 0 }}
               exit={reduceMotion ? undefined : { x: -300 }}
               transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.21, 0.47, 0.32, 0.98] }}
-              className="lg:hidden fixed inset-0 z-50 bg-black/50"
+              className="lg:hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-xs"
               onClick={() => setMobileSidebarOpen(false)}
             >
               <motion.div
@@ -513,28 +513,28 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                 animate={{ x: 0 }}
                 exit={reduceMotion ? undefined : { x: -300 }}
                 transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.21, 0.47, 0.32, 0.98] }}
-                className="flex h-full w-64 flex-col border-r border-white/10 bg-[#07111f] text-slate-200"
+                className="flex h-full w-64 flex-col border-r border-slate-200 bg-white text-slate-800 shadow-xl"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="flex items-center justify-between border-b border-white/10 p-4">
+                <div className="flex items-center justify-between border-b border-slate-100 p-4">
                   <Link href="/dashboard/agent" className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-full overflow-hidden">
                       <Image src="/images/landing/logo.png" alt="RentTrack" width={32} height={32} className="h-full w-full object-contain" />
                     </div>
-                    <span><span className="block text-sm font-bold leading-tight text-white">RentTrack</span><span className="mt-0.5 block text-[10px] leading-tight text-slate-400">Property Management</span></span>
+                    <span><span className="block text-sm font-bold leading-tight text-slate-900">RentTrack</span><span className="mt-0.5 block text-[10px] leading-tight text-slate-500">Property Management</span></span>
                   </Link>
-                  <button onClick={() => setMobileSidebarOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" aria-label="Close navigation menu">
+                  <button onClick={() => setMobileSidebarOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" aria-label="Close navigation menu">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
                 <nav aria-label="Agent navigation" className="flex-1 space-y-1 overflow-y-auto p-3">
                   {!isAgentVerified && (
-                    <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+                    <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                       <div className="flex items-center gap-2 font-semibold">
-                        <ShieldAlert className="h-4 w-4 text-amber-400 shrink-0" />
+                        <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
                         <span>ID Verification Required</span>
                       </div>
-                      <p className="mt-1 text-[11px] text-amber-300/80 leading-snug">
+                      <p className="mt-1 text-[11px] text-amber-800/80 leading-snug">
                         {user?.idVerificationStatus === "pending"
                           ? "Awaiting owner approval"
                           : user?.idVerificationStatus === "rejected"
@@ -561,18 +561,18 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                           setMobileSidebarOpen(false);
                         }}
                         className={cn(
-                          "w-full flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 motion-reduce:transition-none motion-reduce:hover:translate-x-0",
+                          "w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
                           !isAgentVerified
-                            ? "opacity-45 cursor-not-allowed text-slate-500 hover:bg-transparent"
+                            ? "opacity-45 cursor-not-allowed text-slate-400 hover:bg-transparent"
                             : isActive
-                            ? "bg-blue-600 text-white shadow-[0_4px_12px_rgba(37,99,235,0.22)]"
-                            : "text-slate-400 hover:translate-x-0.5 hover:bg-white/[0.06] hover:text-white"
+                            ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/25"
+                            : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
                         )}
                       >
-                        <Icon className={cn("h-4 w-4 shrink-0", !isAgentVerified ? "text-slate-600" : isActive ? "text-white" : "text-slate-500")} />
+                        <Icon className={cn("h-4 w-4 shrink-0", !isAgentVerified ? "text-slate-400" : isActive ? "text-white" : "text-slate-400")} />
                         <span className="truncate">{item.label}</span>
                         {!isAgentVerified ? (
-                          <Lock className="ml-auto h-3.5 w-3.5 text-slate-500 shrink-0" />
+                          <Lock className="ml-auto h-3.5 w-3.5 text-slate-400 shrink-0" />
                         ) : item.tab === "inquiries" && unreadInquiryCount > 0 ? (
                           <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
                             {unreadInquiryCount}
@@ -582,10 +582,10 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                     );
                   })}
                 </nav>
-                <div className="mt-auto space-y-2 border-t border-white/10 p-3">
+                <div className="mt-auto space-y-2 border-t border-slate-100 p-3">
                   <button
                     onClick={() => setShowLogoutModal(true)}
-                    className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                    className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
                   >
                     <LogOut className="h-4 w-4" />
                     <span className="truncate">Logout</span>

@@ -1,3 +1,4 @@
+// Touch route for Turbopack cache rebuild
 import { readFileSync } from "fs";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";

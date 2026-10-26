@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Settings, Activity, FileText, Stethoscope,
   Heart, CheckCircle2, XCircle, Search, Trash2,
@@ -10,7 +10,7 @@ import {
   LayoutDashboard, MapPinned, HeartPulse, SlidersHorizontal,
   Eye, Pencil, KeyRound, Copy, Mail, MessageSquare, Phone,
   Shield, ShieldOff, RotateCcw, Download, ChevronDown, MoreHorizontal, ShieldCheck,
-  Calendar, Check, Sparkles, Filter, UserCheck, MapPin, Clock, ExternalLink, Briefcase, AlertCircle, X, User, Camera,
+  Calendar, Check, Sparkles, Filter, UserCheck, MapPin, Clock, ExternalLink, Briefcase, AlertCircle, X, User, Camera, Wrench,
 } from "lucide-react";
 import PropertyLocationMap from "@/components/property-location-map-loader";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -22,6 +22,7 @@ import { Select } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Modal } from "@/components/ui/modal";
+import { AnimatedFilterDropdown } from "@/components/ui/animated-filter-dropdown";
 import { formatDisplayId, cn, formatCurrency, formatDate, formatDateTime, getTimeAgo, getInitials, isSampleAccount } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import {
@@ -30,7 +31,8 @@ import {
   UserRecord, Property, Unit, TenantRecord, Notification, Payment, Complaint, Rating, AuditLog,
   deleteUser, updateUser, adminResetUserPassword,
   updateComplaintStatus, markAllMessagesRead,
-  getComplaintById,
+  getComplaintById, updateUnit,
+  UNIT_MAINTENANCE_REASONS, PROPERTY_MAINTENANCE_REASONS, SYSTEM_MAINTENANCE_REASONS, MAINTENANCE_REASON_GROUPS,
 } from "@/lib/data";
 import { toast } from "sonner";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -247,6 +249,7 @@ export default function AdminDashboard() {
   });
   const [unitSearch, setUnitSearch] = useState("");
   const [unitStatusFilter, setUnitStatusFilter] = useState<"all" | "occupied" | "vacant" | "maintenance">("all");
+  const [unitMaintenanceReasonFilter, setUnitMaintenanceReasonFilter] = useState("all");
   const [unitPropertyFilter, setUnitPropertyFilter] = useState("all");
   const [unitTypeFilter, setUnitTypeFilter] = useState("all");
   const [tenantSearch, setTenantSearch] = useState("");
@@ -259,6 +262,19 @@ export default function AdminDashboard() {
   const [editingConfig, setEditingConfig] = useState<string | null>(null);
   const [configDraft, setConfigDraft] = useState<string>("");
   const [maintenanceMode, setMaintenanceMode] = useAdminDataset("maintenanceMode");
+  const [maintenanceReason, setMaintenanceReason] = useState<string>(SYSTEM_MAINTENANCE_REASONS[0]);
+  const [customMaintenanceReason, setCustomMaintenanceReason] = useState<string>("");
+  const [isUpdatingMaintenance, setIsUpdatingMaintenance] = useState(false);
+  const [maintenanceCustomNote, setMaintenanceCustomNote] = useState("");
+  const [maintenanceDuration, setMaintenanceDuration] = useState("30 to 60 minutes");
+  const [showMaintenanceConfirmModal, setShowMaintenanceConfirmModal] = useState(false);
+  const [enableMaintenanceInModal, setEnableMaintenanceInModal] = useState(true);
+
+  useEffect(() => {
+    if (systemConfig?.maintenance_reason) {
+      setMaintenanceReason(systemConfig.maintenance_reason);
+    }
+  }, [systemConfig?.maintenance_reason]);
   const [announcementTitle, setAnnouncementTitle] = useState("");
   const [announcementMessage, setAnnouncementMessage] = useState("");
   const [isSendingAnnouncement, setIsSendingAnnouncement] = useState(false);
@@ -279,6 +295,84 @@ export default function AdminDashboard() {
 
   /** Force-refresh every admin dataset (used after mutations). Each dataset renders as soon as it arrives. */
   const loadData = useCallback(() => refreshAdminData(undefined, { force: true }), [refreshAdminData]);
+
+  const handleMaintenanceChange = useCallback(async (targetMode: boolean, note?: string, duration?: string, reason?: string, title?: string) => {
+    setIsUpdatingMaintenance(true);
+    try {
+      const activeReason = reason || maintenanceReason;
+      const res = await fetch("/api/admin/maintenance/mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: targetMode,
+          customMessage: note,
+          estimatedDowntime: duration,
+          maintenanceReason: activeReason,
+          reason: activeReason,
+          title: title,
+        }),
+      });
+      const data = await parseJsonSafely(res);
+      if (data.success) {
+        setMaintenanceMode(data.enabled);
+        document.cookie = "maintenance_mode=; path=/; max-age=0";
+        if (data.enabled) {
+          toast.success(data.message || `Maintenance mode enabled (${activeReason}). Notice sent to all accounts.`);
+        } else {
+          toast.success("Maintenance mode disabled. System is now operational.");
+        }
+      } else {
+        toast.error(data.error || "Failed to update maintenance mode");
+      }
+    } catch {
+      toast.error("Failed to update maintenance mode");
+    } finally {
+      setIsUpdatingMaintenance(false);
+      setShowMaintenanceConfirmModal(false);
+    }
+  }, [setMaintenanceMode, maintenanceReason]);
+
+  const handleCombinedMaintenanceAndAnnouncement = useCallback(async () => {
+    const effectiveReason = (maintenanceReason === "Other / Custom Maintenance Reason" && customMaintenanceReason.trim())
+      ? customMaintenanceReason.trim()
+      : maintenanceReason;
+    const title = announcementTitle.trim() || (enableMaintenanceInModal ? "Scheduled Maintenance" : "System Announcement");
+    const message = announcementMessage.trim() || maintenanceCustomNote.trim();
+
+    if (enableMaintenanceInModal) {
+      await handleMaintenanceChange(true, message, maintenanceDuration, effectiveReason, title);
+    } else {
+      if (!title || !message) {
+        toast.error("Announcement title and message are required");
+        return;
+      }
+      setIsSendingAnnouncement(true);
+      try {
+        const res = await fetch("/api/admin/announcements", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            message,
+            reason: effectiveReason,
+            duration: maintenanceDuration || undefined,
+          }),
+        });
+        const data = await parseJsonSafely(res);
+        if (data.success) {
+          toast.success(data.message || `Announcement posted to ${data.count} users and emails dispatched.`);
+          setShowMaintenanceConfirmModal(false);
+          setAnnouncementMessage("");
+        } else {
+          toast.error(data.error || "Failed to send announcement");
+        }
+      } catch {
+        toast.error("Failed to send announcement");
+      } finally {
+        setIsSendingAnnouncement(false);
+      }
+    }
+  }, [enableMaintenanceInModal, maintenanceReason, customMaintenanceReason, announcementTitle, announcementMessage, maintenanceCustomNote, maintenanceDuration, handleMaintenanceChange]);
 
   const openComplaint = useCallback(async (complaint: Complaint) => {
     try {
@@ -463,6 +557,13 @@ export default function AdminDashboard() {
     return units.filter((u) => {
       const prop = properties.find((p) => p.id === u.propertyId);
       if (unitStatusFilter !== "all" && u.status !== unitStatusFilter) return false;
+      if (
+        unitMaintenanceReasonFilter !== "all" &&
+        u.maintenanceReason !== unitMaintenanceReasonFilter &&
+        !u.condition?.toLowerCase().includes(unitMaintenanceReasonFilter.toLowerCase())
+      ) {
+        return false;
+      }
       if (unitPropertyFilter !== "all" && u.propertyId !== unitPropertyFilter) return false;
       if (unitTypeFilter !== "all" && prop?.type !== unitTypeFilter) return false;
       if (!q) return true;
@@ -471,11 +572,13 @@ export default function AdminDashboard() {
         prop?.name || "",
         u.tenantName || "",
         u.status,
+        u.maintenanceReason || "",
+        u.condition || "",
         String(u.rentAmount),
       ].join(" ").toLowerCase();
       return haystack.includes(q);
     });
-  }, [units, properties, unitSearch, unitStatusFilter, unitPropertyFilter, unitTypeFilter]);
+  }, [units, properties, unitSearch, unitStatusFilter, unitPropertyFilter, unitTypeFilter, unitMaintenanceReasonFilter]);
 
   const filteredTenantsList = useMemo(() => {
     const q = tenantSearch.trim().toLowerCase();
@@ -1226,53 +1329,45 @@ export default function AdminDashboard() {
 
               {/* Dropdowns */}
               <div className="flex flex-wrap items-center gap-2">
-                {/* Role Dropdown */}
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Role:</span>
-                  <select
-                    value={roleFilter}
-                    onChange={(e) => setRoleFilter(e.target.value as any)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Roles</option>
-                    <option value="admin">System Administrator</option>
-                    <option value="owner">Property Owner</option>
-                    <option value="agent">Agent</option>
-                    <option value="tenant">Tenant</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Role"
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value as any)}
+                  options={[
+                    { value: "all", label: "All Roles" },
+                    { value: "admin", label: "System Administrator" },
+                    { value: "owner", label: "Property Owner" },
+                    { value: "agent", label: "Agent" },
+                    { value: "tenant", label: "Tenant" },
+                  ]}
+                />
 
-                {/* Verification / Status Dropdown */}
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Status:</span>
-                  <select
-                    value={userStatusFilter}
-                    onChange={(e) => setUserStatusFilter(e.target.value as any)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Statuses</option>
-                    <option value="verified">Verified ID</option>
-                    <option value="pending">Pending Approval</option>
-                    <option value="unverified">Unverified</option>
-                    <option value="not_required">Not Required (Superuser / Owner)</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Status"
+                  value={userStatusFilter}
+                  onChange={(e) => setUserStatusFilter(e.target.value as any)}
+                  options={[
+                    { value: "all", label: "All Statuses" },
+                    { value: "verified", label: "Verified ID" },
+                    { value: "pending", label: "Pending Approval" },
+                    { value: "unverified", label: "Unverified" },
+                    { value: "not_required", label: "Not Required (Staff)" },
+                  ]}
+                />
 
-                {/* Sort Dropdown */}
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Sort:</span>
-                  <select
-                    value={userSort}
-                    onChange={(e) => setUserSort(e.target.value as any)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="name">Name (A–Z)</option>
-                    <option value="email">Email (A–Z)</option>
-                    <option value="role">Role</option>
-                    <option value="date_desc">Newest First</option>
-                    <option value="date_asc">Oldest First</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Sort"
+                  value={userSort}
+                  onChange={(e) => setUserSort(e.target.value as any)}
+                  options={[
+                    { value: "newest", label: "Default" },
+                    { value: "name", label: "Name (A–Z)" },
+                    { value: "email", label: "Email (A–Z)" },
+                    { value: "role", label: "Role" },
+                    { value: "date_desc", label: "Newest First" },
+                    { value: "date_asc", label: "Oldest First" },
+                  ]}
+                />
 
                 {/* Reset Filters */}
                 {(searchTerm || roleFilter !== "all" || userStatusFilter !== "all" || userSort !== "newest") && (
@@ -1860,6 +1955,17 @@ export default function AdminDashboard() {
             title="Properties Management"
             description="Monitor and configure buildings, complexes, and multi-unit developments across the portfolio."
             icon={Building2}
+            actions={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push("/dashboard/admin?tab=units")}
+                className="gap-2 bg-white text-slate-700 hover:bg-slate-50 border-slate-200 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 cursor-pointer shadow-2xs"
+              >
+                <Home className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                <span>View Units</span>
+              </Button>
+            }
           />
 
           {/* Filter Toolbar */}
@@ -1881,31 +1987,29 @@ export default function AdminDashboard() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Type:</span>
-                  <select
-                    value={propertyTypeFilter}
-                    onChange={(e) => setPropertyTypeFilter(e.target.value)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Types</option>
-                    <option value="condominium">Condominium</option>
-                    <option value="house">House</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Type"
+                  value={propertyTypeFilter}
+                  onChange={(e) => setPropertyTypeFilter(e.target.value)}
+                  options={[
+                    { value: "all", label: "All Types" },
+                    { value: "condominium", label: "Condominium" },
+                    { value: "house", label: "House" },
+                    { value: "building", label: "Commercial / Building" },
+                    { value: "residential", label: "Residential" },
+                  ]}
+                />
 
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Status:</span>
-                  <select
-                    value={propertyStatusFilter}
-                    onChange={(e) => setPropertyStatusFilter(e.target.value)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Status"
+                  value={propertyStatusFilter}
+                  onChange={(e) => setPropertyStatusFilter(e.target.value)}
+                  options={[
+                    { value: "all", label: "All Status" },
+                    { value: "active", label: "Active" },
+                    { value: "inactive", label: "Inactive" },
+                  ]}
+                />
 
                 {(propertySearch || propertyTypeFilter !== "all" || propertyStatusFilter !== "all") && (
                   <motion.button
@@ -2169,6 +2273,17 @@ export default function AdminDashboard() {
             title="Units Directory"
             description="Track occupancy, lease status, and rental rates for individual units across all properties."
             icon={Home}
+            actions={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push("/dashboard/admin?tab=properties")}
+                className="gap-2 bg-white text-slate-700 hover:bg-slate-50 border-slate-200 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 cursor-pointer shadow-2xs"
+              >
+                <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                <span>View Properties</span>
+              </Button>
+            }
           />
 
           {/* Filter Toolbar */}
@@ -2190,35 +2305,62 @@ export default function AdminDashboard() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Property:</span>
-                  <select
-                    value={unitPropertyFilter}
-                    onChange={(e) => setUnitPropertyFilter(e.target.value)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Properties</option>
-                    {properties.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Property"
+                  value={unitPropertyFilter}
+                  onChange={(e) => setUnitPropertyFilter(e.target.value)}
+                  options={[
+                    { value: "all", label: "All Properties" },
+                    ...properties.map((p) => ({ value: p.id, label: p.name })),
+                  ]}
+                />
 
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Status:</span>
-                  <select
-                    value={unitStatusFilter}
-                    onChange={(e) => setUnitStatusFilter(e.target.value as any)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="occupied">Occupied</option>
-                    <option value="vacant">Vacant</option>
-                    <option value="maintenance">Maintenance</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Status"
+                  value={unitStatusFilter}
+                  onChange={(e) => {
+                    const next = e.target.value as any;
+                    setUnitStatusFilter(next);
+                    if (next !== "maintenance") {
+                      setUnitMaintenanceReasonFilter("all");
+                    }
+                  }}
+                  options={[
+                    { value: "all", label: "All Status" },
+                    { value: "occupied", label: "Occupied" },
+                    { value: "vacant", label: "Vacant" },
+                    { value: "maintenance", label: "Maintenance" },
+                  ]}
+                />
 
-                {(unitSearch || unitPropertyFilter !== "all" || unitStatusFilter !== "all") && (
+                <AnimatePresence>
+                  {unitStatusFilter === "maintenance" && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <AnimatedFilterDropdown
+                        label="Repair Reason"
+                        icon={<Wrench className="h-3.5 w-3.5 text-amber-500" />}
+                        value={unitMaintenanceReasonFilter}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setUnitMaintenanceReasonFilter(val);
+                        }}
+                        pulseOnMaintenance={unitMaintenanceReasonFilter !== "all"}
+                        containerClassName={unitMaintenanceReasonFilter !== "all" ? "border-amber-300 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20" : undefined}
+                        options={[
+                          { value: "all", label: "All Repair Reasons" },
+                          ...UNIT_MAINTENANCE_REASONS.map((r) => ({ value: r, label: r })),
+                        ]}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {(unitSearch || unitPropertyFilter !== "all" || unitStatusFilter !== "all" || (unitStatusFilter === "maintenance" && unitMaintenanceReasonFilter !== "all")) && (
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
@@ -2226,6 +2368,7 @@ export default function AdminDashboard() {
                       setUnitSearch("");
                       setUnitPropertyFilter("all");
                       setUnitStatusFilter("all");
+                      setUnitMaintenanceReasonFilter("all");
                     }}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:border-gray-400 hover:text-gray-900"
                   >
@@ -2385,20 +2528,36 @@ export default function AdminDashboard() {
 
                             {/* Status */}
                             <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                              <span className={cn(
-                                "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold capitalize",
-                                u.status === "occupied" && "bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800",
-                                u.status === "vacant" && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
-                                u.status === "maintenance" && "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
-                              )}>
+                              {u.status === "maintenance" ? (
+                                <div className="flex flex-col gap-1 items-start">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 shadow-2xs">
+                                    <span className="relative flex h-2 w-2">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                                    </span>
+                                    Maintenance
+                                  </span>
+                                  <span
+                                    className="text-[10px] text-amber-700 font-medium truncate max-w-[140px] pl-0.5"
+                                    title={u.maintenanceReason || (u.condition?.startsWith("Maintenance: ") ? u.condition.replace("Maintenance: ", "") : "Routine Maintenance")}
+                                  >
+                                    {u.maintenanceReason || (u.condition?.startsWith("Maintenance: ") ? u.condition.replace("Maintenance: ", "") : "Routine Maintenance")}
+                                  </span>
+                                </div>
+                              ) : (
                                 <span className={cn(
-                                  "h-1.5 w-1.5 rounded-full",
-                                  u.status === "occupied" && "bg-green-500",
-                                  u.status === "vacant" && "bg-blue-500",
-                                  u.status === "maintenance" && "bg-amber-500",
-                                )} />
-                                {u.status}
-                              </span>
+                                  "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold capitalize",
+                                  u.status === "occupied" && "bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800",
+                                  u.status === "vacant" && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
+                                )}>
+                                  <span className={cn(
+                                    "h-1.5 w-1.5 rounded-full",
+                                    u.status === "occupied" && "bg-green-500",
+                                    u.status === "vacant" && "bg-blue-500",
+                                  )} />
+                                  {u.status}
+                                </span>
+                              )}
                             </TableCell>
 
                             {/* Current Tenant */}
@@ -2536,32 +2695,26 @@ export default function AdminDashboard() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Status:</span>
-                  <select
-                    value={tenantStatusFilter}
-                    onChange={(e) => setTenantStatusFilter(e.target.value as any)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Status"
+                  value={tenantStatusFilter}
+                  onChange={(e) => setTenantStatusFilter(e.target.value as any)}
+                  options={[
+                    { value: "all", label: "All Status" },
+                    { value: "active", label: "Active" },
+                    { value: "inactive", label: "Inactive" },
+                  ]}
+                />
 
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Property:</span>
-                  <select
-                    value={tenantPropertyFilter}
-                    onChange={(e) => setTenantPropertyFilter(e.target.value)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Properties</option>
-                    {properties.map((p) => (
-                      <option key={p.id} value={p.name}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Property"
+                  value={tenantPropertyFilter}
+                  onChange={(e) => setTenantPropertyFilter(e.target.value)}
+                  options={[
+                    { value: "all", label: "All Properties" },
+                    ...properties.map((p) => ({ value: p.name, label: p.name })),
+                  ]}
+                />
 
                 {(tenantSearch || tenantStatusFilter !== "all" || tenantPropertyFilter !== "all") && (
                   <motion.button
@@ -2679,48 +2832,42 @@ export default function AdminDashboard() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Period:</span>
-                  <select
-                    value={paymentPeriod}
-                    onChange={(e) => setPaymentPeriod(e.target.value as any)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="monthly">Monthly</option>
-                    <option value="quarterly">Quarterly</option>
-                    <option value="yearly">Yearly</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Period"
+                  value={paymentPeriod}
+                  onChange={(e) => setPaymentPeriod(e.target.value as any)}
+                  options={[
+                    { value: "monthly", label: "Monthly" },
+                    { value: "quarterly", label: "Quarterly" },
+                    { value: "yearly", label: "Yearly" },
+                  ]}
+                />
 
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Status:</span>
-                  <select
-                    value={paymentStatusFilter}
-                    onChange={(e) => setPaymentStatusFilter(e.target.value)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="paid">Paid</option>
-                    <option value="pending">Pending</option>
-                    <option value="overdue">Overdue</option>
-                    <option value="partial">Partial</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Status"
+                  value={paymentStatusFilter}
+                  onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                  options={[
+                    { value: "all", label: "All Status" },
+                    { value: "paid", label: "Paid" },
+                    { value: "pending", label: "Pending" },
+                    { value: "overdue", label: "Overdue" },
+                    { value: "partial", label: "Partial" },
+                  ]}
+                />
 
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Type:</span>
-                  <select
-                    value={paymentTypeFilter}
-                    onChange={(e) => setPaymentTypeFilter(e.target.value as any)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Types</option>
-                    <option value="gcash">GCash</option>
-                    <option value="cash">Cash</option>
-                    <option value="regular">Regular</option>
-                    <option value="advance">Advance</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Type"
+                  value={paymentTypeFilter}
+                  onChange={(e) => setPaymentTypeFilter(e.target.value as any)}
+                  options={[
+                    { value: "all", label: "All Types" },
+                    { value: "gcash", label: "GCash" },
+                    { value: "cash", label: "Cash" },
+                    { value: "regular", label: "Regular" },
+                    { value: "advance", label: "Advance" },
+                  ]}
+                />
 
                 <Input
                   type="date"
@@ -2866,34 +3013,30 @@ export default function AdminDashboard() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Target:</span>
-                  <select
-                    value={ratingTargetFilter}
-                    onChange={(e) => setRatingTargetFilter(e.target.value)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Targets</option>
-                    <option value="property">Property</option>
-                    <option value="unit">Unit</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Target"
+                  value={ratingTargetFilter}
+                  onChange={(e) => setRatingTargetFilter(e.target.value)}
+                  options={[
+                    { value: "all", label: "All Targets" },
+                    { value: "property", label: "Property" },
+                    { value: "unit", label: "Unit" },
+                  ]}
+                />
 
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Score:</span>
-                  <select
-                    value={ratingScoreFilter}
-                    onChange={(e) => setRatingScoreFilter(e.target.value)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Scores</option>
-                    <option value="5">5 Stars</option>
-                    <option value="4">4 Stars</option>
-                    <option value="3">3 Stars</option>
-                    <option value="2">2 Stars</option>
-                    <option value="1">1 Star</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Score"
+                  value={ratingScoreFilter}
+                  onChange={(e) => setRatingScoreFilter(e.target.value)}
+                  options={[
+                    { value: "all", label: "All Scores" },
+                    { value: "5", label: "5 Stars (★★★★★)" },
+                    { value: "4", label: "4 Stars (★★★★☆)" },
+                    { value: "3", label: "3 Stars (★★★☆☆)" },
+                    { value: "2", label: "2 Stars (★★☆☆☆)" },
+                    { value: "1", label: "1 Star (★☆☆☆☆)" },
+                  ]}
+                />
 
                 {(ratingSearch || ratingTargetFilter !== "all" || ratingScoreFilter !== "all") && (
                   <motion.button
@@ -3005,34 +3148,30 @@ export default function AdminDashboard() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Status:</span>
-                  <select
-                    value={complaintStatusFilter}
-                    onChange={(e) => setComplaintStatusFilter(e.target.value)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="open">Open</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="resolved">Resolved</option>
-                    <option value="closed">Closed</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Status"
+                  value={complaintStatusFilter}
+                  onChange={(e) => setComplaintStatusFilter(e.target.value)}
+                  options={[
+                    { value: "all", label: "All Status" },
+                    { value: "open", label: "Open" },
+                    { value: "in_progress", label: "In Progress" },
+                    { value: "resolved", label: "Resolved" },
+                    { value: "closed", label: "Closed" },
+                  ]}
+                />
 
-                <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 dark:border-gray-700 dark:bg-gray-800">
-                  <span className="text-xs font-medium text-gray-500">Category:</span>
-                  <select
-                    value={complaintCategoryFilter}
-                    onChange={(e) => setComplaintCategoryFilter(e.target.value)}
-                    className="bg-transparent text-xs font-semibold text-gray-800 outline-none dark:text-gray-200 cursor-pointer"
-                  >
-                    <option value="all">All Categories</option>
-                    <option value="support">Support Requests</option>
-                    <option value="property">Property Complaints</option>
-                    <option value="unit">Unit Maintenance</option>
-                  </select>
-                </div>
+                <AnimatedFilterDropdown
+                  label="Category"
+                  value={complaintCategoryFilter}
+                  onChange={(e) => setComplaintCategoryFilter(e.target.value)}
+                  options={[
+                    { value: "all", label: "All Categories" },
+                    { value: "support", label: "Support Requests" },
+                    { value: "property", label: "Property Complaints" },
+                    { value: "unit", label: "Unit Maintenance" },
+                  ]}
+                />
 
                 {(complaintSearch || complaintStatusFilter !== "all" || complaintCategoryFilter !== "all") && (
                   <motion.button
@@ -3450,16 +3589,18 @@ export default function AdminDashboard() {
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <select
+                <AnimatedFilterDropdown
+                  label="Action"
                   value={auditActionFilter}
                   onChange={(e) => setAuditActionFilter(e.target.value)}
-                  className="h-10 rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:border-blue-500 focus:outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
-                >
-                  <option value="all">All Actions</option>
-                  {Array.from(new Set(auditLogs.map((l) => l.action))).map((act) => (
-                    <option key={act} value={act}>{act}</option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "all", label: "All Actions" },
+                    ...Array.from(new Set(auditLogs.map((l) => l.action))).map((act) => ({
+                      value: act,
+                      label: act,
+                    })),
+                  ]}
+                />
                 {(auditSearch || auditActionFilter !== "all") && (
                   <Button
                     variant="ghost"
@@ -3788,109 +3929,312 @@ export default function AdminDashboard() {
                 })}
               </div>
 
-              <div className="mt-6 rounded-xl border border-gray-200 bg-white p-5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-                      <Settings className="h-4 w-4" />
+              {/* Unified System Maintenance & Announcements Card */}
+              <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start sm:items-center gap-3.5">
+                    <div className={cn(
+                      "h-10 w-10 rounded-xl flex items-center justify-center shrink-0 transition-colors",
+                      maintenanceMode ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                    )}>
+                      {maintenanceMode ? (
+                        <Wrench className="h-5 w-5 animate-pulse" />
+                      ) : (
+                        <Settings className={cn("h-5 w-5", isUpdatingMaintenance && "animate-spin")} />
+                      )}
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">Maintenance Mode</p>
-                      <p className="text-xs text-gray-500">Temporarily pause access for non-admin users</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-gray-900">System Maintenance & Announcements</p>
+                        <span className={cn(
+                          "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold capitalize",
+                          maintenanceMode
+                            ? "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+                            : "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                        )}>
+                          <span className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            maintenanceMode ? "bg-amber-500 animate-pulse" : "bg-emerald-500"
+                          )} />
+                          {maintenanceMode ? "Under Maintenance" : "Operational / Active"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Manage platform maintenance mode and broadcast notices to all tenants, owners, and agents.
+                      </p>
                     </div>
                   </div>
-                  <button
-                    onClick={async () => {
-                      const newMode = !maintenanceMode;
-                      try {
-                        const res = await fetch("/api/admin/maintenance/mode", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ enabled: newMode }),
-                        });
-                        const data = await parseJsonSafely(res);
-                        if (data.success) {
-                          setMaintenanceMode(data.enabled);
-                          document.cookie = `maintenance_mode=${data.enabled ? "true" : "false"}; path=/; max-age=${data.enabled ? 86400 : 0}`;
-                          toast.success(`Maintenance mode ${data.enabled ? "enabled" : "disabled"}`);
-                        } else {
-                          toast.error(data.error || "Failed to update maintenance mode");
-                        }
-                      } catch {
-                        toast.error("Failed to update maintenance mode");
-                      }
-                    }}
-                    className="relative inline-flex h-6 w-11 items-center rounded-full border border-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400"
-                    style={{ backgroundColor: maintenanceMode ? "#22c55e" : "#e5e7eb" }}
-                  >
-                    <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform" style={{ transform: maintenanceMode ? "translateX(20px)" : "translateX(2px)" }} />
-                  </button>
+
+                  <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+                    {!maintenanceMode ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEnableMaintenanceInModal(true);
+                            if (!announcementTitle) setAnnouncementTitle("Scheduled Maintenance");
+                            setShowMaintenanceConfirmModal(true);
+                          }}
+                          className="text-xs font-semibold h-8.5 gap-1.5 border-gray-200 text-gray-700 hover:bg-gray-50"
+                        >
+                          <Bell className="h-3.5 w-3.5 text-blue-600" />
+                          Broadcast Notice / Settings
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={isUpdatingMaintenance}
+                          onClick={() => handleMaintenanceChange(true)}
+                          className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold h-8.5 gap-1.5 shadow-xs"
+                        >
+                          {isUpdatingMaintenance ? (
+                            <>
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              Enabling...
+                            </>
+                          ) : (
+                            <>
+                              <Wrench className="h-3.5 w-3.5" />
+                              Turn On Maintenance
+                            </>
+                          )}
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isUpdatingMaintenance}
+                          onClick={() => handleMaintenanceChange(false)}
+                          className="border-amber-300 text-amber-800 hover:bg-amber-50 text-xs font-semibold h-8.5"
+                        >
+                          Turn Off Maintenance
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setEnableMaintenanceInModal(true);
+                            setShowMaintenanceConfirmModal(true);
+                          }}
+                          className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold h-8.5 gap-1.5 shadow-xs"
+                        >
+                          <Bell className="h-3.5 w-3.5" />
+                          Broadcast Notice Update
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                {maintenanceMode && (
-                  <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                    Maintenance mode is active. Non-admin users will be redirected to the maintenance page.
-                  </p>
+
+                {/* Status Body */}
+                {maintenanceMode ? (
+                  <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="h-6 w-6 rounded-full bg-amber-200 text-amber-900 flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold">
+                        !
+                      </div>
+                      <div className="text-xs text-amber-900 space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-bold text-sm">System Maintenance Mode is Currently Active</p>
+                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-100 border border-amber-300 px-2.5 py-0.5 text-xs font-bold text-amber-950">
+                            <Wrench className="h-3.5 w-3.5 text-amber-700" />
+                            Reason: {maintenanceReason}
+                          </span>
+                        </div>
+                        <p className="text-amber-800">
+                          • Non-admin users visiting the website or tenant portal will be redirected to the maintenance page.
+                        </p>
+                        <p className="text-amber-800">
+                          • As an Administrator, your panel and all property/unit management functions remain 100% accessible.
+                        </p>
+                        <p className="text-amber-800">
+                          • An email and in-app notice has been broadcast to all registered accounts in the system.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-5 rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                        <p className="text-xs font-bold text-gray-900 uppercase tracking-wider">All Systems Operational</p>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Active reason for maintenance notices: <strong className="text-gray-800 font-semibold">{maintenanceReason}</strong>
+                      </p>
+                    </div>
+                  </div>
                 )}
               </div>
 
-              <div className="mt-8 rounded-xl border border-gray-200 bg-white p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="h-9 w-9 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-                    <Bell className="h-4 w-4" />
+              {/* Unified Maintenance & Announcement Modal (All together in ONE single modal) */}
+              <Modal
+                isOpen={showMaintenanceConfirmModal}
+                onClose={() => setShowMaintenanceConfirmModal(false)}
+                title={enableMaintenanceInModal ? "System Maintenance & Announcement" : "Broadcast System Announcement"}
+                description="Send a maintenance or system notice to all users (tenants, owners, and agents)."
+                className="max-w-xl max-h-[92vh] overflow-y-auto"
+                overlayClassName="bg-transparent"
+              >
+                <div className="space-y-4 pt-1">
+                  {/* Announcement Title */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                      <Bell className="h-3.5 w-3.5 text-blue-600" />
+                      Announcement Title *
+                    </label>
+                    <Input
+                      value={announcementTitle}
+                      onChange={(e) => setAnnouncementTitle(e.target.value)}
+                      placeholder="Announcement title, e.g. Scheduled Maintenance"
+                      className="h-10 text-xs rounded-xl border-gray-200 focus:bg-white"
+                    />
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">System Announcement</p>
-                    <p className="text-xs text-gray-500">Send a maintenance or system notice to all users</p>
+
+                  {/* Maintenance & Repair Reason Selection (Integrated directly in this modal!) */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Wrench className="h-3.5 w-3.5 text-amber-600" />
+                        Maintenance &amp; Repair Reason *
+                      </span>
+                      <span className="text-[11px] font-normal text-gray-500">
+                        Choose category &amp; reason
+                      </span>
+                    </label>
+                    <select
+                      value={maintenanceReason}
+                      onChange={(e) => setMaintenanceReason(e.target.value)}
+                      className="w-full h-10 rounded-xl border border-gray-200 bg-gray-50/70 hover:bg-gray-100/50 px-3 text-xs font-semibold text-gray-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer transition-colors"
+                    >
+                      {MAINTENANCE_REASON_GROUPS.map((grp) => (
+                        <optgroup key={grp.group} label={`── ${grp.group.toUpperCase()} ──`} className="font-bold text-gray-900 bg-white">
+                          {grp.reasons.map((r) => (
+                            <option key={r} value={r} className="font-normal py-1">
+                              {r}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+
+                    {maintenanceReason === "Other / Custom Maintenance Reason" && (
+                      <div className="pt-1.5">
+                        <Input
+                          value={customMaintenanceReason}
+                          onChange={(e) => setCustomMaintenanceReason(e.target.value)}
+                          placeholder="Type custom maintenance or repair reason..."
+                          className="h-9.5 text-xs rounded-xl border-amber-300 bg-amber-50/40"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Estimated Downtime */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-gray-500" />
+                      Estimated Downtime / Expected Duration
+                    </label>
+                    <Input
+                      value={maintenanceDuration}
+                      onChange={(e) => setMaintenanceDuration(e.target.value)}
+                      placeholder="e.g. 30 to 60 minutes, 2 hours, or No Downtime Expected"
+                      className="h-10 text-xs rounded-xl border-gray-200"
+                    />
+                  </div>
+
+                  {/* Announcement Message */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-gray-500" />
+                      Message &amp; Downtime Details *
+                    </label>
+                    <textarea
+                      value={announcementMessage}
+                      onChange={(e) => setAnnouncementMessage(e.target.value)}
+                      placeholder="Describe the maintenance window, expected downtime, and when systems will be back online..."
+                      rows={3}
+                      className="w-full rounded-xl border border-gray-200 p-3 text-xs text-gray-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none bg-gray-50/50"
+                    />
+                  </div>
+
+                  {/* Maintenance Mode Toggle Switch */}
+                  <label className={cn(
+                    "flex items-start gap-3 p-3.5 rounded-2xl border transition-all cursor-pointer",
+                    enableMaintenanceInModal
+                      ? "border-amber-300 bg-amber-50/80 text-amber-950 shadow-2xs"
+                      : "border-gray-200 bg-gray-50/60 text-gray-800"
+                  )}>
+                    <input
+                      type="checkbox"
+                      checked={enableMaintenanceInModal}
+                      onChange={(e) => setEnableMaintenanceInModal(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    <div className="space-y-0.5 min-w-0">
+                      <span className="text-xs font-bold block">
+                        Enable System Maintenance Mode (Restrict Portal Access)
+                      </span>
+                      <span className="text-[11px] opacity-80 block leading-relaxed">
+                        {enableMaintenanceInModal
+                          ? "Tenants and visitors will be redirected to the maintenance page. Administrator access remains completely unaffected."
+                          : "Unchecked: Sends this notice as an announcement without restricting portal access."}
+                      </span>
+                    </div>
+                  </label>
+
+                  {/* Automatic Email Broadcast notice */}
+                  <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 space-y-1">
+                    <p className="font-bold flex items-center gap-1.5">
+                      <Mail className="h-3.5 w-3.5 text-blue-600" />
+                      Automatic Email &amp; In-App Notification Broadcast
+                    </p>
+                    <p className="text-blue-800 text-[11px] leading-relaxed">
+                      Every user account in the system (tenants, agents, owners) will receive this notice. Your administrator panel access remains completely open and unaffected.
+                    </p>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowMaintenanceConfirmModal(false)}
+                      disabled={isUpdatingMaintenance || isSendingAnnouncement}
+                      className="text-xs border-gray-200 text-gray-700 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleCombinedMaintenanceAndAnnouncement}
+                      disabled={isUpdatingMaintenance || isSendingAnnouncement}
+                      className={cn(
+                        "text-white text-xs font-semibold gap-1.5 shadow-sm px-4 h-9",
+                        enableMaintenanceInModal ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"
+                      )}
+                    >
+                      {isUpdatingMaintenance || isSendingAnnouncement ? (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          Sending Broadcast...
+                        </>
+                      ) : enableMaintenanceInModal ? (
+                        <>
+                          <Wrench className="h-3.5 w-3.5" />
+                          Turn On Maintenance &amp; Send Notice
+                        </>
+                      ) : (
+                        <>
+                          <Mail className="h-3.5 w-3.5" />
+                          Send Announcement
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </div>
-                <div className="space-y-3">
-                  <Input
-                    value={announcementTitle}
-                    onChange={(e) => setAnnouncementTitle(e.target.value)}
-                    placeholder="Announcement title, e.g. Scheduled Maintenance"
-                    className="h-10"
-                  />
-                  <textarea
-                    value={announcementMessage}
-                    onChange={(e) => setAnnouncementMessage(e.target.value)}
-                    rows={4}
-                    placeholder="Describe the maintenance window, expected downtime, and when systems will be back online..."
-                    className="w-full rounded-xl border border-gray-200 p-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10"
-                  />
-                  <Button
-                    onClick={async () => {
-                      if (!announcementTitle.trim() || !announcementMessage.trim()) {
-                        toast.error("Title and message are required");
-                        return;
-                      }
-                      setIsSendingAnnouncement(true);
-                      try {
-                        const res = await fetch("/api/admin/announcements", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ title: announcementTitle.trim(), message: announcementMessage.trim() }),
-                        });
-                        const data = await parseJsonSafely(res);
-                        if (data.success) {
-                          toast.success(`Announcement sent to ${data.count} users`);
-                          setAnnouncementTitle("");
-                          setAnnouncementMessage("");
-                        } else {
-                          toast.error(data.error || "Failed to send announcement");
-                        }
-                      } catch {
-                        toast.error("Failed to send announcement");
-                      } finally {
-                        setIsSendingAnnouncement(false);
-                      }
-                    }}
-                    disabled={isSendingAnnouncement}
-                    className="bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    {isSendingAnnouncement ? "Sending..." : "Send Announcement"}
-                  </Button>
-                </div>
-              </div>
+              </Modal>
             </CardContent>
           </Card>
         </motion.div>
@@ -4534,6 +4878,114 @@ export default function AdminDashboard() {
                   ) : (
                     <p className="text-xs text-gray-400">No agent currently assigned to this property.</p>
                   )}
+                </div>
+              </div>
+
+              {/* Maintenance Status & Chosen Reason Management */}
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/40 dark:bg-amber-950/20 shadow-2xs">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <Wrench className="h-4 w-4 text-amber-600" />
+                    <span className="text-xs font-bold text-amber-950 dark:text-amber-200">
+                      Unit Maintenance &amp; Reasons
+                    </span>
+                  </div>
+                  <span className={cn(
+                    "text-[11px] font-semibold px-2 py-0.5 rounded-full capitalize",
+                    u.status === "maintenance" ? "bg-amber-200/80 text-amber-900" : "bg-gray-100 text-gray-700"
+                  )}>
+                    Current: {u.status}
+                  </span>
+                </div>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2.5">
+                  <div className="flex-1">
+                    <label className="text-[10px] font-bold uppercase text-amber-900 dark:text-amber-300 block mb-1">
+                      Chosen Maintenance Reason
+                    </label>
+                    <select
+                      defaultValue={u.maintenanceReason || (u.condition?.startsWith("Maintenance: ") ? u.condition.replace("Maintenance: ", "") : UNIT_MAINTENANCE_REASONS[0])}
+                      id={`unit-maintenance-reason-${u.id}`}
+                      className="w-full h-9 rounded-lg border border-amber-300 bg-white px-2.5 text-xs font-semibold text-amber-950 focus:border-amber-500 focus:outline-none dark:border-amber-700 dark:bg-gray-800 dark:text-amber-100"
+                    >
+                      {UNIT_MAINTENANCE_REASONS.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {u.status !== "maintenance" ? (
+                      <Button
+                        size="sm"
+                        className="h-9 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
+                        onClick={async () => {
+                          const selectEl = document.getElementById(`unit-maintenance-reason-${u.id}`) as HTMLSelectElement | null;
+                          const chosen = selectEl?.value || UNIT_MAINTENANCE_REASONS[0];
+                          try {
+                            await updateUnit(u.id, {
+                              status: "maintenance",
+                              condition: `Maintenance: ${chosen}`,
+                              maintenanceReason: chosen,
+                            });
+                            toast.success(`Unit ${u.unitNumber} marked for Maintenance (${chosen})`);
+                            loadData();
+                            setSelectedUnitDetails(null);
+                          } catch {
+                            toast.error("Failed to update unit maintenance");
+                          }
+                        }}
+                      >
+                        <Wrench className="mr-1.5 h-3.5 w-3.5" />
+                        Put in Maintenance
+                      </Button>
+                    ) : (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9 border-amber-300 text-amber-900 hover:bg-amber-100 text-xs font-semibold"
+                          onClick={async () => {
+                            const selectEl = document.getElementById(`unit-maintenance-reason-${u.id}`) as HTMLSelectElement | null;
+                            const chosen = selectEl?.value || UNIT_MAINTENANCE_REASONS[0];
+                            try {
+                              await updateUnit(u.id, {
+                                condition: `Maintenance: ${chosen}`,
+                                maintenanceReason: chosen,
+                              });
+                              toast.success(`Updated reason to "${chosen}"`);
+                              loadData();
+                              setSelectedUnitDetails(null);
+                            } catch {
+                              toast.error("Failed to update reason");
+                            }
+                          }}
+                        >
+                          Update Reason
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+                          onClick={async () => {
+                            try {
+                              await updateUnit(u.id, {
+                                status: "vacant",
+                                condition: "Good",
+                                maintenanceReason: undefined,
+                              });
+                              toast.success(`Unit ${u.unitNumber} set back to Available`);
+                              loadData();
+                              setSelectedUnitDetails(null);
+                            } catch {
+                              toast.error("Failed to resolve maintenance");
+                            }
+                          }}
+                        >
+                          Mark Available
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 

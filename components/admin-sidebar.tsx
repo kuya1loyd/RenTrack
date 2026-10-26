@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Users,
   Home,
+  Building2,
   CreditCard,
   FileText,
   HeartPulse,
@@ -21,18 +22,27 @@ import {
   MessageSquare,
   User,
   X,
+  ChevronDown,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useReducedMotion } from "framer-motion";
 
-interface NavSection {
-  title: string;
-  items: {
+interface NavItem {
+  label: string;
+  href: string;
+  tab: string;
+  icon: typeof LayoutDashboard;
+  children?: {
     label: string;
     href: string;
     tab: string;
-    icon: typeof LayoutDashboard;
+    icon: typeof Building2;
   }[];
+}
+
+interface NavSection {
+  title: string;
+  items: NavItem[];
 }
 
 const navSections: NavSection[] = [
@@ -46,8 +56,16 @@ const navSections: NavSection[] = [
   {
     title: "Management",
     items: [
+      {
+        label: "Units",
+        href: "/dashboard/admin?tab=units",
+        tab: "units",
+        icon: Home,
+        children: [
+          { label: "Properties", href: "/dashboard/admin?tab=properties", tab: "properties", icon: Building2 },
+        ],
+      },
       { label: "Property Map", href: "/dashboard/admin?tab=map", tab: "map", icon: MapPinned },
-      { label: "Units", href: "/dashboard/admin?tab=units", tab: "units", icon: Home },
       { label: "Payments", href: "/dashboard/admin?tab=payments", tab: "payments", icon: CreditCard },
     ],
   },
@@ -84,6 +102,7 @@ export default function AdminSidebar({
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const reduceMotion = useReducedMotion();
+  const [unitsDropdownOpen, setUnitsDropdownOpen] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -136,10 +155,10 @@ export default function AdminSidebar({
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#07111f]">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
-          <div className={cn("mx-auto mb-4 h-12 w-12 rounded-full border-4 border-blue-300/20 border-t-blue-300", !reduceMotion && "animate-spin")} />
-          <p className="text-cyan-100/80 text-sm font-medium">Loading admin panel...</p>
+          <div className={cn("mx-auto mb-4 h-12 w-12 rounded-full border-4 border-blue-600/20 border-t-blue-600", !reduceMotion && "animate-spin")} />
+          <p className="text-slate-600 text-sm font-medium">Loading admin panel...</p>
         </div>
       </div>
     );
@@ -154,16 +173,16 @@ export default function AdminSidebar({
         initial={reduceMotion ? false : { x: -280 }}
         animate={{ x: 0 }}
         transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.21, 0.47, 0.32, 0.98] }}
-        className="fixed inset-y-0 left-0 z-50 hidden w-56 flex-col bg-[#07111f] text-slate-200 shadow-2xl shadow-black/40 lg:flex"
+        className="fixed inset-y-0 left-0 z-50 hidden w-56 flex-col border-r border-slate-200/90 bg-white text-slate-800 shadow-xs lg:flex"
       >
         {/* Logo */}
-        <Link href="/dashboard/admin" className="flex h-14 shrink-0 items-center gap-2 border-b border-white/[0.08] px-3">
+        <Link href="/dashboard/admin" className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-100 px-3">
           <span className="h-8 w-8 shrink-0 overflow-hidden rounded-full">
             <Image src="/images/landing/logo.png" alt="RentTrack" width={32} height={32} className="h-full w-full object-contain" />
           </span>
           <div>
-            <span className="block text-xs font-bold tracking-tight text-white">RentTrack</span>
-            <span className="block text-[9px] font-semibold uppercase tracking-[0.14em] text-cyan-300/80">System Console</span>
+            <span className="block text-xs font-bold tracking-tight text-slate-900">RentTrack</span>
+            <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Admin Console</span>
           </div>
         </Link>
 
@@ -177,33 +196,119 @@ export default function AdminSidebar({
                transition={{ duration: reduceMotion ? 0 : 0.22 }}
                className="mb-3"
              >
-               <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+               <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
                  {section.title}
                </p>
                <div className="space-y-1">
                  {section.items.map((item) => {
                    const isActive = activeTab === item.tab;
+                   const isChildActive = item.children?.some((child) => child.tab === activeTab);
                    const Icon = item.icon;
+
+                   if (item.children && item.children.length > 0) {
+                     const isOpen = unitsDropdownOpen;
+                     return (
+                       <div key={item.tab} className="space-y-1">
+                         <div
+                           className={cn(
+                             "group relative flex w-full items-center justify-between rounded-xl text-[13px] font-medium transition-all duration-150",
+                             isActive
+                               ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/25"
+                               : isChildActive
+                                 ? "bg-slate-100 text-slate-900 font-semibold"
+                                 : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
+                           )}
+                         >
+                           <button
+                             type="button"
+                             onClick={() => {
+                               navigateTo(item.tab);
+                               setUnitsDropdownOpen((prev) => !prev);
+                             }}
+                             className="flex flex-1 items-center gap-2 px-3 py-2 text-left focus-visible:outline-none cursor-pointer"
+                           >
+                             <Icon className={cn("relative h-4 w-4 shrink-0 transition-colors", (isActive || isChildActive) ? (isActive ? "text-white" : "text-blue-600") : "text-slate-400 group-hover:text-slate-600")} />
+                             <span className="relative truncate text-[12px] font-medium">{item.label}</span>
+                           </button>
+
+                           <button
+                             type="button"
+                             aria-label="Toggle properties dropdown"
+                             title={isOpen ? "Collapse dropdown" : "Expand dropdown"}
+                             onClick={(e) => {
+                               e.preventDefault();
+                               e.stopPropagation();
+                               setUnitsDropdownOpen((prev) => !prev);
+                             }}
+                             className={cn(
+                               "p-2 pr-2.5 rounded-r-xl transition-colors cursor-pointer",
+                               isActive ? "text-white/80 hover:text-white hover:bg-white/10" : "text-slate-400 hover:text-slate-700 hover:bg-slate-200/50"
+                             )}
+                           >
+                             <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-200", isOpen && "rotate-180")} />
+                           </button>
+
+                           {isActive && (
+                             <motion.span
+                               layoutId={reduceMotion ? undefined : "admin-sidebar-dot"}
+                               className="relative mr-2 h-1.5 w-1.5 rounded-full bg-white"
+                               transition={{ duration: reduceMotion ? 0 : 0.2 }}
+                             />
+                           )}
+                         </div>
+
+                         <AnimatePresence initial={false}>
+                           {isOpen && (
+                             <motion.div
+                               initial={{ opacity: 0, height: 0 }}
+                               animate={{ opacity: 1, height: "auto" }}
+                               exit={{ opacity: 0, height: 0 }}
+                               transition={{ duration: 0.2, ease: "easeOut" }}
+                               className="overflow-hidden space-y-1 pl-3.5 ml-3 border-l border-slate-200/90 my-1"
+                             >
+                               {item.children.map((sub) => {
+                                 const isSubActive = activeTab === sub.tab;
+                                 const SubIcon = sub.icon;
+                                 return (
+                                   <button
+                                     key={sub.tab}
+                                     type="button"
+                                     onClick={() => navigateTo(sub.tab)}
+                                     className={cn(
+                                       "group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer",
+                                       isSubActive
+                                         ? "bg-blue-50 text-blue-700 font-bold"
+                                         : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 font-medium"
+                                     )}
+                                   >
+                                     <SubIcon className={cn("h-3.5 w-3.5 shrink-0 transition-colors", isSubActive ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600")} />
+                                     <span className="truncate">{sub.label}</span>
+                                     {isSubActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-600" />}
+                                   </button>
+                                 );
+                               })}
+                             </motion.div>
+                           )}
+                         </AnimatePresence>
+                       </div>
+                     );
+                   }
+
                    return (
                       <motion.button
                         key={item.tab}
                         onClick={() => navigateTo(item.tab)}
                          className={cn(
-                           "relative flex w-full items-center gap-1.5 rounded-lg px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 motion-reduce:transition-none motion-reduce:hover:translate-x-0",
+                           "relative flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
                            isActive
-                             ? "bg-blue-600 text-white shadow-[0_4px_12px_rgba(37,99,235,0.22)]"
-                             : "text-slate-400 hover:translate-x-0.5 hover:bg-white/[0.06] hover:text-white"
+                             ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/25"
+                             : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
                          )}
                          whileHover={reduceMotion ? undefined : { x: 0.5 }}
                          whileTap={reduceMotion ? undefined : { scale: 0.99 }}
                        >
-                         <motion.div
-                           whileHover={reduceMotion ? undefined : { rotate: 5, scale: 1.04 }}
-                           transition={{ type: "spring", stiffness: 400, damping: 18 }}
-                         >
-                           <Icon className={cn("relative h-4 w-4 shrink-0 transition-colors", isActive ? "text-white" : "text-slate-500")} />
-                         </motion.div>
-                          <span className="relative truncate text-[12px] font-medium">{item.label}</span>
+                         <Icon className={cn("relative h-4 w-4 shrink-0 transition-colors", isActive ? "text-white" : "text-slate-400")} />
+                         <span className="relative truncate text-[12px] font-medium">{item.label}</span>
                         {item.tab === "messages" && unreadMessageCount > 0 && (
                           <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-xs">
                             {unreadMessageCount > 99 ? "99+" : unreadMessageCount}
@@ -222,7 +327,7 @@ export default function AdminSidebar({
                         {isActive && (
                           <motion.span
                             layoutId={reduceMotion ? undefined : "admin-sidebar-dot"}
-                            className="relative ml-auto h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.4)]"
+                            className="relative ml-auto h-1.5 w-1.5 rounded-full bg-white"
                             transition={{ duration: reduceMotion ? 0 : 0.2 }}
                           />
                        )}
@@ -235,12 +340,12 @@ export default function AdminSidebar({
           </nav>
 
         {/* Logout */}
-        <div className="border-t border-white/10 p-3">
+        <div className="border-t border-slate-100 p-3">
           <button
             onClick={() => setShowLogoutModal(true)}
-            className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-[13px] font-medium text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+            className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 cursor-pointer"
           >
-            <LogOut className="h-3 w-3" />
+            <LogOut className="h-4 w-4" />
             Logout
           </button>
         </div>
@@ -253,7 +358,7 @@ export default function AdminSidebar({
             animate={{ opacity: 1 }}
             exit={reduceMotion ? undefined : { opacity: 0 }}
             transition={{ duration: reduceMotion ? 0 : 0.22 }}
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm lg:hidden"
+            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs lg:hidden"
             onClick={onMobileClose}
           >
             <motion.aside
@@ -261,21 +366,24 @@ export default function AdminSidebar({
               animate={{ x: 0 }}
               exit={reduceMotion ? undefined : { x: -280 }}
               transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.21, 0.47, 0.32, 0.98] }}
-              className="flex h-full w-64 flex-col border-r border-white/10 bg-[#07111f] text-slate-200"
+              className="flex h-full w-64 flex-col border-r border-slate-200 bg-white text-slate-800 shadow-xl"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-3">
+              <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-100 px-4">
                 <Link href="/dashboard/admin" className="flex items-center gap-2">
                   <span className="h-8 w-8 shrink-0 overflow-hidden rounded-full">
                     <Image src="/images/landing/logo.png" alt="RentTrack" width={32} height={32} className="h-full w-full object-contain" />
                   </span>
-                  <span className="text-xs font-bold text-white">Admin Panel</span>
+                  <div>
+                    <span className="block text-xs font-bold tracking-tight text-slate-900">RentTrack</span>
+                    <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Admin Console</span>
+                  </div>
                 </Link>
                 <button
                   type="button"
                   onClick={onMobileClose}
                   aria-label="Close navigation menu"
-                  className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                  className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -283,22 +391,109 @@ export default function AdminSidebar({
               <nav aria-label="Admin navigation" className="flex-1 overflow-y-auto px-3 py-3">
                 {navSections.map((section) => (
                   <div key={section.title} className="mb-3">
-                    <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{section.title}</p>
+                    <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">{section.title}</p>
                     <div className="space-y-1">
                       {section.items.map((item) => {
                         const Icon = item.icon;
                         const isActive = activeTab === item.tab;
+                        const isChildActive = item.children?.some((child) => child.tab === activeTab);
+
+                        if (item.children && item.children.length > 0) {
+                          const isOpen = unitsDropdownOpen;
+                          return (
+                            <div key={item.tab} className="space-y-1">
+                              <div
+                                className={cn(
+                                  "group relative flex w-full items-center justify-between rounded-xl text-[13px] font-medium transition-all duration-150",
+                                  isActive
+                                    ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/25"
+                                    : isChildActive
+                                      ? "bg-slate-100 text-slate-900 font-semibold"
+                                      : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
+                                )}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigateTo(item.tab);
+                                    setUnitsDropdownOpen((prev) => !prev);
+                                    onMobileClose();
+                                  }}
+                                  className="flex flex-1 items-center gap-2.5 px-3 py-2 text-left focus-visible:outline-none cursor-pointer"
+                                >
+                                  <Icon className={cn("h-4 w-4 shrink-0", (isActive || isChildActive) ? (isActive ? "text-white" : "text-blue-600") : "text-slate-400")} />
+                                  <span className="truncate">{item.label}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label="Toggle properties dropdown"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setUnitsDropdownOpen((prev) => !prev);
+                                  }}
+                                  className={cn(
+                                    "p-2 pr-2.5 rounded-r-xl transition-colors cursor-pointer",
+                                    isActive ? "text-white/80 hover:text-white" : "text-slate-400 hover:text-slate-700"
+                                  )}
+                                >
+                                  <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-200", isOpen && "rotate-180")} />
+                                </button>
+                              </div>
+
+                              <AnimatePresence initial={false}>
+                                {isOpen && (
+                                  <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: "auto" }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    transition={{ duration: 0.2, ease: "easeOut" }}
+                                    className="overflow-hidden space-y-1 pl-3.5 ml-3 border-l border-slate-200/90 my-1"
+                                  >
+                                    {item.children.map((sub) => {
+                                      const isSubActive = activeTab === sub.tab;
+                                      const SubIcon = sub.icon;
+                                      return (
+                                        <button
+                                          key={sub.tab}
+                                          type="button"
+                                          onClick={() => {
+                                            navigateTo(sub.tab);
+                                            onMobileClose();
+                                          }}
+                                          className={cn(
+                                            "group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer",
+                                            isSubActive
+                                              ? "bg-blue-50 text-blue-700 font-bold"
+                                              : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 font-medium"
+                                          )}
+                                        >
+                                          <SubIcon className={cn("h-3.5 w-3.5 shrink-0 transition-colors", isSubActive ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600")} />
+                                          <span className="truncate">{sub.label}</span>
+                                          {isSubActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-600" />}
+                                        </button>
+                                      );
+                                    })}
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          );
+                        }
+
                         return (
                           <button
                             key={item.tab}
                             type="button"
                             onClick={() => { navigateTo(item.tab); onMobileClose(); }}
                             className={cn(
-                              "flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 motion-reduce:transition-none",
-                              isActive ? "bg-blue-600 text-white shadow-[0_4px_12px_rgba(37,99,235,0.22)]" : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
+                              "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[13px] font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
+                              isActive
+                                ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/25"
+                                : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
                             )}
                           >
-                            <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-white" : "text-slate-500")} />
+                            <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-white" : "text-slate-400")} />
                             <span className="truncate">{item.label}</span>
                             {item.tab === "messages" && unreadMessageCount > 0 && (
                               <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-xs">
@@ -315,7 +510,7 @@ export default function AdminSidebar({
                                 {pendingPaymentsCount}
                               </span>
                             )}
-                            {isActive && <span aria-hidden="true" className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.4)]" />}
+                            {isActive && <span aria-hidden="true" className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-white" />}
                           </button>
                         );
                       })}
@@ -323,13 +518,14 @@ export default function AdminSidebar({
                   </div>
                 ))}
               </nav>
-              <div className="border-t border-white/10 p-3">
+              <div className="border-t border-slate-100 p-3">
                 <button
                   type="button"
                   onClick={() => { onMobileClose(); setShowLogoutModal(true); }}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                  className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
                 >
-                  <LogOut className="h-4 w-4" /> Logout
+                  <LogOut className="h-4 w-4" />
+                  Logout
                 </button>
               </div>
             </motion.aside>

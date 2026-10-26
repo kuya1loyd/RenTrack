@@ -7,20 +7,25 @@ const Card = React.forwardRef<
     hover?: boolean;
     glow?: boolean;
   }
->(({ className, hover = true, glow = false, children, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn(
-      "rounded-2xl border border-border bg-surface shadow-card",
-      hover && "cursor-pointer transition-all duration-300 hover:shadow-card-hover hover:-translate-y-1",
-      glow && "hover:border-primary-300 hover:shadow-lg hover:shadow-primary-500/10",
-      className
-    )}
-    {...props}
-  >
-    {children}
-  </div>
-));
+>(({ className, hover, glow = false, children, ...props }, ref) => {
+  const isClickable = Boolean(props.onClick) || className?.includes("cursor-pointer");
+  const shouldHover = hover !== undefined ? hover : isClickable;
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        "rounded-2xl border border-border bg-surface shadow-card",
+        shouldHover && "transition-all duration-300 hover:shadow-card-hover hover:-translate-y-1",
+        isClickable && "cursor-pointer",
+        glow && "hover:border-primary-300 hover:shadow-lg hover:shadow-primary-500/10",
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </div>
+  );
+});
 Card.displayName = "Card";
 
 const CardHeader = React.forwardRef<

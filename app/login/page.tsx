@@ -2,13 +2,17 @@
 
 import { useState, useEffect, FormEvent, Suspense } from "react";
 import Image from "next/image";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Mail,
   Lock,
   Eye,
   EyeOff,
   ArrowRight,
+  Clock,
+  Calendar,
+  Wrench,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +57,14 @@ function LoginContent() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [maintenanceModal, setMaintenanceModal] = useState<{
+    isOpen: boolean;
+    reason?: string;
+    date?: string;
+    time?: string;
+    estimatedDowntime?: string;
+    message?: string;
+  }>({ isOpen: false });
 
   useEffect(() => {
     setMounted(true);
@@ -84,14 +96,27 @@ function LoginContent() {
         toast.success("Login successful!");
         setUser(data.user);
         const role = data.user.role;
-        if (role === "tenant") {
-          router.push("/dashboard/tenant");
+        if (role === "admin") {
+          router.push("/dashboard/admin");
+        } else if (role === "owner") {
+          router.push("/dashboard/owner");
         } else if (role === "agent") {
           router.push("/dashboard/agent");
         } else {
-          router.push("/dashboard");
+          router.push("/dashboard/tenant");
         }
       } else {
+        if (data.maintenance || res.status === 503 || String(data.error || "").toLowerCase().includes("maintenance")) {
+          setMaintenanceModal({
+            isOpen: true,
+            reason: data.reason || "Unit Repair & Renovation (Scheduled unit repairs)",
+            date: data.date || new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+            time: data.time || new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
+            estimatedDowntime: data.estimatedDowntime || "30 to 60 minutes",
+            message: data.error || "The system is currently under scheduled maintenance. Only administrators can sign in at this time.",
+          });
+          return;
+        }
         if (data.needsVerification) {
           toast.info(data.error || "Please verify your account before logging in. A verification code has been sent to your email.");
           const verifyParams = new URLSearchParams({ email: data.email || email });
@@ -268,6 +293,118 @@ function LoginContent() {
           </motion.div>
         )}
       </div>
+
+      {/* Scheduled Maintenance Notice Modal */}
+      <AnimatePresence>
+        {maintenanceModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMaintenanceModal((prev) => ({ ...prev, isOpen: false }))}
+              className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity"
+            />
+
+            {/* Modal Dialog */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+              className="relative w-full max-w-md overflow-hidden rounded-3xl border border-gray-100 bg-white p-6 sm:p-7 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 z-10"
+              role="dialog"
+              aria-modal="true"
+            >
+              {/* Close button */}
+              <button
+                type="button"
+                onClick={() => setMaintenanceModal((prev) => ({ ...prev, isOpen: false }))}
+                className="absolute right-4 top-4 rounded-full p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-zinc-800 dark:hover:text-gray-200 transition-colors cursor-pointer"
+                aria-label="Close dialog"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="text-center">
+                {/* Icon Badge */}
+                <div className="mx-auto mb-3.5 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 border border-amber-500/20 shadow-sm">
+                  <Wrench className="h-7 w-7" />
+                </div>
+
+                {/* Badge */}
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300 border border-amber-500/20 mb-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  Scheduled Maintenance Active
+                </div>
+
+                {/* Title */}
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">
+                  System Under Maintenance
+                </h3>
+
+                {/* Primary statement */}
+                <p className="mt-2 text-sm text-gray-600 dark:text-zinc-300 leading-relaxed font-medium">
+                  The system is currently under scheduled maintenance. Only administrators can sign in at this time.
+                </p>
+              </div>
+
+              {/* Unified Details Box */}
+              <div className="mt-5 rounded-2xl border border-gray-100 bg-gray-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-800/50 space-y-3 text-left">
+                {/* Reason */}
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-zinc-400">
+                    <Wrench className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>Reason</span>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white break-words">
+                    {maintenanceModal.reason || "Unit Repair & Renovation (Scheduled unit repairs)"}
+                  </p>
+                </div>
+
+                <div className="border-t border-gray-200/70 dark:border-zinc-700/60 pt-3 grid grid-cols-2 gap-3">
+                  {/* Started Time */}
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-zinc-400">
+                      <Clock className="h-3.5 w-3.5 text-blue-500" />
+                      <span>Started At</span>
+                    </div>
+                    <p className="mt-1 text-xs sm:text-sm font-semibold text-gray-900 dark:text-white">
+                      {maintenanceModal.date && maintenanceModal.time
+                        ? `${maintenanceModal.date} at ${maintenanceModal.time}`
+                        : maintenanceModal.date || maintenanceModal.time || "Active"}
+                    </p>
+                  </div>
+
+                  {/* Estimated Duration */}
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-zinc-400">
+                      <Calendar className="h-3.5 w-3.5 text-emerald-500" />
+                      <span>Duration</span>
+                    </div>
+                    <p className="mt-1 text-xs sm:text-sm font-semibold text-gray-900 dark:text-white">
+                      {maintenanceModal.estimatedDowntime || "30 to 60 minutes"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Single Clear Action Button */}
+              <div className="mt-6">
+                <Button
+                  type="button"
+                  variant="gradient"
+                  className="w-full h-11 rounded-xl cursor-pointer text-sm font-semibold shadow-md"
+                  onClick={() => setMaintenanceModal((prev) => ({ ...prev, isOpen: false }))}
+                >
+                  Understood
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

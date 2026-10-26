@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         createdAt: user.createdAt,
       },
     });
-    regenerateSession(response, user.id);
+    regenerateSession(response, user.id, user.role);
 
     try {
       await logAudit(user.id, "login_success", { email: user.email, role: user.role }, getClientIp(request), request.headers.get("user-agent") || "unknown");

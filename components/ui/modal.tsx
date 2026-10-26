@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef, ReactNode } from "react";
+import { useEffect, useId, useRef, useState, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -12,13 +13,19 @@ interface ModalProps {
   description?: string;
   children: ReactNode;
   className?: string;
+  overlayClassName?: string;
 }
 
-export function Modal({ isOpen, onClose, title, description, children, className }: ModalProps) {
+export function Modal({ isOpen, onClose, title, description, children, className, overlayClassName }: ModalProps) {
+  const [mounted, setMounted] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   const id = useId();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -33,7 +40,7 @@ export function Modal({ isOpen, onClose, title, description, children, className
       const focusable = dialogRef.current?.querySelector<HTMLElement>(
         'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
       );
-      (focusable || dialogRef.current)?.focus();
+      (focusable || dialogRef.current)?.focus({ preventScroll: true });
     });
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -71,24 +78,26 @@ export function Modal({ isOpen, onClose, title, description, children, className
   const titleId = `modal-title-${id}`;
   const descriptionId = description ? `${titleId}-description` : undefined;
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <AnimatePresence initial={false}>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-9999 flex items-center justify-center p-4">
           <motion.div
             ref={overlayRef}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
-            className="absolute inset-0 bg-black/30"
+            className={cn("absolute inset-0 bg-transparent backdrop-blur-[1px]", overlayClassName)}
           />
           <motion.div
             ref={dialogRef}
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-            transition={{ duration: 0.25, ease: [0.21, 0.47, 0.32, 0.98] }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
             className={cn(
               "relative w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl",
               className
@@ -122,6 +131,7 @@ export function Modal({ isOpen, onClose, title, description, children, className
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

@@ -20,7 +20,11 @@ export async function GET(request: NextRequest) {
 
     const safeUser = { ...user };
     delete safeUser.password;
-    return NextResponse.json({ success: true, user: safeUser });
+    const response = NextResponse.json({ success: true, user: safeUser });
+    if (user.role) {
+      response.cookies.set("renttrack_role", user.role, { path: "/", httpOnly: false, sameSite: "lax", maxAge: 60 * 60 * 8 });
+    }
+    return response;
   } catch (error) {
     console.error("Session lookup error:", error);
     return NextResponse.json({ success: false, error: "Failed to load session" }, { status: 500 });

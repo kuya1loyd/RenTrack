@@ -47,40 +47,59 @@ export function generateOtpCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-export function createSessionToken(userId: string) {
-  const payload = {
+export interface SessionPayload {
+  userId: string;
+  role?: string;
+  exp: number;
+}
+
+export function createSessionToken(userId: string, role?: string) {
+  const payload: SessionPayload = {
     userId,
+    role,
     exp: Date.now() + SESSION_TTL_SECONDS * 1000,
   };
   const encoded = base64UrlEncode(JSON.stringify(payload));
   return `${encoded}.${sign(encoded)}`;
 }
 
-export function verifySessionToken(token?: string | null): string | null {
+export function getSessionPayload(token?: string | null): SessionPayload | null {
   if (!token) return null;
 
   const [encoded, signature] = token.split(".");
   if (!encoded || !signature) return null;
 
-  const expected = sign(encoded);
-  const expectedBuffer = Buffer.from(expected);
-  const actualBuffer = Buffer.from(signature);
-  if (expectedBuffer.length !== actualBuffer.length) return null;
-  if (!timingSafeEqual(expectedBuffer, actualBuffer)) return null;
-
   try {
-    const payload = JSON.parse(base64UrlDecode(encoded)) as { userId?: string; exp?: number };
+    const expected = sign(encoded);
+    const expectedBuffer = Buffer.from(expected);
+    const actualBuffer = Buffer.from(signature);
+    if (expectedBuffer.length !== actualBuffer.length) return null;
+    if (!timingSafeEqual(expectedBuffer, actualBuffer)) return null;
+
+    const payload = JSON.parse(base64UrlDecode(encoded)) as SessionPayload;
     if (!payload.userId || !payload.exp || Date.now() > payload.exp) return null;
 
-    return payload.userId;
+    return payload;
   } catch {
     return null;
   }
 }
 
+export function verifySessionToken(token?: string | null): string | null {
+  const payload = getSessionPayload(token);
+  return payload ? payload.userId : null;
+}
+
 export function getSessionUserId(request: NextRequest): string | null {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   return verifySessionToken(token);
+}
+
+export function getSessionRole(request: NextRequest): string | null {
+  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+  const payload = getSessionPayload(token);
+  if (payload?.role) return payload.role;
+  return request.cookies.get("renttrack_role")?.value || null;
 }
 
 export async function getCurrentUser(request: NextRequest) {
@@ -93,15 +112,22 @@ export async function getCurrentUser(request: NextRequest) {
   return safeUser;
 }
 
-export function setSessionCookie(response: NextResponse, userId: string) {
-  response.cookies.set(SESSION_COOKIE_NAME, createSessionToken(userId), getSessionCookieOptions());
+export function setSessionCookie(response: NextResponse, userId: string, role?: string) {
+  response.cookies.set(SESSION_COOKIE_NAME, createSessionToken(userId, role), getSessionCookieOptions());
+  if (role) {
+    response.cookies.set("renttrack_role", role, { path: "/", httpOnly: false, sameSite: "lax", maxAge: SESSION_TTL_SECONDS });
+  }
 }
 
-export function regenerateSession(response: NextResponse, userId: string) {
+export function regenerateSession(response: NextResponse, userId: string, role?: string) {
   response.cookies.set(SESSION_COOKIE_NAME, "", { ...getSessionCookieOptions(0), maxAge: 0 });
-  response.cookies.set(SESSION_COOKIE_NAME, createSessionToken(userId), getSessionCookieOptions());
+  response.cookies.set(SESSION_COOKIE_NAME, createSessionToken(userId, role), getSessionCookieOptions());
+  if (role) {
+    response.cookies.set("renttrack_role", role, { path: "/", httpOnly: false, sameSite: "lax", maxAge: SESSION_TTL_SECONDS });
+  }
 }
 
 export function clearSessionCookie(response: NextResponse) {
   response.cookies.set(SESSION_COOKIE_NAME, "", { ...getSessionCookieOptions(0), maxAge: 0 });
+  response.cookies.set("renttrack_role", "", { path: "/", maxAge: 0 });
 }

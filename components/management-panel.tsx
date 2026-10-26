@@ -79,8 +79,20 @@ function ManagementMetrics({ metrics }: { metrics: { label: string; value: strin
   ))}</section>;
 }
 
-export function UnitStatus({ status }: { status: "vacant" | "occupied" | "maintenance" }) {
-  return <span className={`${styles.status} ${status === "occupied" ? styles.green : status === "maintenance" ? styles.amber : styles.blue}`}>{status === "vacant" ? "Available" : status === "occupied" ? "Occupied" : "Under Maintenance"}</span>;
+export function UnitStatus({ status, reason }: { status: "vacant" | "occupied" | "maintenance"; reason?: string }) {
+  return (
+    <div className="inline-flex flex-col gap-0.5 items-start">
+      <span className={`${styles.status} ${status === "occupied" ? styles.green : status === "maintenance" ? styles.amber : styles.blue}`}>
+        {status === "vacant" ? "Available" : status === "occupied" ? "Occupied" : "Under Maintenance"}
+      </span>
+      {status === "maintenance" && reason && (
+        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200/80 rounded px-1.5 py-0.5 mt-0.5 shadow-2xs">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+          {reason}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function PaymentStatus({ status }: { status: "paid" | "pending" | "overdue" | "partial" }) {

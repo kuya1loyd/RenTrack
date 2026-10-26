@@ -37,10 +37,12 @@ export function TableRow({
   className,
   ...props
 }: React.HTMLAttributes<HTMLTableRowElement>) {
+  const isClickable = Boolean(props.onClick) || className?.includes("cursor-pointer");
   return (
     <tr
       className={cn(
         "border-b border-border transition-colors hover:bg-surface-secondary/50 data-[state=selected]:bg-surface-secondary",
+        isClickable && "cursor-pointer",
         className
       )}
       {...props}

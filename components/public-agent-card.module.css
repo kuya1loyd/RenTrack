@@ -517,6 +517,28 @@
   font-weight: 500;
 }
 
+.compactLocation {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.compactLocationIcon {
+  flex-shrink: 0;
+  color: #2563eb;
+}
+
+.compactLocation span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .compactInquire {
   display: flex;
   min-height: 44px;

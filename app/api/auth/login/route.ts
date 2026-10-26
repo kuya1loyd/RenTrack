@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findUserByEmail, logAudit, updateUserPresence, initDatabase, ensureBuiltInAccount, createLoginOtp } from "@/lib/db";
+import { findUserByEmail, logAudit, updateUserPresence, initDatabase, ensureBuiltInAccount, createLoginOtp, getSystemConfig } from "@/lib/db";
 import { regenerateSession } from "@/lib/security";
 import { clearRateLimit } from "@/lib/auth-security";
 import { validateApiRequest } from "@/lib/api-security";
@@ -61,6 +61,40 @@ export async function POST(request: NextRequest) {
       return withSecurityHeaders(withCorsHeaders(request, response));
     }
 
+    // Check maintenance mode: block all non-administrators
+    const config = await getSystemConfig();
+    const isMaintenance = config.maintenance_mode === "true";
+    if (isMaintenance && user.role !== "admin") {
+      const reason = config.maintenance_reason || "Scheduled property and unit repair maintenance";
+      const rawDate = config.maintenance_started_at || config.updated_at || new Date().toISOString();
+      const dateObj = new Date(rawDate);
+      const formattedDate = dateObj.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+      const formattedTime = dateObj.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+      const downtimeStr = config.maintenance_estimated_downtime ? ` Expected duration: ${config.maintenance_estimated_downtime}.` : "";
+
+      const maintenanceError = `The system is currently under scheduled maintenance. Only administrators can sign in at this time. Reason: ${reason}. Maintenance began: ${formattedDate} at ${formattedTime}.${downtimeStr}`;
+
+      const response = NextResponse.json({
+        success: false,
+        error: maintenanceError,
+        maintenance: true,
+        reason,
+        startedAt: rawDate,
+        date: formattedDate,
+        time: formattedTime,
+        estimatedDowntime: config.maintenance_estimated_downtime,
+      }, { status: 503 });
+      return withSecurityHeaders(withCorsHeaders(request, response));
+    }
+
     if (!user.emailVerified) {
       let devOtp: string | undefined;
       const devShowOtp = process.env.DEV_SHOW_OTP === "true";
@@ -103,7 +137,7 @@ export async function POST(request: NextRequest) {
     const safeUser = { ...user };
     delete safeUser.password;
     const response = NextResponse.json({ success: true, user: safeUser });
-    regenerateSession(response, user.id);
+    regenerateSession(response, user.id, user.role);
     return withSecurityHeaders(withCorsHeaders(request, response));
   } catch (error: any) {
     console.error("Login error:", error instanceof Error ? error.message : error);

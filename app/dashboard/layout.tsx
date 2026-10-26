@@ -214,14 +214,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "relative flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 w-full",
+                      "relative flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150 w-full",
                       isActive
-                        ? "bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
-                        : "text-text-secondary hover:text-foreground hover:bg-surface-tertiary"
+                        ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/25"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80"
                     )}
                   >
-                    <IconComponent className={cn("relative h-5 w-5 shrink-0", isActive && "text-primary-600 dark:text-primary-400")} />
-                    <span className="relative truncate text-sm font-medium">{navLabel(item)}</span>
+                    <IconComponent className={cn("relative h-4 w-4 shrink-0 transition-colors", isActive ? "text-white" : "text-slate-400")} />
+                    <span className="relative truncate">{navLabel(item)}</span>
                   </Link>
                 );
               })}

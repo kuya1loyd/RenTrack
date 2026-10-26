@@ -1,5 +1,28 @@
+/**
+ * RentTrack Mail Service - Updated 2026-10-22
+ */
 import nodemailer from "nodemailer";
 import type SMTPPool from "nodemailer/lib/smtp-pool";
+import path from "path";
+import fs from "fs";
+
+export function getLogoAttachment() {
+  try {
+    const localLogoPath = path.join(process.cwd(), "public", "images", "landing", "logo.png");
+    if (fs.existsSync(localLogoPath)) {
+      return [
+        {
+          filename: "logo.png",
+          path: localLogoPath,
+          cid: "renttrack-logo",
+        },
+      ];
+    }
+  } catch (err) {
+    console.warn("[Mail] Could not load logo attachment:", err);
+  }
+  return [];
+}
 
 const SMTP_HOST = process.env.SMTP_HOST;
 const SMTP_PORT = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined;
@@ -98,7 +121,7 @@ export async function sendOtpEmail(to: string, code: string) {
 
   try {
     await currentTransporter.sendMail({
-      from: SMTP_USER,
+      from: SMTP_USER ? `"RentTrack" <${SMTP_USER}>` : undefined,
       to,
       subject,
       text,
@@ -119,7 +142,7 @@ export async function sendEmail({ to, subject, text, html, bcc }: { to: string; 
 
   try {
     await currentTransporter.sendMail({
-      from: SMTP_USER,
+      from: SMTP_USER ? `"RentTrack" <${SMTP_USER}>` : undefined,
       to,
       bcc,
       subject,
@@ -133,7 +156,23 @@ export async function sendEmail({ to, subject, text, html, bcc }: { to: string; 
   }
 }
 
-export async function sendSystemEmail({ to, subject, text, html, bcc, replyTo }: { to: string; subject: string; text?: string; html?: string; bcc?: string; replyTo?: string }) {
+export async function sendSystemEmail({
+  to,
+  subject,
+  text,
+  html,
+  bcc,
+  replyTo,
+  attachments,
+}: {
+  to: string;
+  subject: string;
+  text?: string;
+  html?: string;
+  bcc?: string;
+  replyTo?: string;
+  attachments?: any[];
+}) {
   const configured = isSmtpConfigured();
   console.log("[Mail] SMTP configured:", configured, { to, subject, from: process.env.SMTP_USER });
   if (!configured) {
@@ -147,13 +186,14 @@ export async function sendSystemEmail({ to, subject, text, html, bcc, replyTo }:
       return false;
     }
     const result = await currentTransporter.sendMail({
-      from: SMTP_USER,
+      from: SMTP_USER ? `"RentTrack" <${SMTP_USER}>` : undefined,
       to,
       bcc,
       replyTo,
       subject,
       text: text || html?.replace(/<[^>]+>/g, "") || "",
       html,
+      attachments,
     });
     console.log("[Mail] Email sent successfully:", { to, subject });
     return result;
@@ -358,3 +398,360 @@ export function createAccountCredentialsEmailHtml({
     </div>
   `;
 }
+
+export function createSystemMaintenanceEmailHtml({
+  name,
+  estimatedDowntime = "30 to 60 minutes",
+  customMessage,
+  maintenanceReason = "Property & Unit Infrastructure Maintenance",
+}: {
+  name: string;
+  estimatedDowntime?: string;
+  customMessage?: string;
+  maintenanceReason?: string;
+}) {
+  const siteUrl = getSiteUrl("");
+  const logoUrl = `${siteUrl}/images/landing/logo.png`;
+  const escapedName = escapeHtml(name || "User");
+  const escapedDowntime = escapeHtml(estimatedDowntime);
+  const escapedReason = escapeHtml(maintenanceReason);
+  const preheaderText = escapeHtml(
+    (customMessage || `RentTrack is undergoing scheduled maintenance (${estimatedDowntime}). Services will resume shortly.`)
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 160)
+  );
+  const year = new Date().getFullYear();
+  const dateFormatted = new Date().toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    timeZoneName: "short",
+  });
+
+  return `
+    <!-- Hidden Preheader for email clients so preview shows message body -->
+    <div style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;mso-hide:all;">
+      ${preheaderText}
+    </div>
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 640px; margin: 0 auto; padding: 0; background: #f8fafc; color: #1e293b;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #f8fafc; padding: 36px 0;">
+        <tr>
+          <td align="center">
+            <table width="100%" style="max-width: 580px; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
+              <tr>
+                <td style="background: linear-gradient(135deg, #0f172a, #1e293b); padding: 32px 36px; text-align: center;">
+                  <img src="${logoUrl}" alt="RentTrack" width="56" height="56" style="height: 56px; width: 56px; margin-bottom: 12px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.2); display: inline-block; vertical-align: middle;" />
+                  <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em;">RentTrack Property Management</h1>
+                  <p style="color: #94a3b8; margin: 4px 0 0; font-size: 13px;">HedgeHomes Realty and Brokerage</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 36px 36px 28px;">
+                  <div style="display: inline-block; padding: 6px 14px; background: #fef3c7; border: 1px solid #fde68a; border-radius: 9999px; margin-bottom: 18px;">
+                    <span style="color: #b45309; font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;">System Maintenance Notice</span>
+                  </div>
+
+                  <h2 style="color: #0f172a; margin: 0 0 14px; font-size: 22px; font-weight: 700;">System is Currently Under Scheduled Maintenance</h2>
+                  
+                  <p style="color: #334155; line-height: 1.6; margin: 0 0 14px; font-size: 15px;">
+                    Hello <strong>${escapedName}</strong>,
+                  </p>
+
+                  <p style="color: #475569; line-height: 1.6; margin: 0 0 16px; font-size: 14px;">
+                    Please be advised that the RentTrack platform is currently undergoing scheduled system maintenance to perform essential updates and repairs.
+                  </p>
+
+                  ${customMessage ? `
+                  <div style="margin: 20px 0; padding: 14px 18px; background: #f1f5f9; border-left: 4px solid #3b82f6; border-radius: 6px;">
+                    <p style="margin: 0; font-size: 13px; color: #1e293b; line-height: 1.5;">
+                      <strong>Note from Administrator:</strong><br />${escapeHtml(customMessage)}
+                    </p>
+                  </div>
+                  ` : ""}
+
+                  <div style="margin: 22px 0; padding: 18px 20px; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 12px;">
+                    <table width="100%" cellpadding="4" cellspacing="0" border="0" style="font-size: 13px; color: #78350f;">
+                      <tr>
+                        <td width="38%" style="font-weight: 700;">Status:</td>
+                        <td><span style="display: inline-block; padding: 2px 8px; background: #fde68a; color: #92400e; border-radius: 4px; font-weight: 700;">Under Maintenance</span></td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: 700;">Reason for Maintenance:</td>
+                        <td><strong style="color: #92400e;">${escapedReason}</strong></td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: 700;">Maintenance Window:</td>
+                        <td>${dateFormatted}</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: 700;">Expected Duration:</td>
+                        <td>${escapedDowntime}</td>
+                      </tr>
+                      <tr>
+                        <td style="font-weight: 700;">Affected Services:</td>
+                        <td>Tenant portals, public listing browsing, and portal accounts</td>
+                      </tr>
+                    </table>
+                  </div>
+
+                  <p style="color: #475569; line-height: 1.6; margin: 0 0 16px; font-size: 14px;">
+                    During this window, non-administrative access is temporarily paused. All your data, rental contracts, payment records, and account credentials remain completely safe and secure.
+                  </p>
+
+                  <p style="color: #475569; line-height: 1.6; margin: 0 0 20px; font-size: 14px;">
+                    Normal operations will resume as soon as the maintenance updates are finalized. We apologize for any inconvenience and thank you for your patience.
+                  </p>
+
+                  <div style="border-top: 1px solid #e2e8f0; padding-top: 18px; margin-top: 24px;">
+                    <p style="margin: 0; font-size: 12px; color: #94a3b8; line-height: 1.5;">
+                      This is an automated system notification from RentTrack. If you have urgent inquiries, please contact management.
+                    </p>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td style="background: #f8fafc; padding: 20px 36px; text-align: center; border-top: 1px solid #e2e8f0;">
+                  <p style="color: #94a3b8; margin: 0; font-size: 11px;">© ${year} RentTrack. All rights reserved.</p>
+                  <p style="color: #94a3b8; margin: 4px 0 0; font-size: 11px;">HedgeHomes Realty and Brokerage</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </div>
+  `;
+}
+
+export async function broadcastMaintenanceEmailToAllUsers(options?: {
+  customMessage?: string;
+  estimatedDowntime?: string;
+  maintenanceReason?: string;
+}): Promise<{ totalAccounts: number; sentCount: number; failedCount: number }> {
+  try {
+    const { getAllUsers } = await import("@/lib/db");
+    const allUsers = await getAllUsers();
+
+    const validUsers = (allUsers || []).filter(
+      (u: any) => u.email && typeof u.email === "string" && u.email.includes("@") && u.role !== "admin"
+    );
+    let sentCount = 0;
+    let failedCount = 0;
+
+    const batchSize = 6;
+    for (let i = 0; i < validUsers.length; i += batchSize) {
+      const batch = validUsers.slice(i, i + batchSize);
+      await Promise.allSettled(
+        batch.map(async (user: any) => {
+          try {
+            const html = createSystemMaintenanceEmailHtml({
+              name: user.name || "Valued User",
+              estimatedDowntime: options?.estimatedDowntime || "30 to 60 minutes",
+              customMessage: options?.customMessage,
+              maintenanceReason: options?.maintenanceReason,
+            });
+            const result = await sendSystemEmail({
+              to: user.email,
+              subject: `[RentTrack Notice] System Under Maintenance: ${options?.maintenanceReason || "Scheduled Maintenance"}`,
+              html,
+            });
+            if (result) {
+              sentCount++;
+            } else {
+              failedCount++;
+            }
+          } catch (err) {
+            console.error(`Failed to send maintenance email to ${user.email}:`, err);
+            failedCount++;
+          }
+        })
+      );
+    }
+    console.log(`[Maintenance Broadcast] Finished: ${sentCount} sent, ${failedCount} failed out of ${validUsers.length} accounts.`);
+    return {
+      totalAccounts: validUsers.length,
+      sentCount,
+      failedCount,
+    };
+  } catch (error) {
+    console.error("Failed to broadcast maintenance emails:", error);
+    return { totalAccounts: 0, sentCount: 0, failedCount: 0 };
+  }
+}
+
+export function createAnnouncementEmailHtml({
+  name,
+  title,
+  message,
+  maintenanceReason,
+  estimatedDowntime,
+}: {
+  name: string;
+  title: string;
+  message: string;
+  maintenanceReason?: string;
+  estimatedDowntime?: string;
+}) {
+  const siteUrl = getSiteUrl("");
+  const logoUrl = `${siteUrl}/images/landing/logo.png`;
+  const escapedName = escapeHtml(name || "Resident / User");
+  const escapedTitle = escapeHtml(title || "System Announcement");
+  const escapedMessage = escapeHtml(message).replace(/\n/g, "<br />");
+  const escapedReason = maintenanceReason && maintenanceReason !== "None" ? escapeHtml(maintenanceReason) : undefined;
+  const escapedDowntime = estimatedDowntime ? escapeHtml(estimatedDowntime) : undefined;
+  const preheaderText = escapeHtml(message.replace(/\s+/g, " ").trim().slice(0, 160));
+  const year = new Date().getFullYear();
+  const dateFormatted = new Date().toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    timeZoneName: "short",
+  });
+
+  return `
+    <!-- Hidden Preheader for email clients so preview shows message body -->
+    <div style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;mso-hide:all;">
+      ${preheaderText}
+    </div>
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 640px; margin: 0 auto; padding: 0; background: #f8fafc; color: #1e293b;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #f8fafc; padding: 36px 0;">
+        <tr>
+          <td align="center">
+            <table width="100%" style="max-width: 580px; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
+              <tr>
+                <td style="background: linear-gradient(135deg, #0f172a, #1e293b); padding: 32px 36px; text-align: center;">
+                  <img src="${logoUrl}" alt="RentTrack" width="56" height="56" style="height: 56px; width: 56px; margin-bottom: 12px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.2); display: inline-block; vertical-align: middle;" />
+                  <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em;">RentTrack Property Management</h1>
+                  <p style="color: #94a3b8; margin: 4px 0 0; font-size: 13px;">HedgeHomes Realty and Brokerage</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 36px 36px 28px;">
+                  <div style="display: inline-block; padding: 6px 14px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 9999px; margin-bottom: 18px;">
+                    <span style="color: #1d4ed8; font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;">Official System Notice</span>
+                  </div>
+
+                  <h2 style="color: #0f172a; margin: 0 0 14px; font-size: 22px; font-weight: 700;">${escapedTitle}</h2>
+                  
+                  <p style="color: #334155; line-height: 1.6; margin: 0 0 14px; font-size: 15px;">
+                    Hello <strong>${escapedName}</strong>,
+                  </p>
+
+                  <div style="margin: 20px 0; padding: 18px 22px; background: #f8fafc; border-left: 4px solid #2563eb; border-radius: 8px; font-size: 14px; color: #1e293b; line-height: 1.65;">
+                    ${escapedMessage}
+                  </div>
+
+                  ${(escapedReason || escapedDowntime) ? `
+                  <div style="margin: 22px 0; padding: 18px 20px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px;">
+                    <table width="100%" cellpadding="4" cellspacing="0" border="0" style="font-size: 13px; color: #166534;">
+                      ${escapedReason ? `
+                      <tr>
+                        <td width="38%" style="font-weight: 700;">Related Category:</td>
+                        <td><strong style="color: #15803d;">${escapedReason}</strong></td>
+                      </tr>
+                      ` : ""}
+                      ${escapedDowntime ? `
+                      <tr>
+                        <td style="font-weight: 700;">Estimated Duration:</td>
+                        <td>${escapedDowntime}</td>
+                      </tr>
+                      ` : ""}
+                      <tr>
+                        <td style="font-weight: 700;">Broadcast Date:</td>
+                        <td>${dateFormatted}</td>
+                      </tr>
+                    </table>
+                  </div>
+                  ` : ""}
+
+                  <p style="color: #475569; line-height: 1.6; margin: 20px 0 0; font-size: 14px;">
+                    If you have any questions or require assistance regarding this notice, please contact your property administrator or agent.
+                  </p>
+
+                  <div style="border-top: 1px solid #e2e8f0; padding-top: 18px; margin-top: 24px;">
+                    <p style="margin: 0; font-size: 12px; color: #94a3b8; line-height: 1.5;">
+                      This is an official system announcement from RentTrack Property Management.
+                    </p>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td style="background: #f8fafc; padding: 20px 36px; text-align: center; border-top: 1px solid #e2e8f0;">
+                  <p style="color: #94a3b8; margin: 0; font-size: 11px;">© ${year} RentTrack. All rights reserved.</p>
+                  <p style="color: #94a3b8; margin: 4px 0 0; font-size: 11px;">HedgeHomes Realty and Brokerage</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </div>
+  `;
+}
+
+export async function broadcastAnnouncementEmailToAllUsers(options: {
+  title: string;
+  message: string;
+  maintenanceReason?: string;
+  estimatedDowntime?: string;
+}): Promise<{ totalAccounts: number; sentCount: number; failedCount: number }> {
+  try {
+    const { getAllUsers } = await import("@/lib/db");
+    const allUsers = await getAllUsers();
+
+    // Filter all users except admin accounts
+    const validUsers = (allUsers || []).filter(
+      (u: any) => u.email && typeof u.email === "string" && u.email.includes("@") && u.role !== "admin"
+    );
+    let sentCount = 0;
+    let failedCount = 0;
+
+    const batchSize = 6;
+    for (let i = 0; i < validUsers.length; i += batchSize) {
+      const batch = validUsers.slice(i, i + batchSize);
+      await Promise.allSettled(
+        batch.map(async (user: any) => {
+          try {
+            const html = createAnnouncementEmailHtml({
+              name: user.name || "Valued User",
+              title: options.title,
+              message: options.message,
+              maintenanceReason: options.maintenanceReason,
+              estimatedDowntime: options.estimatedDowntime,
+            });
+            const result = await sendSystemEmail({
+              to: user.email,
+              subject: `[RentTrack Announcement] ${options.title}`,
+              html,
+            });
+            if (result) {
+              sentCount++;
+            } else {
+              failedCount++;
+            }
+          } catch (err) {
+            console.error(`Failed to send announcement email to ${user.email}:`, err);
+            failedCount++;
+          }
+        })
+      );
+    }
+
+    console.log(`[Announcement Broadcast] Finished: ${sentCount} sent, ${failedCount} failed out of ${validUsers.length} accounts.`);
+    return {
+      totalAccounts: validUsers.length,
+      sentCount,
+      failedCount,
+    };
+  } catch (error) {
+    console.error("Failed to broadcast announcement emails:", error);
+    return { totalAccounts: 0, sentCount: 0, failedCount: 0 };
+  }
+}
+
+

@@ -12,7 +12,7 @@ import {
   Shield, ShieldOff, LogOut, MoreVertical, Search, Building2, RotateCcw,
   Copy, MoreHorizontal, Mail, MessageSquare, Phone, MapPinned, MapPin, DoorOpen, Bed,
   LayoutGrid, List, Wallet, History as HistoryIcon,
-  CalendarDays, Check, AlertCircle, XCircle,
+  CalendarDays, Check, AlertCircle, XCircle, Wrench,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,9 @@ import {
   deleteProperty, deleteUnit, updateProperty, updateUnit,
   updateTenantStatus, safeParseJson,
   Property, Unit, TenantRecord, Payment, UserRecord, getOwnerAgents,
+  UNIT_MAINTENANCE_REASONS, PROPERTY_MAINTENANCE_REASONS,
 } from "@/lib/data";
+import { AnimatedFilterDropdown } from "@/components/ui/animated-filter-dropdown";
 import OwnerAgentsPage from "./agents/agents-client";
 import { cn, formatCurrency, formatDate, getInitials } from "@/lib/utils";
 import { downloadExcelReport, downloadPdfReport } from "@/lib/report-downloads";
@@ -207,12 +209,18 @@ export default function OwnerDashboard() {
   const [propertySearch, setPropertySearch] = useState("");
   const [propertyTypeFilter, setPropertyTypeFilter] = useState("all");
   const [propertyStatusFilter, setPropertyStatusFilter] = useState("all");
+  const [propertyMaintenanceReasonFilter, setPropertyMaintenanceReasonFilter] = useState("all");
+  const [propertyMaintenanceReason, setPropertyMaintenanceReason] = useState<string>(PROPERTY_MAINTENANCE_REASONS[0]);
+  const [editPropertyMaintenanceReason, setEditPropertyMaintenanceReason] = useState<string>(PROPERTY_MAINTENANCE_REASONS[0]);
   const [propertySort, setPropertySort] = useState("name-asc");
   const [propertyPage, setPropertyPage] = useState(1);
   const [propertiesDisplayMode, setPropertiesDisplayMode] = useState<"table" | "grid">("table");
 
   const [unitSearch, setUnitSearch] = useState("");
   const [unitStatusFilter, setUnitStatusFilter] = useState("all");
+  const [unitMaintenanceReasonFilter, setUnitMaintenanceReasonFilter] = useState("all");
+  const [newUnitMaintenanceReason, setNewUnitMaintenanceReason] = useState<string>(UNIT_MAINTENANCE_REASONS[0]);
+  const [editUnitMaintenanceReason, setEditUnitMaintenanceReason] = useState<string>(UNIT_MAINTENANCE_REASONS[0]);
   const [unitSort, setUnitSort] = useState("unit-asc");
   const [unitPage, setUnitPage] = useState(1);
 
@@ -314,6 +322,11 @@ export default function OwnerDashboard() {
     }
     setIsSubmitting(true);
     try {
+      const isMaint = propertyForm.availabilityStatus === "Under Maintenance";
+      const finalCondition = isMaint
+        ? (propertyMaintenanceReason ? `Maintenance: ${propertyMaintenanceReason}` : propertyForm.condition || undefined)
+        : (propertyForm.condition || undefined);
+
       await addProperty({
         name: propertyForm.name,
         location: `${propertyForm.address}, ${propertyForm.city}, ${propertyForm.province}`,
@@ -321,17 +334,19 @@ export default function OwnerDashboard() {
         units: 0,
         occupiedUnits: 0,
         monthlyRevenue: Number(propertyForm.monthlyRevenue) || 0,
-        status: "active",
+        status: isMaint ? "inactive" : "active",
         imageUrl: propertyForm.imageUrl || undefined,
         imageUrls: propertyForm.imageUrls,
         features: propertyForm.features,
-        condition: propertyForm.condition || undefined,
+        condition: finalCondition,
+        maintenanceReason: isMaint ? propertyMaintenanceReason : undefined,
         availabilityStatus: propertyForm.availabilityStatus,
         agentId: propertyForm.agentId || undefined,
       }, user?.id || "");
       toast.success("Property created successfully! You can now add units to this property.");
       setShowCreateProperty(false);
       setPropertyForm({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house", features: [], condition: "", availabilityStatus: "Available", imageUrl: "", imageUrls: [], agentId: "" });
+      setPropertyMaintenanceReason(PROPERTY_MAINTENANCE_REASONS[0]);
       await loadData();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create property");
@@ -531,6 +546,8 @@ export default function OwnerDashboard() {
 
   const handleEditProperty = (property: Property) => {
     setEditingProperty(property);
+    const parsedReason = property.maintenanceReason || (property.condition?.startsWith("Maintenance: ") ? property.condition.replace("Maintenance: ", "") : PROPERTY_MAINTENANCE_REASONS[0]);
+    setEditPropertyMaintenanceReason(parsedReason);
     setEditPropertyForm({
       name: property.name,
       location: property.location,
@@ -552,6 +569,8 @@ export default function OwnerDashboard() {
     const property = properties.find((item) => item.id === unit.propertyId);
     setEditingUnit(unit);
     setEditUnitPropertyId(property?.id || null);
+    const parsedUnitReason = unit.maintenanceReason || (unit.condition?.startsWith("Maintenance: ") ? unit.condition.replace("Maintenance: ", "") : UNIT_MAINTENANCE_REASONS[0]);
+    setEditUnitMaintenanceReason(parsedUnitReason);
     if (property) {
       setEditPropertyForm({
         name: property.name,
@@ -601,6 +620,11 @@ export default function OwnerDashboard() {
     if (!editingProperty || isSubmitting) return;
     setIsSubmitting(true);
     try {
+      const isMaint = editPropertyForm.availabilityStatus === "Under Maintenance";
+      const finalCondition = isMaint
+        ? (editPropertyMaintenanceReason ? `Maintenance: ${editPropertyMaintenanceReason}` : editPropertyForm.condition || undefined)
+        : (editPropertyForm.condition || undefined);
+
       const updatedProperty = await updateProperty(editingProperty.id, {
         name: editPropertyForm.name,
         location: editPropertyForm.location,
@@ -608,9 +632,10 @@ export default function OwnerDashboard() {
         longitude: editPropertyForm.longitude ? Number(editPropertyForm.longitude) : undefined,
         monthlyRevenue: editPropertyForm.monthlyRevenue ? Number(editPropertyForm.monthlyRevenue) : 0,
         type: editPropertyForm.type,
-        status: editPropertyForm.status,
+        status: isMaint ? "inactive" : editPropertyForm.status,
         features: editPropertyForm.features,
-        condition: editPropertyForm.condition || undefined,
+        condition: finalCondition,
+        maintenanceReason: isMaint ? editPropertyMaintenanceReason : undefined,
         availabilityStatus: editPropertyForm.availabilityStatus,
         imageUrl: editPropertyForm.imageUrl || undefined,
         imageUrls: editPropertyForm.imageUrls,
@@ -620,6 +645,8 @@ export default function OwnerDashboard() {
       setProperties(properties.map(p => p.id === editingProperty.id ? {
         ...p,
         ...editPropertyForm,
+        condition: finalCondition,
+        maintenanceReason: isMaint ? editPropertyMaintenanceReason : undefined,
         monthlyRevenue: editPropertyForm.monthlyRevenue ? Number(editPropertyForm.monthlyRevenue) : 0,
         latitude: editPropertyForm.latitude ? Number(editPropertyForm.latitude) : undefined,
         longitude: editPropertyForm.longitude ? Number(editPropertyForm.longitude) : undefined,
@@ -671,12 +698,18 @@ export default function OwnerDashboard() {
         toast.error("Unit number and monthly rent are required");
         return;
       }
+      const isMaint = editUnitForm.status === "maintenance";
+      const finalCondition = isMaint
+        ? (editUnitMaintenanceReason ? `Maintenance: ${editUnitMaintenanceReason}` : editUnitForm.condition || undefined)
+        : (editUnitForm.condition || undefined);
+
       const updatedUnitResult = await updateUnit(editingUnit.id, {
         unitNumber: editUnitForm.unitNumber,
         address: editUnitForm.address || undefined,
         floor: editUnitForm.floor ? parseInt(editUnitForm.floor) : undefined,
         type: editUnitForm.type || "condo",
-        condition: editUnitForm.condition || undefined,
+        condition: finalCondition,
+        maintenanceReason: isMaint ? editUnitMaintenanceReason : undefined,
         status: editUnitForm.status,
         rentAmount: Number(editUnitForm.rentAmount),
         imageUrl: editUnitForm.imageUrl || undefined,
@@ -689,7 +722,8 @@ export default function OwnerDashboard() {
         address: editUnitForm.address || undefined,
         floor: editUnitForm.floor ? parseInt(editUnitForm.floor) : undefined,
         type: editUnitForm.type || "condo",
-        condition: editUnitForm.condition || undefined,
+        condition: finalCondition,
+        maintenanceReason: isMaint ? editUnitMaintenanceReason : undefined,
         status: editUnitForm.status,
         rentAmount: Number(editUnitForm.rentAmount),
         imageUrl: editUnitForm.imageUrl || undefined,
@@ -769,14 +803,23 @@ export default function OwnerDashboard() {
     const searchable = `${unit.unitNumber} ${unit.tenantName || ""} ${unit.address || ""} ${prop?.name || ""} ${prop?.location || ""} ${(unit as any).propertyName || prop?.name || ""}`.toLowerCase();
     const searchMatches = !normalizedUnitSearch || searchable.includes(normalizedUnitSearch);
     const statusMatches = unitStatusFilter === "all" || unit.status === unitStatusFilter;
-    return searchMatches && statusMatches;
+    const unitReason = unit.maintenanceReason || (unit.condition?.startsWith("Maintenance: ") ? unit.condition.replace("Maintenance: ", "") : "");
+    const reasonMatches = unitStatusFilter !== "maintenance" || unitMaintenanceReasonFilter === "all" || unitReason === unitMaintenanceReasonFilter;
+    return searchMatches && statusMatches && reasonMatches;
   });
   const normalizedPropertySearch = propertySearch.trim().toLowerCase();
   const filteredProperties = properties.filter((property) => {
     const searchMatches = !normalizedPropertySearch || `${property.name} ${property.location}`.toLowerCase().includes(normalizedPropertySearch);
     const typeMatches = propertyTypeFilter === "all" || property.type === propertyTypeFilter;
-    const statusMatches = propertyStatusFilter === "all" || property.status === propertyStatusFilter;
-    return searchMatches && typeMatches && statusMatches;
+    const statusMatches =
+      propertyStatusFilter === "all"
+        ? true
+        : propertyStatusFilter === "maintenance"
+          ? property.availabilityStatus === "Under Maintenance" || property.status === "inactive"
+          : property.status === propertyStatusFilter;
+    const propReason = property.maintenanceReason || (property.condition?.startsWith("Maintenance: ") ? property.condition.replace("Maintenance: ", "") : "");
+    const reasonMatches = propertyStatusFilter !== "maintenance" || propertyMaintenanceReasonFilter === "all" || propReason === propertyMaintenanceReasonFilter;
+    return searchMatches && typeMatches && statusMatches && reasonMatches;
   });
   const filteredTenants = tenants.filter((tenant) =>
     (tenantFilter === "all" || tenant.status === tenantFilter) &&
@@ -865,8 +908,8 @@ export default function OwnerDashboard() {
   const currentFinancialPage = Math.min(financialPage, Math.max(1, Math.ceil(filteredPayments.length / 10)));
   const visibleFinancialPayments = sortedFinancialPayments.slice((currentFinancialPage - 1) * 10, currentFinancialPage * 10);
 
-  useEffect(() => { setUnitPage(1); }, [unitSearch, unitStatusFilter, unitSort]);
-  useEffect(() => { setPropertyPage(1); }, [propertySearch, propertyStatusFilter, propertyTypeFilter, propertySort]);
+  useEffect(() => { setUnitPage(1); }, [unitSearch, unitStatusFilter, unitMaintenanceReasonFilter, unitSort]);
+  useEffect(() => { setPropertyPage(1); }, [propertySearch, propertyStatusFilter, propertyMaintenanceReasonFilter, propertyTypeFilter, propertySort]);
   useEffect(() => { setOccupancyPage(1); }, [occupancySearch, occupancyFilter, occupancyTypeFilter, occupancySort]);
   useEffect(() => { setFinancialPage(1); }, [financialSearch, financialStatusFilter, financialMethodFilter, financialUnitFilter, financialDateRange, financialSort]);
 
@@ -1026,12 +1069,14 @@ export default function OwnerDashboard() {
   };
 
   const openAddProperty = () => {
+    setPropertyMaintenanceReason(PROPERTY_MAINTENANCE_REASONS[0]);
     setShowCreateProperty(true);
   };
 
   const openAddUnit = () => {
     const defaultProp = properties[0];
 
+    setNewUnitMaintenanceReason(UNIT_MAINTENANCE_REASONS[0]);
     setNewUnitForm({
       propertyId: defaultProp?.id || "",
       unitNumber: "",
@@ -1055,13 +1100,19 @@ export default function OwnerDashboard() {
     }
     setIsSubmitting(true);
     try {
+      const isMaint = newUnitForm.status === "maintenance";
+      const finalCondition = isMaint
+        ? (newUnitMaintenanceReason ? `Maintenance: ${newUnitMaintenanceReason}` : newUnitForm.condition || undefined)
+        : (newUnitForm.condition || undefined);
+
       const newUnit = await addUnit({
         propertyId: newUnitForm.propertyId || undefined,
         unitNumber: newUnitForm.unitNumber.trim(),
         address: newUnitForm.address.trim(),
         floor: newUnitForm.floor ? Number(newUnitForm.floor) : undefined,
         type: newUnitForm.type || "condo",
-        condition: newUnitForm.condition || undefined,
+        condition: finalCondition,
+        maintenanceReason: isMaint ? newUnitMaintenanceReason : undefined,
         status: newUnitForm.status,
         rentAmount: Number(newUnitForm.rentAmount),
         imageUrl: newUnitForm.imageUrl || undefined,
@@ -1073,6 +1124,7 @@ export default function OwnerDashboard() {
       }
       setShowAddUnit(false);
       setNewUnitForm({ propertyId: "", unitNumber: "", address: "", floor: "", type: "condo", condition: "", status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
+      setNewUnitMaintenanceReason(UNIT_MAINTENANCE_REASONS[0]);
       toast.success("Unit added successfully");
       await loadData();
     } catch {
@@ -1213,17 +1265,34 @@ export default function OwnerDashboard() {
                   aria-label="Search units"
                 />
               </label>
-              <label className={management.filterCompact}>
-                <span>Status</span>
-                <select aria-label="Filter by unit status" value={unitStatusFilter} onChange={(event) => setUnitStatusFilter(event.target.value)}>
-                  <option value="all">All statuses</option>
-                  <option value="vacant">Available</option>
-                  <option value="occupied">Occupied</option>
-                  <option value="maintenance">Under Maintenance</option>
-                </select>
-              </label>
+              <AnimatedFilterDropdown
+                label="Status"
+                value={unitStatusFilter}
+                onChange={(val) => {
+                  setUnitStatusFilter(val);
+                  if (val !== "maintenance") setUnitMaintenanceReasonFilter("all");
+                }}
+                options={[
+                  { value: "all", label: "All statuses" },
+                  { value: "vacant", label: "Available" },
+                  { value: "occupied", label: "Occupied" },
+                  { value: "maintenance", label: "Under Maintenance", badge: "Maintenance" },
+                ]}
+              />
+              <AnimatedFilterDropdown
+                label="Repair Reason"
+                value={unitMaintenanceReasonFilter}
+                onChange={(val) => {
+                  setUnitMaintenanceReasonFilter(val);
+                  if (val !== "all") setUnitStatusFilter("maintenance");
+                }}
+                options={[
+                  { value: "all", label: "All Repair Reasons" },
+                  ...UNIT_MAINTENANCE_REASONS.map((r) => ({ value: r, label: r })),
+                ]}
+              />
               <div className={management.toolbarActions}>
-                <button type="button" className={management.reset} onClick={() => { setUnitSearch(""); setUnitStatusFilter("all"); }}>
+                <button type="button" className={management.reset} onClick={() => { setUnitSearch(""); setUnitStatusFilter("all"); setUnitMaintenanceReasonFilter("all"); }}>
                   <RotateCcw aria-hidden="true" />Reset
                 </button>
                 <Button onClick={downloadUnitsExport} className={management.export}>
@@ -1325,7 +1394,12 @@ export default function OwnerDashboard() {
                               </td>
                               <td className="capitalize">{property?.type || "—"}</td>
                               <td className="whitespace-nowrap tabular-nums">{formatCurrency(unit.rentAmount)}</td>
-                              <td><UnitStatus status={unit.status} /></td>
+                              <td>
+                                <UnitStatus
+                                  status={unit.status}
+                                  reason={unit.maintenanceReason || (unit.condition?.startsWith("Maintenance: ") ? unit.condition.replace("Maintenance: ", "") : undefined)}
+                                />
+                              </td>
                               <td>{tenantName ? <span className={management.tenantCell}><User aria-hidden="true" />{tenantName}</span> : "—"}</td>
                               <td>
                                 <DropdownMenu>
@@ -1393,24 +1467,44 @@ export default function OwnerDashboard() {
                   aria-label="Search properties"
                 />
               </label>
-              <label className={management.filterCompact}>
-                <span>Property type</span>
-                <select aria-label="Filter by property type" value={propertyTypeFilter} onChange={(event) => setPropertyTypeFilter(event.target.value)}>
-                  <option value="all">All types</option>
-                  <option value="house">House / Residential</option>
-                  <option value="condominium">Condominium</option>
-                </select>
-              </label>
-              <label className={management.filterCompact}>
-                <span>Status</span>
-                <select aria-label="Filter by property status" value={propertyStatusFilter} onChange={(event) => setPropertyStatusFilter(event.target.value)}>
-                  <option value="all">All statuses</option>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </label>
+              <AnimatedFilterDropdown
+                label="Property type"
+                value={propertyTypeFilter}
+                onChange={setPropertyTypeFilter}
+                options={[
+                  { value: "all", label: "All types" },
+                  { value: "house", label: "House / Residential" },
+                  { value: "condominium", label: "Condominium" },
+                ]}
+              />
+              <AnimatedFilterDropdown
+                label="Status"
+                value={propertyStatusFilter}
+                onChange={(val) => {
+                  setPropertyStatusFilter(val);
+                  if (val !== "maintenance") setPropertyMaintenanceReasonFilter("all");
+                }}
+                options={[
+                  { value: "all", label: "All statuses" },
+                  { value: "active", label: "Active" },
+                  { value: "inactive", label: "Inactive" },
+                  { value: "maintenance", label: "Under Maintenance", badge: "Fix" },
+                ]}
+              />
+              <AnimatedFilterDropdown
+                label="House Repair Reason"
+                value={propertyMaintenanceReasonFilter}
+                onChange={(val) => {
+                  setPropertyMaintenanceReasonFilter(val);
+                  if (val !== "all") setPropertyStatusFilter("maintenance");
+                }}
+                options={[
+                  { value: "all", label: "All House Repair Reasons" },
+                  ...PROPERTY_MAINTENANCE_REASONS.map((r) => ({ value: r, label: r })),
+                ]}
+              />
               <div className={management.toolbarActions}>
-                <button type="button" className={management.reset} onClick={() => { setPropertySearch(""); setPropertyTypeFilter("all"); setPropertyStatusFilter("all"); }}>
+                <button type="button" className={management.reset} onClick={() => { setPropertySearch(""); setPropertyTypeFilter("all"); setPropertyStatusFilter("all"); setPropertyMaintenanceReasonFilter("all"); }}>
                   <RotateCcw aria-hidden="true" />Reset
                 </button>
                 <Button onClick={downloadPropertiesExport} className={management.export}>
@@ -1514,9 +1608,23 @@ export default function OwnerDashboard() {
                                 {formatCurrency(propRevenue)}
                               </td>
                               <td>
-                                <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize">
-                                  {property.status}
-                                </Badge>
+                                {property.availabilityStatus === "Under Maintenance" || property.status === "inactive" ? (
+                                  <div className="inline-flex flex-col gap-0.5 items-start">
+                                    <Badge variant="outline" className="capitalize bg-amber-50 text-amber-700 border-amber-300 shadow-2xs">
+                                      {property.availabilityStatus === "Under Maintenance" ? "Under Maintenance" : property.status}
+                                    </Badge>
+                                    {(property.maintenanceReason || (property.condition?.startsWith("Maintenance: ") ? property.condition.replace("Maintenance: ", "") : "")) && (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200/80 rounded px-1.5 py-0.5 shadow-2xs">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                        {property.maintenanceReason || property.condition?.replace("Maintenance: ", "")}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize">
+                                    {property.status}
+                                  </Badge>
+                                )}
                               </td>
                               <td>
                                 <div className="flex items-center justify-end pr-2">
@@ -1668,23 +1776,27 @@ export default function OwnerDashboard() {
                   aria-label="Search occupancy"
                 />
               </label>
-              <label className={management.filterCompact}>
-                <span>Occupancy</span>
-                <select aria-label="Filter by occupancy" value={occupancyFilter} onChange={(event) => setOccupancyFilter(event.target.value as any)}>
-                  <option value="all">All occupancies</option>
-                  <option value="full">100% Fully Occupied</option>
-                  <option value="partial">Partially Occupied</option>
-                  <option value="vacant">0% Vacant</option>
-                </select>
-              </label>
-              <label className={management.filterCompact}>
-                <span>Property type</span>
-                <select aria-label="Filter by property type" value={occupancyTypeFilter} onChange={(event) => setOccupancyTypeFilter(event.target.value)}>
-                  <option value="all">All types</option>
-                  <option value="house">House / Residential</option>
-                  <option value="condominium">Condominium</option>
-                </select>
-              </label>
+              <AnimatedFilterDropdown
+                label="Occupancy"
+                value={occupancyFilter}
+                onChange={(val) => setOccupancyFilter(val as any)}
+                options={[
+                  { value: "all", label: "All occupancies" },
+                  { value: "full", label: "100% Fully Occupied" },
+                  { value: "partial", label: "Partially Occupied" },
+                  { value: "vacant", label: "0% Vacant" },
+                ]}
+              />
+              <AnimatedFilterDropdown
+                label="Property type"
+                value={occupancyTypeFilter}
+                onChange={setOccupancyTypeFilter}
+                options={[
+                  { value: "all", label: "All types" },
+                  { value: "house", label: "House / Residential" },
+                  { value: "condominium", label: "Condominium" },
+                ]}
+              />
               <div className={management.toolbarActions}>
                 <button type="button" className={management.reset} onClick={() => { setOccupancySearch(""); setOccupancyFilter("all"); setOccupancyTypeFilter("all"); }}>
                   <RotateCcw aria-hidden="true" />Reset
@@ -2088,19 +2200,18 @@ export default function OwnerDashboard() {
             </div>
 
             <div className="flex items-center gap-2 w-full sm:w-auto">
-              <select
+              <AnimatedFilterDropdown
+                label="Property"
                 value={assignmentPropertyFilter}
-                onChange={(e) => setAssignmentPropertyFilter(e.target.value)}
-                aria-label="Filter assignments by property"
-                className="h-10 w-full sm:w-52 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              >
-                <option value="all">All Properties ({pendingAssignments.length})</option>
-                {Array.from(new Set(pendingAssignments.map((t) => t.propertyName).filter(Boolean))).map((propName) => (
-                  <option key={propName as string} value={propName as string}>
-                    {propName as string}
-                  </option>
-                ))}
-              </select>
+                onChange={setAssignmentPropertyFilter}
+                options={[
+                  { value: "all", label: `All Properties (${pendingAssignments.length})` },
+                  ...Array.from(new Set(pendingAssignments.map((t) => t.propertyName).filter(Boolean))).map((propName) => ({
+                    value: propName as string,
+                    label: propName as string,
+                  })),
+                ]}
+              />
 
               {(assignmentSearch || assignmentPropertyFilter !== "all") && (
                 <button
@@ -2270,32 +2381,33 @@ export default function OwnerDashboard() {
 
             {/* Status Dropdown Filter */}
             <div className="flex items-center gap-1.5">
-              <select
+              <AnimatedFilterDropdown
+                label="Status"
                 value={moveOutStatusFilter}
-                onChange={(e) => setMoveOutStatusFilter(e.target.value as any)}
-                aria-label="Filter by status"
-                className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              >
-                <option value="all">All Statuses ({moveOutCounts.all})</option>
-                <option value="pending">Pending ({moveOutCounts.pending})</option>
-                <option value="approved">Approved ({moveOutCounts.approved})</option>
-                <option value="rejected">Rejected ({moveOutCounts.rejected})</option>
-              </select>
+                onChange={(val) => setMoveOutStatusFilter(val as any)}
+                options={[
+                  { value: "all", label: `All Statuses (${moveOutCounts.all})` },
+                  { value: "pending", label: `Pending (${moveOutCounts.pending})` },
+                  { value: "approved", label: `Approved (${moveOutCounts.approved})` },
+                  { value: "rejected", label: `Rejected (${moveOutCounts.rejected})` },
+                ]}
+              />
             </div>
 
             {/* Property Dropdown Filter */}
             <div className="flex items-center gap-1.5">
-              <select
+              <AnimatedFilterDropdown
+                label="Property"
                 value={moveOutPropertyFilter}
-                onChange={(e) => setMoveOutPropertyFilter(e.target.value)}
-                aria-label="Filter by property"
-                className="h-9 max-w-[200px] truncate rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              >
-                <option value="all">All Properties</option>
-                {Array.from(new Set(moveOutRequests.map((r) => r.property_name).filter(Boolean))).map((propName) => (
-                  <option key={propName} value={propName}>{propName}</option>
-                ))}
-              </select>
+                onChange={setMoveOutPropertyFilter}
+                options={[
+                  { value: "all", label: "All Properties" },
+                  ...Array.from(new Set(moveOutRequests.map((r) => r.property_name).filter(Boolean))).map((propName) => ({
+                    value: propName as string,
+                    label: propName as string,
+                  })),
+                ]}
+              />
             </div>
 
             {/* Reset Button */}
@@ -2769,79 +2881,54 @@ export default function OwnerDashboard() {
 
               {/* Bottom Row: 4 Filter Dropdowns in a unified, evenly-spaced grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-2 border-t border-slate-100">
-                <label className="relative flex flex-col">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 ml-1">Date Range</span>
-                  <div className="relative">
-                    <select
-                      aria-label="Filter payments by date range"
-                      value={financialDateRange}
-                      onChange={(event) => setFinancialDateRange(event.target.value)}
-                      className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-medium text-slate-700 outline-none transition-all duration-200 hover:border-blue-300 hover:bg-white hover:shadow-2xs focus:border-blue-500 focus:bg-white focus:ring-3 focus:ring-blue-500/15 cursor-pointer pr-8"
-                    >
-                      <option value="all">All dates</option>
-                      <option value="30">Last 30 days</option>
-                      <option value="90">Last 90 days</option>
-                      <option value="year">This year</option>
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  </div>
-                </label>
+                <AnimatedFilterDropdown
+                  label="Date Range"
+                  value={financialDateRange}
+                  onChange={setFinancialDateRange}
+                  options={[
+                    { value: "all", label: "All dates" },
+                    { value: "30", label: "Last 30 days" },
+                    { value: "90", label: "Last 90 days" },
+                    { value: "year", label: "This year" },
+                  ]}
+                />
 
-                <label className="relative flex flex-col">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 ml-1">Payment Method</span>
-                  <div className="relative">
-                    <select
-                      aria-label="Filter payments by method"
-                      value={financialMethodFilter}
-                      onChange={(event) => setFinancialMethodFilter(event.target.value)}
-                      className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-medium text-slate-700 outline-none transition-all duration-200 hover:border-blue-300 hover:bg-white hover:shadow-2xs focus:border-blue-500 focus:bg-white focus:ring-3 focus:ring-blue-500/15 cursor-pointer pr-8"
-                    >
-                      <option value="all">All methods</option>
-                      <option value="cash">Cash</option>
-                      <option value="upload_receipt">Receipt upload</option>
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  </div>
-                </label>
+                <AnimatedFilterDropdown
+                  label="Payment Method"
+                  value={financialMethodFilter}
+                  onChange={setFinancialMethodFilter}
+                  options={[
+                    { value: "all", label: "All methods" },
+                    { value: "cash", label: "Cash" },
+                    { value: "upload_receipt", label: "Receipt upload" },
+                  ]}
+                />
 
-                <label className="relative flex flex-col">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 ml-1">Status</span>
-                  <div className="relative">
-                    <select
-                      aria-label="Filter payments by status"
-                      value={financialStatusFilter}
-                      onChange={(event) => setFinancialStatusFilter(event.target.value)}
-                      className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-medium text-slate-700 outline-none transition-all duration-200 hover:border-blue-300 hover:bg-white hover:shadow-2xs focus:border-blue-500 focus:bg-white focus:ring-3 focus:ring-blue-500/15 cursor-pointer pr-8"
-                    >
-                      <option value="all">All statuses</option>
-                      <option value="paid">Verified / Paid</option>
-                      <option value="pending">Pending</option>
-                      <option value="overdue">Overdue</option>
-                      <option value="partial">Partial</option>
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  </div>
-                </label>
+                <AnimatedFilterDropdown
+                  label="Status"
+                  value={financialStatusFilter}
+                  onChange={setFinancialStatusFilter}
+                  options={[
+                    { value: "all", label: "All statuses" },
+                    { value: "paid", label: "Verified / Paid" },
+                    { value: "pending", label: "Pending" },
+                    { value: "overdue", label: "Overdue" },
+                    { value: "partial", label: "Partial" },
+                  ]}
+                />
 
-                <label className="relative flex flex-col">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 ml-1">Unit</span>
-                  <div className="relative">
-                    <select
-                      aria-label="Filter payments by unit"
-                      value={financialUnitFilter}
-                      onChange={(event) => setFinancialUnitFilter(event.target.value)}
-                      className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-medium text-slate-700 outline-none transition-all duration-200 hover:border-blue-300 hover:bg-white hover:shadow-2xs focus:border-blue-500 focus:bg-white focus:ring-3 focus:ring-blue-500/15 cursor-pointer pr-8 truncate"
-                    >
-                      <option value="all">All units</option>
-                      {units.map((unit) => (
-                        <option key={unit.id} value={unit.id}>
-                          {properties.find((property) => property.id === unit.propertyId)?.name || "Property"} • Unit {unit.unitNumber}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  </div>
-                </label>
+                <AnimatedFilterDropdown
+                  label="Unit"
+                  value={financialUnitFilter}
+                  onChange={setFinancialUnitFilter}
+                  options={[
+                    { value: "all", label: "All units" },
+                    ...units.map((unit) => ({
+                      value: unit.id,
+                      label: `${properties.find((property) => property.id === unit.propertyId)?.name || "Property"} • Unit ${unit.unitNumber}`,
+                    })),
+                  ]}
+                />
               </div>
             </div>
             <FinancialMetrics collected={formatCurrency(filteredCollected)} pending={formatCurrency(filteredPayments.filter((payment) => payment.status === "pending").reduce((total, payment) => total + payment.amountPaid, 0))} outstanding={formatCurrency(filteredOutstanding)} transactions={filteredPayments.length} pendingCount={filteredPayments.filter((payment) => payment.status === "pending").length} openCount={filteredPayments.filter((payment) => payment.status !== "paid").length} />
@@ -3178,6 +3265,23 @@ export default function OwnerDashboard() {
                     </select>
                   </div>
                 </div>
+                {newUnitForm.status === "maintenance" && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mt-3 pt-3 border-t border-amber-200">
+                    <label className="block text-xs font-semibold text-amber-800 mb-1.5 flex items-center gap-1.5">
+                      <Wrench className="h-3.5 w-3.5 text-amber-600" />
+                      Chosen Maintenance Reason
+                    </label>
+                    <select
+                      value={newUnitMaintenanceReason}
+                      onChange={(event) => setNewUnitMaintenanceReason(event.target.value)}
+                      className="h-10 w-full rounded-xl border border-amber-300 bg-amber-50/70 px-3 text-xs font-semibold text-amber-900 outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      {UNIT_MAINTENANCE_REASONS.map((reason) => (
+                        <option key={reason} value={reason}>{reason}</option>
+                      ))}
+                    </select>
+                  </motion.div>
+                )}
               </div>
 
               {/* Unit Photos */}
@@ -3348,6 +3452,23 @@ export default function OwnerDashboard() {
                     </select>
                   </div>
                 </div>
+                {propertyForm.availabilityStatus === "Under Maintenance" && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mt-3 pt-3 border-t border-amber-200">
+                    <label className="block text-xs font-semibold text-amber-800 mb-1.5 flex items-center gap-1.5">
+                      <Wrench className="h-3.5 w-3.5 text-amber-600" />
+                      Chosen Maintenance Reason
+                    </label>
+                    <select
+                      value={propertyMaintenanceReason}
+                      onChange={(e) => setPropertyMaintenanceReason(e.target.value)}
+                      className="h-10 w-full rounded-xl border border-amber-300 bg-amber-50/70 px-3 text-xs font-semibold text-amber-900 outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      {PROPERTY_MAINTENANCE_REASONS.map((reason) => (
+                        <option key={reason} value={reason}>{reason}</option>
+                      ))}
+                    </select>
+                  </motion.div>
+                )}
               </div>
 
               {/* Monthly Rent / Amount */}
@@ -3805,6 +3926,23 @@ export default function OwnerDashboard() {
                   </select>
                 </div>
               </div>
+              {editPropertyForm.availabilityStatus === "Under Maintenance" && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="rounded-xl border border-amber-300 bg-amber-50/70 p-3">
+                  <label className="block text-xs font-semibold text-amber-800 mb-1.5 flex items-center gap-1.5">
+                    <Wrench className="h-3.5 w-3.5 text-amber-600" />
+                    Chosen Maintenance Reason
+                  </label>
+                  <select
+                    value={editPropertyMaintenanceReason}
+                    onChange={(e) => setEditPropertyMaintenanceReason(e.target.value)}
+                    className="h-10 w-full rounded-xl border border-amber-300 bg-white px-3 text-xs font-semibold text-amber-900 outline-none focus:ring-2 focus:ring-amber-500"
+                  >
+                    {PROPERTY_MAINTENANCE_REASONS.map((reason) => (
+                      <option key={reason} value={reason}>{reason}</option>
+                    ))}
+                  </select>
+                </motion.div>
+              )}
               <div>
                 <label className="block text-sm font-medium mb-1.5">Number of Units</label>
                 <div className="flex flex-wrap items-center gap-3">
@@ -3950,6 +4088,23 @@ export default function OwnerDashboard() {
                     </select>
                   </div>
                 </div>
+                {editUnitForm.status === "maintenance" && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mt-3 pt-3 border-t border-amber-200">
+                    <label className="block text-xs font-semibold text-amber-800 mb-1.5 flex items-center gap-1.5">
+                      <Wrench className="h-3.5 w-3.5 text-amber-600" />
+                      Chosen Maintenance Reason
+                    </label>
+                    <select
+                      value={editUnitMaintenanceReason}
+                      onChange={(e) => setEditUnitMaintenanceReason(e.target.value)}
+                      className="h-10 w-full rounded-xl border border-amber-300 bg-amber-50/70 px-3 text-xs font-semibold text-amber-900 outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      {UNIT_MAINTENANCE_REASONS.map((reason) => (
+                        <option key={reason} value={reason}>{reason}</option>
+                      ))}
+                    </select>
+                  </motion.div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5">Unit Image</label>

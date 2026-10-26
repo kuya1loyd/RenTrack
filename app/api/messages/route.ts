@@ -1,3 +1,4 @@
+// Updated mail imports
 import { NextRequest, NextResponse } from "next/server";
 import { getConversations, sendMessage, getUnreadMessageCount, findUserById, createNotification } from "@/lib/db";
 import { requireAuth, validateApiRequest, getClientIp } from "@/lib/api-security";

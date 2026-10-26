@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
       message: "Account verified successfully!",
     });
     // Auto sign-in: a freshly verified account gets an authenticated session.
-    regenerateSession(response, resolvedUserId);
+    regenerateSession(response, resolvedUserId, updatedUser.role);
     return withSecurityHeaders(withCorsHeaders(request, response));
   } catch (error) {
     console.error("Verify signup OTP error:", error);

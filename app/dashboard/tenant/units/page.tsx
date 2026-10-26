@@ -530,7 +530,7 @@ export default function TenantUnitsPage() {
                               return (
                                 <option key={u.id} value={u.id}>
                                   Unit {u.unitNumber} {u.floor ? `(Floor ${u.floor})` : ""} — {formatCurrency(u.rentAmount)}
-                                  {isAssigned ? " • Your Home" : u.status === "vacant" ? " • Available" : " • Occupied"}
+                                  {isAssigned ? " • Your Home" : u.status === "vacant" ? " • Available" : u.status === "maintenance" ? ` • Under Maintenance${u.maintenanceReason ? ` (${u.maintenanceReason})` : ""}` : " • Occupied"}
                                 </option>
                               );
                             })}
@@ -787,7 +787,7 @@ export default function TenantUnitsPage() {
                             return (
                               <option key={u.id} value={u.id}>
                                 Unit {u.unitNumber} {u.floor ? `(Floor ${u.floor})` : ""} — {formatCurrency(u.rentAmount)}
-                                {isAssigned ? " • Your Home" : u.status === "vacant" ? " • Available" : " • Occupied"}
+                                {isAssigned ? " • Your Home" : u.status === "vacant" ? " • Available" : u.status === "maintenance" ? ` • Under Maintenance${u.maintenanceReason ? ` (${u.maintenanceReason})` : ""}` : " • Occupied"}
                               </option>
                             );
                           })}
