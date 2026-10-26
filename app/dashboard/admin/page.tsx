@@ -2360,7 +2360,7 @@ export default function AdminDashboard() {
                   )}
                 </AnimatePresence>
 
-                {(unitSearch || unitPropertyFilter !== "all" || unitStatusFilter !== "all" || (unitStatusFilter === "maintenance" && unitMaintenanceReasonFilter !== "all")) && (
+                {(unitSearch || unitPropertyFilter !== "all" || unitStatusFilter !== "all" || unitMaintenanceReasonFilter !== "all") && (
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
