@@ -49,9 +49,10 @@ export function AnimatedFilterDropdown({
     const extracted: AnimatedFilterOption[] = [];
     React.Children.forEach(children, (child) => {
       if (React.isValidElement(child) && child.props) {
+        const childProps = child.props as Record<string, any>;
         extracted.push({
-          value: String(child.props.value ?? ""),
-          label: String(child.props.children ?? child.props.value ?? ""),
+          value: String(childProps.value ?? ""),
+          label: String(childProps.children ?? childProps.value ?? ""),
         });
       }
     });
