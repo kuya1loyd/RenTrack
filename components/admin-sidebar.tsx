@@ -65,10 +65,10 @@ const navSections: NavSection[] = [
         icon: Building2,
         children: [
           { label: "Properties", href: "/dashboard/admin?tab=properties", tab: "properties", icon: Home },
+          { label: "Units", href: "/dashboard/admin?tab=units", tab: "units", icon: DoorOpen },
           { label: "Occupancy", href: "/dashboard/admin?tab=occupancy", tab: "occupancy", icon: BarChart3 },
         ],
       },
-      { label: "Units", href: "/dashboard/admin?tab=units", tab: "units", icon: DoorOpen },
       { label: "Property Map", href: "/dashboard/admin?tab=map", tab: "map", icon: MapPinned },
       { label: "Payments", href: "/dashboard/admin?tab=payments", tab: "payments", icon: CreditCard },
     ],
@@ -106,13 +106,8 @@ export default function AdminSidebar({
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const reduceMotion = useReducedMotion();
-  const [rentalManagementOpen, setRentalManagementOpen] = useState(true);
+  const [rentalManagementOpen, setRentalManagementOpen] = useState(false);
 
-  useEffect(() => {
-    if (activeTab === "properties" || activeTab === "occupancy") {
-      setRentalManagementOpen(true);
-    }
-  }, [activeTab]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -232,7 +227,7 @@ export default function AdminSidebar({
                            <button
                              type="button"
                              onClick={() => {
-                               navigateTo(item.tab);
+                               
                                setRentalManagementOpen((prev) => !prev);
                              }}
                              className="flex flex-1 items-center gap-2 px-3 py-2 text-left focus-visible:outline-none cursor-pointer"
@@ -425,9 +420,8 @@ export default function AdminSidebar({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    navigateTo(item.tab);
+                                    // toggle dropdown
                                     setRentalManagementOpen((prev) => !prev);
-                                    onMobileClose();
                                   }}
                                   className="flex flex-1 items-center gap-2.5 px-3 py-2 text-left focus-visible:outline-none cursor-pointer"
                                 >

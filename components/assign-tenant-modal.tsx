@@ -610,15 +610,21 @@ export default function AssignTenantModal({
 
                               <div className="mt-3 flex items-center justify-between border-t border-slate-100/90 pt-2 text-[11px]">
                                 <span className="text-slate-500">
-                                  {property.units || 0} Total Units
-                                  {propVacantUnits.length > 0 ? (
-                                    <span className="text-emerald-700 font-bold ml-1.5">
-                                      • {propVacantUnits.length} vacant
-                                    </span>
+                                  {property.type?.toLowerCase() === "house" ? (
+                                    "Single House (Entire Property)"
                                   ) : (
-                                    <span className="text-slate-400 ml-1.5">
-                                      • {property.occupiedUnits || 0} occupied
-                                    </span>
+                                    <>
+                                      {property.units || 0} Total Units
+                                      {propVacantUnits.length > 0 ? (
+                                        <span className="text-emerald-700 font-bold ml-1.5">
+                                          • {propVacantUnits.length} vacant
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-400 ml-1.5">
+                                          • {property.occupiedUnits || 0} occupied
+                                        </span>
+                                      )}
+                                    </>
                                   )}
                                 </span>
                                 <span className="font-bold text-emerald-800 text-xs">

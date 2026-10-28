@@ -505,9 +505,11 @@ export default function TenantBrowsePage() {
                       {/* Stats Strip */}
                       <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50/70 p-2.5 border border-slate-100 text-xs mb-4">
                         <div>
-                          <p className="text-[10px] uppercase font-semibold text-slate-400">Total Units</p>
+                          <p className="text-[10px] uppercase font-semibold text-slate-400">
+                            {property.type?.toLowerCase() === "house" ? "Property Type" : "Total Units"}
+                          </p>
                           <p className="font-bold text-slate-800 mt-0.5">
-                            {property.units || propertyUnits.length || 0} units
+                            {property.type?.toLowerCase() === "house" ? "Single House" : `${property.units || propertyUnits.length || 0} units`}
                           </p>
                         </div>
                         <div>

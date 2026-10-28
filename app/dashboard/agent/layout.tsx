@@ -12,7 +12,7 @@ import Link from "next/link";
 import { Avatar } from "@/components/ui/avatar";
 import {
   LayoutDashboard, Home, MapPinned, CreditCard, Send, LogOut, ChevronRight, Menu, X, Award,
-  Loader2, ChevronDown, ChevronLeft, Bell, Mail, User, FileText, ShieldAlert, Lock,
+  Loader2, ChevronDown, ChevronLeft, Bell, Mail, User, FileText, ShieldAlert, Lock, Building2, DoorOpen,
 } from "lucide-react";
 import { getNotifications, getUnreadMessageCount, getUnreadInquiryCount, markNotificationRead, markAllNotificationsRead, markAllMessagesRead, Notification } from "@/lib/data";
 import { getProperties, Property } from "@/lib/data";
@@ -22,27 +22,58 @@ import { getNotificationDashboardHref } from "@/lib/notification-routing";
 import { AgentVerificationGate } from "@/components/agent-verification-gate";
 import { toast } from "sonner";
 
-const navItems = [
+type AgentNavSubItem = {
+  label: string;
+  tab: string;
+  href: string;
+  icon: any;
+};
+
+type AgentNavLink = {
+  label: string;
+  tab: string;
+  href?: string;
+  icon: any;
+  children?: AgentNavSubItem[];
+};
+
+const navItems: AgentNavLink[] = [
   { label: "Dashboard", tab: "overview", href: "/dashboard/agent#overview", icon: LayoutDashboard },
+  {
+    label: "Rental Management",
+    tab: "units",
+    icon: Building2,
+    children: [
+      { label: "Properties", tab: "properties", href: "/dashboard/agent#properties", icon: Home },
+      { label: "Units", tab: "units", href: "/dashboard/agent#units", icon: DoorOpen },
+    ],
+  },
+  { label: "Property Map", tab: "map", href: "/dashboard/agent#map", icon: MapPinned },
   { label: "Financial Transactions", tab: "payments", href: "/dashboard/agent#payments", icon: CreditCard },
   { label: "Contracts", tab: "contracts", href: "/dashboard/agent#contracts", icon: FileText },
   { label: "Certificates", tab: "certificates", href: "/dashboard/agent#certificates", icon: Award },
   { label: "Landing Inquiries", tab: "inquiries", href: "/dashboard/agent#inquiries", icon: Mail },
-  { label: "Units", tab: "units", href: "/dashboard/agent#units", icon: Home },
-  { label: "Property Map", tab: "map", href: "/dashboard/agent#map", icon: MapPinned },
 ];
 
 const agentContentTabs = ["messages", "profile", "tenants"];
 
 function normalizeAgentTab(tab: string) {
-  if (tab === "properties" || tab === "assign") return "units";
+  if (tab === "assign") return "units";
   if (tab === "history") return "payments";
   return tab;
 }
 
 function getTabFromHash() {
-  const hash = normalizeAgentTab(window.location.hash.replace("#", ""));
-  if (hash && (navItems.some((item) => item.tab === hash) || agentContentTabs.includes(hash))) return hash;
+  if (typeof window === "undefined") return "overview";
+  const raw = window.location.hash.replace("#", "").split("?")[0];
+  const hash = normalizeAgentTab(raw);
+  if (
+    hash &&
+    (navItems.some((item) => item.tab === hash || item.children?.some((c) => c.tab === hash)) ||
+      agentContentTabs.includes(hash))
+  ) {
+    return hash;
+  }
   return "overview";
 }
 
@@ -54,6 +85,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [activeTab, setActiveTab] = useState(getTabFromHash);
+  const [rentalManagementOpen, setRentalManagementOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
@@ -106,12 +138,33 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
     return () => window.removeEventListener("renttrack-open-messages", handleOpen);
   }, []);
 
+  const handleNavigationClick = (tab: string, mobile?: boolean) => {
+    if (mobile) setMobileSidebarOpen(false);
+    setActiveTab(tab as any);
+    if (tab === "properties" || tab === "units") {
+      setRentalManagementOpen(true);
+    }
+    if (typeof window !== "undefined") {
+      const cleanUrl = `${window.location.pathname}#${tab}`;
+      window.history.pushState(null, "", cleanUrl);
+      window.dispatchEvent(new CustomEvent("agent-dashboard-tab-change", { detail: tab }));
+      window.dispatchEvent(new CustomEvent("renttrack-switch-tab", { detail: { tab } }));
+    }
+  };
+
   useEffect(() => {
     const readHash = () => {
-      const rawHash = window.location.hash.replace("#", "");
+      const rawHash = window.location.hash.replace("#", "").split("?")[0];
       const hash = normalizeAgentTab(rawHash);
-      if (hash && (navItems.some((item) => item.tab === hash) || agentContentTabs.includes(hash))) {
+      if (
+        hash &&
+        (navItems.some((item) => item.tab === hash || item.children?.some((c) => c.tab === hash)) ||
+          agentContentTabs.includes(hash))
+      ) {
         setActiveTab(hash as any);
+        if (hash === "properties" || hash === "units") {
+          setRentalManagementOpen(true);
+        }
         if (rawHash !== hash) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${hash}`);
       }
     };
@@ -446,6 +499,91 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
             )}
             {navItems.map((item) => {
               const Icon = item.icon;
+
+              if (item.children) {
+                const isChildActive = item.children.some((c) => c.tab === activeTab) || activeTab === "units" || activeTab === "properties";
+                const isOpen = rentalManagementOpen;
+
+                return (
+                  <div key={item.label} className="space-y-1">
+                    <button
+                      type="button"
+                      id={`sidebar-${item.tab}`}
+                      disabled={!isAgentVerified}
+                      onClick={() => {
+                        if (!isAgentVerified) {
+                          toast.error(`Access locked: You must be verified by the owner to access ${item.label}.`);
+                          return;
+                        }
+                        setRentalManagementOpen((prev) => !prev);
+                      }}
+                      className={cn(
+                        "w-full flex items-center justify-between rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
+                        !isAgentVerified
+                          ? "opacity-45 cursor-not-allowed text-slate-400 hover:bg-transparent"
+                          : isOpen
+                          ? "bg-slate-100 text-slate-900 font-semibold"
+                          : isChildActive
+                          ? "bg-blue-50 text-blue-700 font-semibold"
+                          : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
+                      )}
+                      title={!isAgentVerified ? `Locked: Owner ID verification required to access ${item.label}` : undefined}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Icon className={cn("h-4 w-4 shrink-0 transition-colors", !isAgentVerified ? "text-slate-400" : (isOpen || isChildActive) ? "text-blue-600" : "text-slate-400")} />
+                        {sidebarOpen && <span className="truncate">{item.label}</span>}
+                      </div>
+                      {sidebarOpen && (
+                        <ChevronDown
+                          className={cn(
+                            "h-3.5 w-3.5 shrink-0 transition-transform duration-200 text-slate-400",
+                            isOpen && "rotate-180 text-blue-600"
+                          )}
+                        />
+                      )}
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                      {sidebarOpen && isOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.2, ease: "easeOut" }}
+                          className="overflow-hidden space-y-1 pl-3.5 ml-3 border-l border-slate-200/90 my-1 pt-0.5"
+                        >
+                          {item.children.map((sub) => {
+                            const isSubActive = activeTab === sub.tab && isAgentVerified;
+                            const SubIcon = sub.icon;
+                            return (
+                              <button
+                                key={sub.tab}
+                                id={`sidebar-${sub.tab}`}
+                                type="button"
+                                disabled={!isAgentVerified}
+                                onClick={() => {
+                                  if (!isAgentVerified) return;
+                                  handleNavigationClick(sub.tab, false);
+                                }}
+                                className={cn(
+                                  "w-full flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer text-left",
+                                  isSubActive
+                                    ? "bg-blue-50 text-blue-700 font-bold"
+                                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 font-medium"
+                                )}
+                              >
+                                <SubIcon className={cn("h-3.5 w-3.5 shrink-0", isSubActive ? "text-blue-600" : "text-slate-400")} />
+                                <span className="truncate">{sub.label}</span>
+                              </button>
+                            );
+                          })}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              }
+
               const isActive = activeTab === item.tab && isAgentVerified;
               return (
                 <button
@@ -457,8 +595,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                       toast.error(`Access locked: You must be verified by the owner to access ${item.label}.`);
                       return;
                     }
-                    setActiveTab(item.tab);
-                    window.location.hash = item.tab;
+                    handleNavigationClick(item.tab, false);
                   }}
                   className={cn(
                     "w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
@@ -545,6 +682,88 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                   )}
                   {navItems.map((item) => {
                     const Icon = item.icon;
+
+                    if (item.children) {
+                      const isChildActive = item.children.some((c) => c.tab === activeTab) || activeTab === "units" || activeTab === "properties";
+                      const isOpen = rentalManagementOpen;
+
+                      return (
+                        <div key={item.label} className="space-y-1">
+                          <button
+                            type="button"
+                            id={`mobile-sidebar-${item.tab}`}
+                            disabled={!isAgentVerified}
+                            onClick={() => {
+                              if (!isAgentVerified) {
+                                toast.error(`Access locked: You must be verified by the owner to access ${item.label}.`);
+                                return;
+                              }
+                              setRentalManagementOpen((prev) => !prev);
+                            }}
+                            className={cn(
+                              "w-full flex items-center justify-between rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
+                              !isAgentVerified
+                                ? "opacity-45 cursor-not-allowed text-slate-400"
+                                : isOpen
+                                ? "bg-slate-100 text-slate-900 font-semibold"
+                                : isChildActive
+                                ? "bg-blue-50 text-blue-700 font-semibold"
+                                : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
+                            )}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <Icon className={cn("h-4 w-4 shrink-0", !isAgentVerified ? "text-slate-400" : (isOpen || isChildActive) ? "text-blue-600" : "text-slate-400")} />
+                              <span className="truncate">{item.label}</span>
+                            </div>
+                            <ChevronDown
+                              className={cn(
+                                "h-3.5 w-3.5 shrink-0 transition-transform duration-200 text-slate-400",
+                                isOpen && "rotate-180 text-blue-600"
+                              )}
+                            />
+                          </button>
+
+                          <AnimatePresence initial={false}>
+                            {isOpen && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.2, ease: "easeOut" }}
+                                className="overflow-hidden space-y-1 pl-3.5 ml-3 border-l border-slate-200/90 my-1 pt-0.5"
+                              >
+                                {item.children.map((sub) => {
+                                  const isSubActive = activeTab === sub.tab && isAgentVerified;
+                                  const SubIcon = sub.icon;
+                                  return (
+                                    <button
+                                      key={sub.tab}
+                                      id={`mobile-sidebar-${sub.tab}`}
+                                      type="button"
+                                      disabled={!isAgentVerified}
+                                      onClick={() => {
+                                        if (!isAgentVerified) return;
+                                        handleNavigationClick(sub.tab, true);
+                                      }}
+                                      className={cn(
+                                        "w-full flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer text-left",
+                                        isSubActive
+                                          ? "bg-blue-50 text-blue-700 font-bold"
+                                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 font-medium"
+                                      )}
+                                    >
+                                      <SubIcon className={cn("h-3.5 w-3.5 shrink-0", isSubActive ? "text-blue-600" : "text-slate-400")} />
+                                      <span className="truncate">{sub.label}</span>
+                                    </button>
+                                  );
+                                })}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      );
+                    }
+
                     const isActive = activeTab === item.tab && isAgentVerified;
                     return (
                       <button
@@ -556,9 +775,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                             toast.error(`Access locked: You must be verified by the owner to access ${item.label}.`);
                             return;
                           }
-                          setActiveTab(item.tab);
-                          window.location.hash = item.tab;
-                          setMobileSidebarOpen(false);
+                          handleNavigationClick(item.tab, true);
                         }}
                         className={cn(
                           "w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",

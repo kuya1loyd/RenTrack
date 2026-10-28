@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Home, MapPinned, FileText,
   CreditCard, BarChart3, LogOut, ChevronRight, Menu, X,
   Loader2, ChevronDown, ChevronLeft, Users, User, Bell, MessageSquare,
-  ClipboardCheck, Building2,
+  ClipboardCheck, Building2, DoorOpen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Image from "next/image";
@@ -49,6 +49,7 @@ const navItems: OwnerNavLink[] = [
     group: "Management",
     children: [
       { label: "Properties", tab: "properties", href: "/dashboard/owner#properties", icon: Home },
+      { label: "Units", tab: "units", href: "/dashboard/owner#units", icon: DoorOpen },
       { label: "Occupancy", tab: "occupancy", href: "/dashboard/owner#occupancy", icon: BarChart3 },
     ],
   },
@@ -119,7 +120,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [unitsDropdownOpen, setUnitsDropdownOpen] = useState(true);
+  const [unitsDropdownOpen, setUnitsDropdownOpen] = useState(false);
 
   const unreadMessagesCount = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 
@@ -375,9 +376,6 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
     if (activeButton) {
       activeButton.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
-    if (activeTab === "properties" || activeTab === "occupancy" || activeTab === "units") {
-      setUnitsDropdownOpen(true);
-    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -433,9 +431,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                 id={`${mobile ? "mobile-" : ""}sidebar-${item.tab}`}
                 title={expanded ? undefined : item.label}
                 onClick={() => {
-                  setUnitsDropdownOpen(true);
-                  handleNavigationClick("units", mobile);
-                  router.push("/dashboard/owner#units");
+                  setUnitsDropdownOpen((prev) => !prev);
                 }}
                 className={cn(
                   "group relative flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",

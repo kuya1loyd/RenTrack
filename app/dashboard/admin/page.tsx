@@ -201,6 +201,7 @@ export default function AdminDashboard() {
   const [propertySearch, setPropertySearch] = useState("");
   const [propertyTypeFilter, setPropertyTypeFilter] = useState("all");
   const [propertyStatusFilter, setPropertyStatusFilter] = useState("all");
+  const [propertyMaintenanceReasonFilter, setPropertyMaintenanceReasonFilter] = useState("all");
   const [occupancySearch, setOccupancySearch] = useState("");
   const [occupancyFilter, setOccupancyFilter] = useState<"all" | "full" | "partial" | "vacant">("all");
   const [occupancyTypeFilter, setOccupancyTypeFilter] = useState("all");
@@ -589,10 +590,28 @@ export default function AdminDashboard() {
   const totalPortfolioVacant = units.filter((u) => u.status === "vacant").length;
   const portfolioOccupancyRate = totalPortfolioUnits > 0 ? Math.round((totalPortfolioOccupied / totalPortfolioUnits) * 100) : 0;
 
+  const downloadAdminPropertiesExport = () => {
+    const rows: Array<Array<string | number>> = [
+      ["Property Name", "Address / Location", "Type", "Status", "House Repair Reason", "Units", "Occupied Units", "Created At"],
+      ...filteredProperties.map((p) => [
+        p.name,
+        p.address || p.location || "—",
+        p.type === "condominium" || p.type === "building" ? "Condominium" : "Residential House",
+        p.status || "active",
+        p.maintenanceReason || "—",
+        p.type === "house" || p.type === "residential" ? "—" : (p.units ?? 0),
+        p.type === "house" || p.type === "residential" ? "—" : (p.occupiedUnits ?? 0),
+        p.createdAt ? formatDate(p.createdAt) : "—",
+      ]),
+    ];
+    downloadExcelReport(`admin-properties-${new Date().toISOString().slice(0, 10)}.xls`, [{ name: "Properties", rows }]);
+  };
+
   const downloadAdminOccupancyExport = () => {
     const rows: Array<Array<string | number>> = [
       ["Property Name", "Location", "Property Type", "Total Units", "Occupied Units", "Vacant Units", "Occupancy Rate (%)", "Status"],
       ...filteredOccupancyProperties.map((p) => {
+        const isHouse = p.type?.toLowerCase() === "house";
         const propUnits = units.filter((u) => u.propertyId === p.id);
         const occ = propUnits.filter((u) => u.status === "occupied").length;
         const vac = propUnits.filter((u) => u.status === "vacant").length;
@@ -601,10 +620,10 @@ export default function AdminDashboard() {
           p.name,
           p.location || p.address || "—",
           p.type === "condominium" ? "Condominium" : "Residential House",
-          propUnits.length,
-          occ,
-          vac,
-          `${rate}%`,
+          isHouse ? "—" : propUnits.length,
+          isHouse ? "—" : occ,
+          isHouse ? "—" : vac,
+          isHouse ? "—" : `${rate}%`,
           p.status || "active",
         ];
       }),
@@ -615,12 +634,34 @@ export default function AdminDashboard() {
   const filteredProperties = useMemo(() => {
     const q = propertySearch.trim().toLowerCase();
     return properties.filter((p) => {
-      if (propertyTypeFilter !== "all" && p.type !== propertyTypeFilter) return false;
+      if (propertyTypeFilter !== "all") {
+        if (propertyTypeFilter === "house") {
+          if (p.type?.toLowerCase() !== "house" && p.type?.toLowerCase() !== "residential") return false;
+        } else if (propertyTypeFilter === "condominium") {
+          if (p.type?.toLowerCase() !== "condominium" && p.type?.toLowerCase() !== "building") return false;
+        } else if (p.type?.toLowerCase() !== propertyTypeFilter.toLowerCase()) {
+          return false;
+        }
+      }
       if (propertyStatusFilter !== "all" && p.status !== propertyStatusFilter) return false;
+      if (
+        propertyMaintenanceReasonFilter !== "all" &&
+        p.maintenanceReason !== propertyMaintenanceReasonFilter
+      ) {
+        return false;
+      }
       if (!q) return true;
-      return `${p.name} ${p.location} ${p.type} ${p.status}`.toLowerCase().includes(q);
+      return `${p.name} ${p.location} ${p.address || ""} ${p.type} ${p.status} ${p.maintenanceReason || ""}`.toLowerCase().includes(q);
     });
-  }, [properties, propertySearch, propertyTypeFilter, propertyStatusFilter]);
+  }, [properties, propertySearch, propertyTypeFilter, propertyStatusFilter, propertyMaintenanceReasonFilter]);
+
+  const houseProperties = useMemo(() => {
+    return filteredProperties.filter((p) => p.type?.toLowerCase() === "house" || p.type?.toLowerCase() === "residential");
+  }, [filteredProperties]);
+
+  const condoProperties = useMemo(() => {
+    return filteredProperties.filter((p) => p.type?.toLowerCase() !== "house" && p.type?.toLowerCase() !== "residential");
+  }, [filteredProperties]);
 
   const filteredUnits = useMemo(() => {
     const q = unitSearch.trim().toLowerCase();
@@ -2025,48 +2066,59 @@ export default function AdminDashboard() {
             title="Properties Management"
             description="Monitor and configure buildings, complexes, and multi-unit developments across the portfolio."
             icon={Building2}
-            actions={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push("/dashboard/admin?tab=units")}
-                className="gap-2 bg-white text-slate-700 hover:bg-slate-50 border-slate-200 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 cursor-pointer shadow-2xs"
-              >
-                <Home className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                <span>View Units</span>
-              </Button>
-            }
           />
 
           {/* Filter Toolbar */}
           <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-xs dark:border-gray-800 dark:bg-gray-900">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            {/* Top Row: Search Input & Action Buttons */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <Input
                   value={propertySearch}
                   onChange={(e) => setPropertySearch(e.target.value)}
-                  placeholder="Search properties by name or location..."
-                  className="h-10 w-full rounded-xl border-gray-200 bg-gray-50/50 pl-10 text-sm focus:border-blue-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800"
+                  placeholder="Search properties by name or address..."
+                  className="h-10 w-full rounded-xl border-gray-200 bg-white pl-10 text-sm focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800"
                 />
                 {propertySearch && (
-                  <button onClick={() => setPropertySearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-gray-400 hover:text-gray-600">
+                  <button onClick={() => setPropertySearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-gray-400 hover:text-gray-600 cursor-pointer">
                     <XCircle className="h-4 w-4" />
                   </button>
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={downloadAdminPropertiesExport}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition-all hover:bg-blue-700 active:scale-95 cursor-pointer"
+                >
+                  <Download className="h-4 w-4" />
+                  Export
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => router.push("/dashboard/properties")}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition-all hover:bg-blue-700 active:scale-95 cursor-pointer"
+                >
+                  <Building2 className="h-4 w-4" />
+                  Add Property
+                </button>
+              </div>
+            </div>
+
+            {/* Bottom Row: Filter Dropdowns & Reset Button */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-800">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <AnimatedFilterDropdown
-                  label="Type"
+                  label="Property type"
                   value={propertyTypeFilter}
                   onChange={(e) => setPropertyTypeFilter(e.target.value)}
                   options={[
-                    { value: "all", label: "All Types" },
+                    { value: "all", label: "All types" },
+                    { value: "house", label: "House / Residential" },
                     { value: "condominium", label: "Condominium" },
-                    { value: "house", label: "House" },
-                    { value: "building", label: "Commercial / Building" },
-                    { value: "residential", label: "Residential" },
                   ]}
                 />
 
@@ -2075,259 +2127,463 @@ export default function AdminDashboard() {
                   value={propertyStatusFilter}
                   onChange={(e) => setPropertyStatusFilter(e.target.value)}
                   options={[
-                    { value: "all", label: "All Status" },
+                    { value: "all", label: "All statuses" },
                     { value: "active", label: "Active" },
                     { value: "inactive", label: "Inactive" },
+                    { value: "maintenance", label: "Under Maintenance" },
                   ]}
                 />
 
-                {(propertySearch || propertyTypeFilter !== "all" || propertyStatusFilter !== "all") && (
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => {
-                      setPropertySearch("");
-                      setPropertyTypeFilter("all");
-                      setPropertyStatusFilter("all");
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:border-gray-400 hover:text-gray-900"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Reset
-                  </motion.button>
-                )}
+                <AnimatedFilterDropdown
+                  label="House Repair Reason"
+                  value={propertyMaintenanceReasonFilter}
+                  onChange={(e) => setPropertyMaintenanceReasonFilter(e.target.value)}
+                  options={[
+                    { value: "all", label: "All House Repair Reasons" },
+                    ...PROPERTY_MAINTENANCE_REASONS.map((r) => ({ value: r, label: r })),
+                  ]}
+                />
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPropertySearch("");
+                  setPropertyTypeFilter("all");
+                  setPropertyStatusFilter("all");
+                  setPropertyMaintenanceReasonFilter("all");
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-white px-3.5 py-2 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50/60 dark:border-blue-900/40 dark:bg-gray-800 dark:text-blue-400 dark:hover:bg-blue-950/30 cursor-pointer"
+              >
+                <RotateCcw className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                Reset
+              </button>
             </div>
           </div>
 
           <Card className="overflow-hidden border border-gray-200 shadow-sm dark:border-gray-800">
             <CardHeader className="border-b border-gray-100 bg-gray-50/60 px-6 py-4 dark:border-gray-800 dark:bg-gray-800/40">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <CardTitle className="text-base font-bold text-gray-900 dark:text-white">Properties Registry</CardTitle>
-                  <CardDescription className="text-xs">Showing {filteredProperties.length} of {properties.length} properties</CardDescription>
+                  <CardDescription className="text-xs">
+                    Showing {filteredProperties.length} of {properties.length} properties ({houseProperties.length} houses, {condoProperties.length} condominiums)
+                  </CardDescription>
                 </div>
-                <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 font-semibold text-xs">
-                  {filteredProperties.length} properties
-                </Badge>
               </div>
             </CardHeader>
             <CardContent className="p-0">
               {filteredProperties.length === 0 ? (
                 <div className="py-12 text-center text-sm text-gray-500">No properties match your search or filter.</div>
               ) : (
-                <div className="table-scroll-box w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[680px]">
-                  <table className="w-full min-w-[1550px] border-collapse text-left caption-bottom text-xs">
-                    <TableHeader className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-800/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-800 shadow-2xs">
-                      <TableRow className="bg-transparent text-[10px] uppercase tracking-wider text-gray-500 font-semibold whitespace-nowrap">
-                        <TableHead className="pl-4 pr-2 py-2.5 h-10 font-semibold">Photo</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Property Name</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Location / Address</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Type</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Total Units</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Occupancy</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Monthly Revenue</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Availability</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Condition</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Owner</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Assigned Agent</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Status</TableHead>
-                        <TableHead className="pr-4 pl-2 py-2.5 h-10 text-right font-semibold">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredProperties.map((p, i) => {
-                        const propUnits = units.filter((u) => u.propertyId === p.id);
-                        const occupiedCount = propUnits.length > 0 ? propUnits.filter((u) => u.status === "occupied").length : (p.occupiedUnits || 0);
-                        const totalUnits = propUnits.length > 0 ? propUnits.length : (p.units || 0);
-                        const occPercent = totalUnits > 0 ? Math.round((occupiedCount / totalUnits) * 100) : 0;
-                        const propRevenue = propUnits.reduce((acc, u) => acc + (u.status === "occupied" ? (u.rentAmount || 0) : 0), 0) || p.monthlyRevenue || 0;
-                        const defaultOwner = users.find((usr) => usr.role === "owner") || users.find((usr) => usr.email.toLowerCase() === "renttrackowner@gmail.com");
-                        const owner = (p.createdBy && !["usr_builtin_admin", "admin"].includes(p.createdBy) && !p.createdBy.includes("admin")
-                          ? users.find((u) => u.role === "owner" && (u.id === p.createdBy || u.email === p.createdBy))
-                          : null) || defaultOwner || null;
-                        const agent = users.find((u) => u.id === p.agentId);
-                        const propImgs = p.imageUrls?.length ? p.imageUrls : p.imageUrl ? [p.imageUrl] : [];
+                <div className="space-y-6">
+                  {/* HOUSES SECTION */}
+                  <div className="overflow-hidden">
+                    <div className="flex items-center justify-between px-6 py-3 bg-blue-50/70 dark:bg-blue-950/20 border-b border-blue-100 dark:border-blue-900/40">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                          <Home className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <h3 className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                            Houses
+                            <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 dark:bg-blue-900/50 dark:text-blue-300 px-2 py-0.5 rounded-full">
+                              {houseProperties.length} {houseProperties.length === 1 ? "Property" : "Properties"}
+                            </span>
+                          </h3>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400">Single-dwelling houses rented as entire residential homes (no unit subdivisions)</p>
+                        </div>
+                      </div>
+                    </div>
 
-                        return (
-                          <motion.tr
-                            key={p.id}
-                            initial={{ opacity: 0, x: -10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: i * 0.02, duration: 0.2 }}
-                            className="border-b border-gray-100 hover:bg-surface-secondary transition-colors"
-                          >
-                            {/* Photo */}
-                            <TableCell className="pl-4 pr-2 py-2">
-                              <UnitImageCarousel
-                                images={propImgs}
-                                alt={p.name}
-                                title={p.name}
-                                subtitle={`${p.location} • ${p.type} • ${totalUnits} units`}
-                                className="h-12 w-16 shrink-0 rounded-lg border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
-                                imageClassName="group-hover:scale-105 transition-transform duration-300"
-                              />
-                            </TableCell>
+                      {houseProperties.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-gray-500">No houses match your search or filter.</div>
+                      ) : (
+                        <div className="table-scroll-box w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px]">
+                          <table className="w-full min-w-[1200px] border-collapse text-left caption-bottom text-xs">
+                            <TableHeader className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-800/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-800 shadow-2xs">
+                              <TableRow className="bg-transparent text-[10px] uppercase tracking-wider text-gray-500 font-semibold whitespace-nowrap">
+                                <TableHead className="pl-4 pr-2 py-2.5 h-10 font-semibold">Photo</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">House Name</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Location / Address</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Type</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Monthly Rent</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Availability</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Condition</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Owner</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Status</TableHead>
+                                <TableHead className="pr-4 pl-2 py-2.5 h-10 text-right font-semibold">Actions</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {houseProperties.map((p, i) => {
+                                const propUnits = units.filter((u) => u.propertyId === p.id);
+                                const occupiedCount = propUnits.length > 0 ? propUnits.filter((u) => u.status === "occupied").length : (p.occupiedUnits || 0);
+                                const propRevenue = propUnits.reduce((acc, u) => acc + (u.status === "occupied" ? (u.rentAmount || 0) : 0), 0) || p.monthlyRevenue || p.rentAmount || 0;
+                                const defaultOwner = users.find((usr) => usr.role === "owner") || users.find((usr) => usr.email.toLowerCase() === "renttrackowner@gmail.com");
+                                const owner = (p.createdBy && !["usr_builtin_admin", "admin"].includes(p.createdBy) && !p.createdBy.includes("admin")
+                                  ? users.find((u) => u.role === "owner" && (u.id === p.createdBy || u.email === p.createdBy))
+                                  : null) || defaultOwner || null;
+                                const agent = users.find((u) => u.id === p.agentId);
+                                const propImgs = p.imageUrls?.length ? p.imageUrls : p.imageUrl ? [p.imageUrl] : [];
 
-                            {/* Property Name */}
-                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                              <div className="flex items-center gap-2">
-                                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600 font-bold border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800">
-                                  <Building2 className="h-3.5 w-3.5" />
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="font-bold text-gray-900 dark:text-white text-xs">{p.name}</span>
-                                  <span className="text-[10px] text-gray-400 font-mono">#{formatDisplayId(p.id)}</span>
-                                </div>
-                              </div>
-                            </TableCell>
-
-                            {/* Location */}
-                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                              <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 max-w-[200px] truncate" title={p.location}>
-                                <MapPin className="h-3.5 w-3.5 text-rose-500 shrink-0" />
-                                <span className="truncate">{p.location || "—"}</span>
-                              </div>
-                            </TableCell>
-
-                            {/* Type */}
-                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                              <span className={cn(
-                                "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize",
-                                p.type === "house" && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800",
-                                p.type === "condominium" && "bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800",
-                                !p.type && "bg-gray-50 text-gray-600 border border-gray-200"
-                              )}>
-                                {p.type || "Standard"}
-                              </span>
-                            </TableCell>
-
-                            {/* Total Units */}
-                            <TableCell className="px-2 py-2.5 whitespace-nowrap font-semibold text-xs text-gray-900 dark:text-white">
-                              {totalUnits} {totalUnits === 1 ? "Unit" : "Units"}
-                            </TableCell>
-
-                            {/* Occupancy */}
-                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                              <div className="flex flex-col gap-1 min-w-[110px]">
-                                <div className="flex items-center justify-between text-[11px]">
-                                  <span className="font-semibold text-gray-800 dark:text-gray-200">{occupiedCount}/{totalUnits}</span>
-                                  <span className="text-[10px] text-gray-500">{occPercent}%</span>
-                                </div>
-                                <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-                                  <div
-                                    className={cn(
-                                      "h-full rounded-full transition-all",
-                                      occPercent === 100 ? "bg-emerald-500" : occPercent > 50 ? "bg-blue-500" : "bg-amber-500"
-                                    )}
-                                    style={{ width: `${Math.min(occPercent, 100)}%` }}
-                                  />
-                                </div>
-                              </div>
-                            </TableCell>
-
-                            {/* Monthly Revenue */}
-                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                              <span className="font-bold text-xs text-gray-900 dark:text-white tabular-nums">
-                                {formatCurrency(propRevenue)}
-                              </span>
-                            </TableCell>
-
-                            {/* Availability */}
-                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                              <span className={cn(
-                                "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold",
-                                (p.availabilityStatus === "Available" || (!p.availabilityStatus && occPercent < 100)) && "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
-                                (p.availabilityStatus === "Occupied" || (!p.availabilityStatus && occPercent === 100)) && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300",
-                                p.availabilityStatus === "Reserved" && "bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300",
-                                p.availabilityStatus === "Under Maintenance" && "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300",
-                              )}>
-                                {p.availabilityStatus || (occPercent === 100 ? "Occupied" : "Available")}
-                              </span>
-                            </TableCell>
-
-                            {/* Condition */}
-                            <TableCell className="px-2 py-2.5 whitespace-nowrap text-xs text-gray-600 dark:text-gray-300">
-                              {p.condition || "Good"}
-                            </TableCell>
-
-                            {/* Owner */}
-                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                              <div className="flex items-center gap-2">
-                                <Avatar src={owner?.avatarUrl} fallback={getInitials(owner?.name || "Owner")} size="xs" className="h-6 w-6 shrink-0" />
-                                <div className="flex flex-col">
-                                  <span className="font-medium text-gray-900 dark:text-white text-xs">{owner?.name || "Property Owner"}</span>
-                                  <span className="text-[10px] text-gray-400">{owner?.email || "—"}</span>
-                                </div>
-                              </div>
-                            </TableCell>
-
-                            {/* Assigned Agent */}
-                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                              {agent ? (
-                                <div className="flex items-center gap-2">
-                                  <Avatar src={agent.avatarUrl} fallback={getInitials(agent.name)} size="xs" className="h-6 w-6 shrink-0" />
-                                  <div className="flex flex-col">
-                                    <span className="font-medium text-gray-900 dark:text-white text-xs">{agent.name}</span>
-                                    <span className="text-[10px] text-blue-600 dark:text-blue-400">Agent</span>
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-xs text-gray-400">Unassigned</span>
-                              )}
-                            </TableCell>
-
-                            {/* Status */}
-                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                              <span className={cn(
-                                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize",
-                                p.status === "active" && "bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800",
-                                p.status === "inactive" && "bg-gray-50 text-gray-600 border border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700",
-                              )}>
-                                <span className={cn("h-1.5 w-1.5 rounded-full", p.status === "active" ? "bg-green-500" : "bg-gray-400")} />
-                                {p.status}
-                              </span>
-                            </TableCell>
-
-                            {/* Actions */}
-                            <TableCell className="pr-4 pl-2 py-2.5 text-right whitespace-nowrap">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <motion.button
-                                    whileHover={{ scale: 1.1 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600 focus:outline-none dark:border-gray-700 dark:text-gray-400"
-                                    aria-label="Property actions"
+                                return (
+                                  <motion.tr
+                                    key={p.id}
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: i * 0.02, duration: 0.2 }}
+                                    className="border-b border-gray-100 hover:bg-surface-secondary transition-colors"
                                   >
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </motion.button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-xl">
-                                  <DropdownMenuItem
-                                    onSelect={() => setSelectedPropertyDetails(p)}
-                                    className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
+                                    {/* Photo */}
+                                    <TableCell className="pl-4 pr-2 py-2">
+                                      <UnitImageCarousel
+                                        images={propImgs}
+                                        alt={p.name}
+                                        title={p.name}
+                                        subtitle={`${p.location} • House`}
+                                        className="h-12 w-16 shrink-0 rounded-lg border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
+                                        imageClassName="group-hover:scale-105 transition-transform duration-300"
+                                      />
+                                    </TableCell>
+
+                                    {/* House Name */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <div className="flex items-center gap-2">
+                                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600 font-bold border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800">
+                                          <Home className="h-3.5 w-3.5" />
+                                        </div>
+                                        <div className="flex flex-col">
+                                          <span className="font-bold text-gray-900 dark:text-white text-xs">{p.name}</span>
+                                          <span className="text-[10px] text-gray-400 font-mono">#{formatDisplayId(p.id)}</span>
+                                        </div>
+                                      </div>
+                                    </TableCell>
+
+                                    {/* Location */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 max-w-[200px] truncate" title={p.location}>
+                                        <MapPin className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                                        <span className="truncate">{p.location || "—"}</span>
+                                      </div>
+                                    </TableCell>
+
+                                    {/* Type */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800">
+                                        House
+                                      </span>
+                                    </TableCell>
+
+                                    {/* Monthly Rent */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <span className="font-bold text-xs text-gray-900 dark:text-white tabular-nums">
+                                        {formatCurrency(propRevenue)}
+                                      </span>
+                                    </TableCell>
+
+                                    {/* Availability */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <span className={cn(
+                                        "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold",
+                                        (p.availabilityStatus === "Available" || (!p.availabilityStatus && occupiedCount === 0)) && "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
+                                        (p.availabilityStatus === "Occupied" || (!p.availabilityStatus && occupiedCount > 0)) && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300",
+                                        p.availabilityStatus === "Reserved" && "bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300",
+                                        p.availabilityStatus === "Under Maintenance" && "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300",
+                                      )}>
+                                        {p.availabilityStatus || (occupiedCount > 0 ? "Occupied" : "Available")}
+                                      </span>
+                                    </TableCell>
+
+                                    {/* Condition */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap text-xs text-gray-600 dark:text-gray-300">
+                                      {p.condition || "Good"}
+                                    </TableCell>
+
+                                    {/* Owner */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <div className="flex items-center gap-2">
+                                        <Avatar src={owner?.avatarUrl} fallback={getInitials(owner?.name || "Owner")} size="xs" className="h-6 w-6 shrink-0" />
+                                        <div className="flex flex-col">
+                                          <span className="font-medium text-gray-900 dark:text-white text-xs">{owner?.name || "Property Owner"}</span>
+                                          <span className="text-[10px] text-gray-400">{owner?.email || "—"}</span>
+                                        </div>
+                                      </div>
+                                    </TableCell>
+
+
+                                    {/* Status */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <span className={cn(
+                                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize",
+                                        p.status === "active" && "bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800",
+                                        p.status === "inactive" && "bg-gray-50 text-gray-600 border border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700",
+                                      )}>
+                                        <span className={cn("h-1.5 w-1.5 rounded-full", p.status === "active" ? "bg-green-500" : "bg-gray-400")} />
+                                        {p.status}
+                                      </span>
+                                    </TableCell>
+
+                                    {/* Actions */}
+                                    <TableCell className="pr-4 pl-2 py-2.5 text-right whitespace-nowrap">
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <motion.button
+                                            whileHover={{ scale: 1.1 }}
+                                            whileTap={{ scale: 0.95 }}
+                                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600 focus:outline-none dark:border-gray-700 dark:text-gray-400"
+                                            aria-label="House actions"
+                                          >
+                                            <MoreHorizontal className="h-4 w-4" />
+                                          </motion.button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-xl">
+                                          <DropdownMenuItem
+                                            onSelect={() => setSelectedPropertyDetails(p)}
+                                            className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
+                                          >
+                                            <Eye className="h-3.5 w-3.5 text-blue-500" />
+                                            <span>View House Details</span>
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onSelect={() => {
+                                              navigator.clipboard.writeText(p.id);
+                                              toast.success("House ID copied to clipboard");
+                                            }}
+                                            className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
+                                          >
+                                            <Copy className="h-3.5 w-3.5 text-gray-500" />
+                                            <span>Copy House ID</span>
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    </TableCell>
+                                  </motion.tr>
+                                );
+                              })}
+                            </TableBody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                  {/* CONDOMINIUMS & BUILDINGS SECTION */}
+                  <div className="overflow-hidden border-t border-gray-200 dark:border-gray-800">
+                    <div className="flex items-center justify-between px-6 py-3 bg-purple-50/70 dark:bg-purple-950/20 border-b border-purple-100 dark:border-purple-900/40">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
+                          <Building2 className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <h3 className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                            Condominiums &amp; Buildings
+                            <span className="text-[10px] font-semibold text-purple-700 bg-purple-100 dark:bg-purple-900/50 dark:text-purple-300 px-2 py-0.5 rounded-full">
+                              {condoProperties.length} {condoProperties.length === 1 ? "Property" : "Properties"}
+                            </span>
+                          </h3>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400">Multi-unit residential complexes &amp; commercial buildings with unit and occupancy management</p>
+                        </div>
+                      </div>
+                    </div>
+
+                      {condoProperties.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-gray-500">No condominiums match your search or filter.</div>
+                      ) : (
+                        <div className="table-scroll-box w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px]">
+                          <table className="w-full min-w-[1400px] border-collapse text-left caption-bottom text-xs">
+                            <TableHeader className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-800/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-800 shadow-2xs">
+                              <TableRow className="bg-transparent text-[10px] uppercase tracking-wider text-gray-500 font-semibold whitespace-nowrap">
+                                <TableHead className="pl-4 pr-2 py-2.5 h-10 font-semibold">Photo</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Condominium Name</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Location / Address</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Type</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Total Units</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Occupancy</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Monthly Revenue</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Availability</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Condition</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Owner</TableHead>
+                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Status</TableHead>
+                                <TableHead className="pr-4 pl-2 py-2.5 h-10 text-right font-semibold">Actions</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {condoProperties.map((p, i) => {
+                                const propUnits = units.filter((u) => u.propertyId === p.id);
+                                const occupiedCount = propUnits.length > 0 ? propUnits.filter((u) => u.status === "occupied").length : (p.occupiedUnits || 0);
+                                const totalUnits = propUnits.length > 0 ? propUnits.length : (p.units || 0);
+                                const occPercent = totalUnits > 0 ? Math.round((occupiedCount / totalUnits) * 100) : 0;
+                                const propRevenue = propUnits.reduce((acc, u) => acc + (u.status === "occupied" ? (u.rentAmount || 0) : 0), 0) || p.monthlyRevenue || 0;
+                                const defaultOwner = users.find((usr) => usr.role === "owner") || users.find((usr) => usr.email.toLowerCase() === "renttrackowner@gmail.com");
+                                const owner = (p.createdBy && !["usr_builtin_admin", "admin"].includes(p.createdBy) && !p.createdBy.includes("admin")
+                                  ? users.find((u) => u.role === "owner" && (u.id === p.createdBy || u.email === p.createdBy))
+                                  : null) || defaultOwner || null;
+                                const agent = users.find((u) => u.id === p.agentId);
+                                const propImgs = p.imageUrls?.length ? p.imageUrls : p.imageUrl ? [p.imageUrl] : [];
+
+                                return (
+                                  <motion.tr
+                                    key={p.id}
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: i * 0.02, duration: 0.2 }}
+                                    className="border-b border-gray-100 hover:bg-surface-secondary transition-colors"
                                   >
-                                    <Eye className="h-3.5 w-3.5 text-blue-500" />
-                                    <span>View Property Details</span>
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onSelect={() => {
-                                      navigator.clipboard.writeText(p.id);
-                                      toast.success("Property ID copied to clipboard");
-                                    }}
-                                    className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
-                                  >
-                                    <Copy className="h-3.5 w-3.5 text-gray-500" />
-                                    <span>Copy Property ID</span>
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </motion.tr>
-                        );
-                      })}
-                    </TableBody>
-                  </table>
+                                    {/* Photo */}
+                                    <TableCell className="pl-4 pr-2 py-2">
+                                      <UnitImageCarousel
+                                        images={propImgs}
+                                        alt={p.name}
+                                        title={p.name}
+                                        subtitle={`${p.location} • ${p.type} • ${totalUnits} units`}
+                                        className="h-12 w-16 shrink-0 rounded-lg border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
+                                        imageClassName="group-hover:scale-105 transition-transform duration-300"
+                                      />
+                                    </TableCell>
+
+                                    {/* Property Name */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <div className="flex items-center gap-2">
+                                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-50 text-purple-600 font-bold border border-purple-200 dark:bg-purple-950/40 dark:border-purple-800">
+                                          <Building2 className="h-3.5 w-3.5" />
+                                        </div>
+                                        <div className="flex flex-col">
+                                          <span className="font-bold text-gray-900 dark:text-white text-xs">{p.name}</span>
+                                          <span className="text-[10px] text-gray-400 font-mono">#{formatDisplayId(p.id)}</span>
+                                        </div>
+                                      </div>
+                                    </TableCell>
+
+                                    {/* Location */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 max-w-[200px] truncate" title={p.location}>
+                                        <MapPin className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                                        <span className="truncate">{p.location || "—"}</span>
+                                      </div>
+                                    </TableCell>
+
+                                    {/* Type */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800">
+                                        {p.type || "Condominium"}
+                                      </span>
+                                    </TableCell>
+
+                                    {/* Total Units */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap font-semibold text-xs text-gray-900 dark:text-white">
+                                      {totalUnits} {totalUnits === 1 ? "Unit" : "Units"}
+                                    </TableCell>
+
+                                    {/* Occupancy */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <div className="flex flex-col gap-1 min-w-[110px]">
+                                        <div className="flex items-center justify-between text-[11px]">
+                                          <span className="font-semibold text-gray-800 dark:text-gray-200">{occupiedCount}/{totalUnits}</span>
+                                          <span className="text-[10px] text-gray-500">{occPercent}%</span>
+                                        </div>
+                                        <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                                          <div
+                                            className={cn(
+                                              "h-full rounded-full transition-all",
+                                              occPercent === 100 ? "bg-emerald-500" : occPercent > 50 ? "bg-blue-500" : "bg-amber-500"
+                                            )}
+                                            style={{ width: `${Math.min(occPercent, 100)}%` }}
+                                          />
+                                        </div>
+                                      </div>
+                                    </TableCell>
+
+                                    {/* Monthly Revenue */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <span className="font-bold text-xs text-gray-900 dark:text-white tabular-nums">
+                                        {formatCurrency(propRevenue)}
+                                      </span>
+                                    </TableCell>
+
+                                    {/* Availability */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <span className={cn(
+                                        "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold",
+                                        (p.availabilityStatus === "Available" || (!p.availabilityStatus && occPercent < 100)) && "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
+                                        (p.availabilityStatus === "Occupied" || (!p.availabilityStatus && occPercent === 100)) && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300",
+                                        p.availabilityStatus === "Reserved" && "bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300",
+                                        p.availabilityStatus === "Under Maintenance" && "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300",
+                                      )}>
+                                        {p.availabilityStatus || (occPercent === 100 ? "Occupied" : "Available")}
+                                      </span>
+                                    </TableCell>
+
+                                    {/* Condition */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap text-xs text-gray-600 dark:text-gray-300">
+                                      {p.condition || "Good"}
+                                    </TableCell>
+
+                                    {/* Owner */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <div className="flex items-center gap-2">
+                                        <Avatar src={owner?.avatarUrl} fallback={getInitials(owner?.name || "Owner")} size="xs" className="h-6 w-6 shrink-0" />
+                                        <div className="flex flex-col">
+                                          <span className="font-medium text-gray-900 dark:text-white text-xs">{owner?.name || "Property Owner"}</span>
+                                          <span className="text-[10px] text-gray-400">{owner?.email || "—"}</span>
+                                        </div>
+                                      </div>
+                                    </TableCell>
+
+
+                                    {/* Status */}
+                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                                      <span className={cn(
+                                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize",
+                                        p.status === "active" && "bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800",
+                                        p.status === "inactive" && "bg-gray-50 text-gray-600 border border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700",
+                                      )}>
+                                        <span className={cn("h-1.5 w-1.5 rounded-full", p.status === "active" ? "bg-green-500" : "bg-gray-400")} />
+                                        {p.status}
+                                      </span>
+                                    </TableCell>
+
+                                    {/* Actions */}
+                                    <TableCell className="pr-4 pl-2 py-2.5 text-right whitespace-nowrap">
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <motion.button
+                                            whileHover={{ scale: 1.1 }}
+                                            whileTap={{ scale: 0.95 }}
+                                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600 focus:outline-none dark:border-gray-700 dark:text-gray-400"
+                                            aria-label="Condominium actions"
+                                          >
+                                            <MoreHorizontal className="h-4 w-4" />
+                                          </motion.button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-xl">
+                                          <DropdownMenuItem
+                                            onSelect={() => setSelectedPropertyDetails(p)}
+                                            className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
+                                          >
+                                            <Eye className="h-3.5 w-3.5 text-blue-500" />
+                                            <span>View Condominium Details</span>
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onSelect={() => {
+                                              navigator.clipboard.writeText(p.id);
+                                              toast.success("Condominium ID copied to clipboard");
+                                            }}
+                                            className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
+                                          >
+                                            <Copy className="h-3.5 w-3.5 text-gray-500" />
+                                            <span>Copy Property ID</span>
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    </TableCell>
+                                  </motion.tr>
+                                );
+                              })}
+                            </TableBody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
                 </div>
               )}
             </CardContent>
@@ -2343,27 +2599,6 @@ export default function AdminDashboard() {
             title="Occupancy Overview"
             description="Real-time availability, tenant occupancy, and unit progress tracks across all properties in the portfolio."
             icon={BarChart3}
-            actions={
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => router.push("/dashboard/admin?tab=properties")}
-                  className="gap-2 bg-white text-slate-700 hover:bg-slate-50 border-slate-200 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 cursor-pointer shadow-2xs"
-                >
-                  <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  <span>View Properties</span>
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={downloadAdminOccupancyExport}
-                  className="gap-2 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-xs"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Export Report</span>
-                </Button>
-              </div>
-            }
           />
 
           {/* KPI Metrics */}
@@ -2515,9 +2750,20 @@ export default function AdminDashboard() {
                   <CardTitle className="text-base font-bold text-gray-900 dark:text-white">Property Occupancy Breakdown</CardTitle>
                   <CardDescription className="text-xs">Showing {filteredOccupancyProperties.length} of {properties.length} properties</CardDescription>
                 </div>
-                <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 font-semibold text-xs">
-                  {filteredOccupancyProperties.length} properties
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 font-semibold text-xs">
+                    {filteredOccupancyProperties.length} properties
+                  </Badge>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={downloadAdminOccupancyExport}
+                    className="gap-1.5 h-8 text-xs font-semibold bg-white text-slate-700 hover:bg-slate-50 border-slate-200 cursor-pointer shadow-2xs dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200"
+                  >
+                    <Download className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                    <span>Export Report</span>
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -2542,6 +2788,7 @@ export default function AdminDashboard() {
                     </TableHeader>
                     <TableBody>
                       {filteredOccupancyProperties.map((p, i) => {
+                        const isHouse = p.type?.toLowerCase() === "house";
                         const propUnits = units.filter((u) => u.propertyId === p.id);
                         const occ = propUnits.filter((u) => u.status === "occupied").length;
                         const vac = propUnits.filter((u) => u.status === "vacant").length;
@@ -2585,37 +2832,49 @@ export default function AdminDashboard() {
                             </TableCell>
 
                             <TableCell className="px-2 py-2.5 text-center font-bold text-gray-800 dark:text-gray-200">
-                              {propUnits.length}
+                              {isHouse ? "—" : propUnits.length}
                             </TableCell>
 
                             <TableCell className="px-2 py-2.5 text-center">
-                              <span className="inline-flex items-center justify-center min-w-[24px] h-6 rounded-md bg-emerald-50 text-emerald-700 font-semibold text-xs border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
-                                {occ}
-                              </span>
+                              {isHouse ? (
+                                <span className="text-gray-400 text-xs">—</span>
+                              ) : (
+                                <span className="inline-flex items-center justify-center min-w-[24px] h-6 rounded-md bg-emerald-50 text-emerald-700 font-semibold text-xs border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
+                                  {occ}
+                                </span>
+                              )}
                             </TableCell>
 
                             <TableCell className="px-2 py-2.5 text-center">
-                              <span className="inline-flex items-center justify-center min-w-[24px] h-6 rounded-md bg-amber-50 text-amber-700 font-semibold text-xs border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
-                                {vac}
-                              </span>
+                              {isHouse ? (
+                                <span className="text-gray-400 text-xs">—</span>
+                              ) : (
+                                <span className="inline-flex items-center justify-center min-w-[24px] h-6 rounded-md bg-amber-50 text-amber-700 font-semibold text-xs border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
+                                  {vac}
+                                </span>
+                              )}
                             </TableCell>
 
                             <TableCell className="px-2 py-2.5">
-                              <div className="space-y-1">
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="font-bold text-slate-800 dark:text-slate-200">{rate}%</span>
-                                  <span className="text-[10px] text-slate-400">{occ}/{propUnits.length} units</span>
+                              {isHouse ? (
+                                <span className="text-gray-400 text-xs">—</span>
+                              ) : (
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="font-bold text-slate-800 dark:text-slate-200">{rate}%</span>
+                                    <span className="text-[10px] text-slate-400">{occ}/{propUnits.length} units</span>
+                                  </div>
+                                  <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2 overflow-hidden">
+                                    <div
+                                      className={cn(
+                                        "h-full rounded-full transition-all duration-300",
+                                        rate >= 80 ? "bg-emerald-500" : rate >= 50 ? "bg-blue-500" : "bg-amber-500"
+                                      )}
+                                      style={{ width: `${Math.min(rate, 100)}%` }}
+                                    />
+                                  </div>
                                 </div>
-                                <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2 overflow-hidden">
-                                  <div
-                                    className={cn(
-                                      "h-full rounded-full transition-all duration-300",
-                                      rate >= 80 ? "bg-emerald-500" : rate >= 50 ? "bg-blue-500" : "bg-amber-500"
-                                    )}
-                                    style={{ width: `${Math.min(rate, 100)}%` }}
-                                  />
-                                </div>
-                              </div>
+                              )}
                             </TableCell>
 
                             <TableCell className="px-2 py-2.5 whitespace-nowrap">
@@ -2700,17 +2959,6 @@ export default function AdminDashboard() {
             title="Units Directory"
             description="Track occupancy, lease status, and rental rates for individual units across all properties."
             icon={Home}
-            actions={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push("/dashboard/admin?tab=properties")}
-                className="gap-2 bg-white text-slate-700 hover:bg-slate-50 border-slate-200 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 cursor-pointer shadow-2xs"
-              >
-                <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                <span>View Properties</span>
-              </Button>
-            }
           />
 
           {/* Filter Toolbar */}
@@ -2824,7 +3072,7 @@ export default function AdminDashboard() {
                 <div className="py-12 text-center text-sm text-gray-500">No units match your search or filter.</div>
               ) : (
                 <div className="table-scroll-box w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[680px]">
-                  <table className="w-full min-w-[1650px] border-collapse text-left caption-bottom text-xs">
+                  <table className="w-full min-w-[1500px] border-collapse text-left caption-bottom text-xs">
                     <TableHeader className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-800/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-800 shadow-2xs">
                       <TableRow className="bg-transparent text-[10px] uppercase tracking-wider text-gray-500 font-semibold whitespace-nowrap">
                         <TableHead className="pl-4 pr-2 py-2.5 h-10 font-semibold">Photo</TableHead>
@@ -2838,7 +3086,6 @@ export default function AdminDashboard() {
                         <TableHead className="px-2 py-2.5 h-10 font-semibold">Current Tenant</TableHead>
                         <TableHead className="px-2 py-2.5 h-10 font-semibold">Lease Term</TableHead>
                         <TableHead className="px-2 py-2.5 h-10 font-semibold">Property Owner</TableHead>
-                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Assigned Agent</TableHead>
                         <TableHead className="pr-4 pl-2 py-2.5 h-10 text-right font-semibold">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -3032,20 +3279,6 @@ export default function AdminDashboard() {
                               </div>
                             </TableCell>
 
-                            {/* Assigned Agent */}
-                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                              {agentUser ? (
-                                <div className="flex items-center gap-2">
-                                  <Avatar src={agentUser.avatarUrl} fallback={getInitials(agentUser.name)} size="xs" className="h-6 w-6 shrink-0" />
-                                  <div className="flex flex-col">
-                                    <span className="font-medium text-gray-900 dark:text-white text-xs">{agentUser.name}</span>
-                                    <span className="text-[10px] text-blue-600 dark:text-blue-400">Agent</span>
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-xs text-gray-400">Unassigned</span>
-                              )}
-                            </TableCell>
 
                             {/* Actions */}
                             <TableCell className="pr-4 pl-2 py-2.5 text-right whitespace-nowrap">
@@ -5494,6 +5727,7 @@ export default function AdminDashboard() {
       {/* Property Details Modal */}
       {selectedPropertyDetails && (() => {
         const p = selectedPropertyDetails;
+        const isHouse = p.type?.toLowerCase() === "house";
         const propUnits = units.filter((u) => u.propertyId === p.id);
         const occupiedCount = propUnits.length > 0 ? propUnits.filter((u) => u.status === "occupied").length : (p.occupiedUnits || 0);
         const totalUnits = propUnits.length > 0 ? propUnits.length : (p.units || 0);
@@ -5559,7 +5793,7 @@ export default function AdminDashboard() {
                   images={propImgs}
                   alt={p.name}
                   title={p.name}
-                  subtitle={`${p.location} • ${p.type} • ${totalUnits} units`}
+                  subtitle={`${p.location} • ${p.type}${isHouse ? "" : ` • ${totalUnits} units`}`}
                   className="h-64 sm:h-72 w-full rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm"
                   variant="carousel"
                 />
@@ -5576,16 +5810,20 @@ export default function AdminDashboard() {
                   <div className="space-y-1.5 text-xs">
                     <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
                       <span className="text-gray-400">Total Units:</span>
-                      <span className="font-bold text-gray-900 dark:text-white">{totalUnits}</span>
+                      <span className="font-bold text-gray-900 dark:text-white">{isHouse ? "—" : totalUnits}</span>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                      <span className="text-gray-400">Occupied Units:</span>
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400">{occupiedCount} ({occPercent}%)</span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                      <span className="text-gray-400">Vacant Units:</span>
-                      <span className="font-semibold text-blue-600 dark:text-blue-400">{totalUnits - occupiedCount}</span>
-                    </div>
+                    {!isHouse && (
+                      <>
+                        <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                          <span className="text-gray-400">Occupied Units:</span>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">{occupiedCount} ({occPercent}%)</span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+                          <span className="text-gray-400">Vacant Units:</span>
+                          <span className="font-semibold text-blue-600 dark:text-blue-400">{totalUnits - occupiedCount}</span>
+                        </div>
+                      </>
+                    )}
                     <div className="flex justify-between py-1">
                       <span className="text-gray-400">Monthly Revenue:</span>
                       <span className="font-bold text-gray-900 dark:text-white tabular-nums">{formatCurrency(propRevenue)}</span>

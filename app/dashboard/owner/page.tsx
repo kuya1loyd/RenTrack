@@ -1458,69 +1458,107 @@ export default function OwnerDashboard() {
               <p className="text-xs text-slate-500 mt-0.5">Browse, filter, and manage your property portfolio.</p>
             </div>
 
-            <div className={management.toolbar}>
-              <label className={management.search}>
-                <Search aria-hidden="true" />
-                <input
-                  type="search"
-                  value={propertySearch}
-                  onChange={(event) => setPropertySearch(event.target.value)}
-                  placeholder="Search properties by name or address..."
-                  aria-label="Search properties"
-                />
-              </label>
-              <AnimatedFilterDropdown
-                label="Property type"
-                value={propertyTypeFilter}
-                onChange={(e) => setPropertyTypeFilter(e.target.value)}
-                options={[
-                  { value: "all", label: "All types" },
-                  { value: "house", label: "House / Residential" },
-                  { value: "condominium", label: "Condominium" },
-                ]}
-              />
-              <AnimatedFilterDropdown
-                label="Status"
-                value={propertyStatusFilter}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setPropertyStatusFilter(val);
-                  if (val !== "maintenance") setPropertyMaintenanceReasonFilter("all");
-                }}
-                options={[
-                  { value: "all", label: "All statuses" },
-                  { value: "active", label: "Active" },
-                  { value: "inactive", label: "Inactive" },
-                  { value: "maintenance", label: "Under Maintenance", badge: "Fix" },
-                ]}
-              />
-              <AnimatedFilterDropdown
-                label="House Repair Reason"
-                value={propertyMaintenanceReasonFilter}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setPropertyMaintenanceReasonFilter(val);
-                  if (val !== "all") setPropertyStatusFilter("maintenance");
-                }}
-                options={[
-                  { value: "all", label: "All House Repair Reasons" },
-                  ...PROPERTY_MAINTENANCE_REASONS.map((r) => ({ value: r, label: r })),
-                ]}
-              />
-              <div className={management.toolbarActions}>
-                <button type="button" className={management.reset} onClick={() => { setPropertySearch(""); setPropertyTypeFilter("all"); setPropertyStatusFilter("all"); setPropertyMaintenanceReasonFilter("all"); }}>
-                  <RotateCcw aria-hidden="true" />Reset
-                </button>
-                <Button onClick={downloadPropertiesExport} className={management.export}>
-                  <Download className="h-4 w-4" />Export
-                </Button>
-                <Button
-                  onClick={openAddProperty}
-                  className="h-11 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer shadow-xs transition-colors flex items-center gap-1.5 px-3.5"
+            {/* Filter Toolbar */}
+            <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-xs dark:border-gray-800 dark:bg-gray-900">
+              {/* Top Row: Search Input & Action Buttons */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    value={propertySearch}
+                    onChange={(e) => setPropertySearch(e.target.value)}
+                    placeholder="Search properties by name or address..."
+                    className="h-10 w-full rounded-xl border-gray-200 bg-white pl-10 text-sm focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800"
+                  />
+                  {propertySearch && (
+                    <button
+                      onClick={() => setPropertySearch("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-gray-400 hover:text-gray-600 cursor-pointer"
+                    >
+                      <XCircle className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={downloadPropertiesExport}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition-all hover:bg-blue-700 active:scale-95 cursor-pointer"
+                  >
+                    <Download className="h-4 w-4" />
+                    Export
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={openAddProperty}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition-all hover:bg-blue-700 active:scale-95 cursor-pointer"
+                  >
+                    <Building2 className="h-4 w-4" />
+                    Add Property
+                  </button>
+                </div>
+              </div>
+
+              {/* Bottom Row: Filter Dropdowns & Reset Button */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-800">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <AnimatedFilterDropdown
+                    label="Property type"
+                    value={propertyTypeFilter}
+                    onChange={(e) => setPropertyTypeFilter(e.target.value)}
+                    options={[
+                      { value: "all", label: "All types" },
+                      { value: "house", label: "House / Residential" },
+                      { value: "condominium", label: "Condominium" },
+                    ]}
+                  />
+
+                  <AnimatedFilterDropdown
+                    label="Status"
+                    value={propertyStatusFilter}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPropertyStatusFilter(val);
+                      if (val !== "maintenance") setPropertyMaintenanceReasonFilter("all");
+                    }}
+                    options={[
+                      { value: "all", label: "All statuses" },
+                      { value: "active", label: "Active" },
+                      { value: "inactive", label: "Inactive" },
+                      { value: "maintenance", label: "Under Maintenance" },
+                    ]}
+                  />
+
+                  <AnimatedFilterDropdown
+                    label="House Repair Reason"
+                    value={propertyMaintenanceReasonFilter}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPropertyMaintenanceReasonFilter(val);
+                      if (val !== "all") setPropertyStatusFilter("maintenance");
+                    }}
+                    options={[
+                      { value: "all", label: "All House Repair Reasons" },
+                      ...PROPERTY_MAINTENANCE_REASONS.map((r) => ({ value: r, label: r })),
+                    ]}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPropertySearch("");
+                    setPropertyTypeFilter("all");
+                    setPropertyStatusFilter("all");
+                    setPropertyMaintenanceReasonFilter("all");
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-white px-3.5 py-2 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50/60 dark:border-blue-900/40 dark:bg-gray-800 dark:text-blue-400 dark:hover:bg-blue-950/30 cursor-pointer"
                 >
-                  <Building2 className="h-4 w-4" />
-                  Add Property
-                </Button>
+                  <RotateCcw className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                  Reset
+                </button>
               </div>
             </div>
 
@@ -1884,27 +1922,37 @@ export default function OwnerDashboard() {
                               <td className="capitalize text-slate-700 font-medium">
                                 {property.type === "condominium" ? "Condominium" : "Residential House"}
                               </td>
-                              <td className="font-semibold tabular-nums">{propertyUnits.length}</td>
-                              <td className="text-blue-700 font-semibold tabular-nums">{occupied}</td>
-                              <td className="text-emerald-700 font-semibold tabular-nums">{vacant}</td>
+                              <td className="font-semibold tabular-nums">
+                                {property.type?.toLowerCase() === "house" ? "—" : propertyUnits.length}
+                              </td>
+                              <td className="text-blue-700 font-semibold tabular-nums">
+                                {property.type?.toLowerCase() === "house" ? "—" : occupied}
+                              </td>
+                              <td className="text-emerald-700 font-semibold tabular-nums">
+                                {property.type?.toLowerCase() === "house" ? "—" : vacant}
+                              </td>
                               <td>
-                                <div className="flex items-center gap-2 min-w-[120px]">
-                                  <div className="h-2 w-16 overflow-hidden rounded-full bg-slate-100">
-                                    <div
-                                      className={`h-full rounded-full ${
-                                        rate === 100
-                                          ? "bg-emerald-500"
-                                          : rate >= 60
-                                          ? "bg-blue-600"
-                                          : rate > 0
-                                          ? "bg-amber-500"
-                                          : "bg-slate-300"
-                                      }`}
-                                      style={{ width: `${rate}%` }}
-                                    />
+                                {property.type?.toLowerCase() === "house" ? (
+                                  <span className="text-slate-400 font-normal">—</span>
+                                ) : (
+                                  <div className="flex items-center gap-2 min-w-[120px]">
+                                    <div className="h-2 w-16 overflow-hidden rounded-full bg-slate-100">
+                                      <div
+                                        className={`h-full rounded-full ${
+                                          rate === 100
+                                            ? "bg-emerald-500"
+                                            : rate >= 60
+                                            ? "bg-blue-600"
+                                            : rate > 0
+                                            ? "bg-amber-500"
+                                            : "bg-slate-300"
+                                        }`}
+                                        style={{ width: `${rate}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-xs font-bold tabular-nums text-slate-800">{rate}%</span>
                                   </div>
-                                  <span className="text-xs font-bold tabular-nums text-slate-800">{rate}%</span>
-                                </div>
+                                )}
                               </td>
                               <td>
                                 <Badge
@@ -3157,7 +3205,9 @@ export default function OwnerDashboard() {
                   className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm text-foreground focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Standalone Unit (No Property)</option>
-                  {properties.map((property) => (
+                  {properties
+                    .filter((property) => property.type?.toLowerCase() !== "house")
+                    .map((property) => (
                     <option key={property.id} value={property.id}>
                       {property.name} ({property.location})
                     </option>

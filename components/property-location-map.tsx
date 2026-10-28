@@ -42,8 +42,8 @@ const currency = new Intl.NumberFormat("en-PH", {
 function rolePropertyHref(role: string, propertyId: string) {
   const encodedId = encodeURIComponent(propertyId);
   if (role === "admin") return `/dashboard/admin?tab=properties&property=${encodedId}#properties`;
-  if (role === "owner") return `/dashboard/owner?tab=units&view=properties&property=${encodedId}#units`;
-  if (role === "agent") return `/dashboard/agent?tab=units&property=${encodedId}#units`;
+  if (role === "owner") return `/dashboard/owner?tab=properties&property=${encodedId}#properties`;
+  if (role === "agent") return `/dashboard/agent?tab=properties&property=${encodedId}#properties`;
   return "/dashboard/tenant/properties-page";
 }
 
@@ -247,25 +247,29 @@ export default function PropertyLocationMap({ hideHeader = false }: { hideHeader
                           <div className="col-span-2"><dt className="text-slate-500">Outstanding receivables</dt><dd className="mt-0.5 font-semibold">{currency.format(property.outstandingReceivables)}</dd></div>
                         )}
                       </dl>
-                      <Link
+                      <a
                         href={rolePropertyHref(user?.role || "tenant", property.id)}
-                        onClick={() => {
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const targetHref = rolePropertyHref(user?.role || "tenant", property.id);
                           if (typeof window !== "undefined") {
                             window.dispatchEvent(
                               new CustomEvent("renttrack-switch-tab", {
                                 detail: {
-                                  tab: "units",
+                                  tab: "properties",
                                   view: "properties",
                                   propertyId: property.id,
                                 },
                               })
                             );
+                            window.location.href = targetHref;
                           }
                         }}
                         className="mt-3 inline-flex items-center text-sm font-semibold text-blue-700 hover:text-blue-900 cursor-pointer"
                       >
                         View Property <span aria-hidden="true" className="ml-1">→</span>
-                      </Link>
+                      </a>
                     </div>
                   </Popup>
                 </Marker>

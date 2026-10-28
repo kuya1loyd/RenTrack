@@ -417,7 +417,9 @@ export default function UnitsPage() {
               <label className="block text-sm font-medium text-foreground mb-1">Property *</label>
               <select value={formData.propertyId} onChange={(e) => setFormData({ ...formData, propertyId: e.target.value })} className="w-full h-9 rounded-lg border border-border bg-surface text-foreground px-3 text-sm">
                 <option value="">Select a property</option>
-                {properties.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                {properties
+                  .filter((p) => p.type?.toLowerCase() !== "house")
+                  .map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
               </select>
             </div>
             <div>

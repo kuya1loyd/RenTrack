@@ -780,12 +780,14 @@ export default function TenantPropertiesPage() {
                       {selectedProperty.type || "Apartment"}
                     </p>
                   </div>
-                  <div>
-                    <span className="text-[11px] text-slate-500 uppercase font-semibold">Total Units</span>
-                    <p className="text-sm font-bold text-slate-800 mt-0.5">
-                      {selectedProperty.units || 1} units
-                    </p>
-                  </div>
+                  {selectedProperty.type?.toLowerCase() !== "house" && (
+                    <div>
+                      <span className="text-[11px] text-slate-500 uppercase font-semibold">Total Units</span>
+                      <p className="text-sm font-bold text-slate-800 mt-0.5">
+                        {selectedProperty.units || 1} units
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {selectedProperty.description && (

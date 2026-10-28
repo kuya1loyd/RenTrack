@@ -318,11 +318,12 @@ export default function LandingPage() {
   };
 
   const matchesPropertyFilters = (property: any, unit?: any) => {
-    // Hide parent condominium properties from separate property cards;
-    // only its individual registered rental units will be displayed.
-    if (isCondominiumProperty(property)) return false;
+    // If filtering specifically for units, hide properties
     if (propertyTypeFilter === "units") return false;
-    if (propertyTypeFilter === "condominium" || propertyTypeFilter === "condo") return false;
+    // If filtering for houses, hide condominiums
+    if (propertyTypeFilter === "house" && isCondominiumProperty(property)) return false;
+    // If filtering for condominiums, hide non-condominiums
+    if ((propertyTypeFilter === "condominium" || propertyTypeFilter === "condo") && !isCondominiumProperty(property)) return false;
 
     const propertyName = property?.name || "";
     const propertyLocation = property?.location || property?.city || property?.province || unit?.location || unit?.propertyLocation || "";
@@ -337,7 +338,7 @@ export default function LandingPage() {
       && (!locationFilter || propertyLocation.toLowerCase().includes(locationFilter.toLowerCase()))
       && matchesPropertyTypeFilter(propertyType, false)
       && (minPrice === 0 || rentAmount >= minPrice)
-      && rentAmount <= maxPrice
+      && (maxPrice === Number.POSITIVE_INFINITY || rentAmount <= maxPrice || rentAmount === 0)
       && matchesRoomCount(property, "bedroom", bedroomFilter)
       && matchesRoomCount(property, "bathroom", bathroomFilter)
       && matchesFurnishing(property);
@@ -1484,18 +1485,28 @@ export default function LandingPage() {
                             <UnitImageCarousel images={propertyImages} fallbackImage={img} alt={property.name} className="h-full w-full" imageClassName="object-cover" />
                           </motion.div>
                           <div className="pointer-events-none absolute left-4 top-4 flex max-w-[calc(100%-2rem)] items-center gap-1.5 rounded-[10px] bg-slate-900/85 px-3 py-2 text-xs font-bold uppercase tracking-wide text-white shadow-sm backdrop-blur-sm">
-                            <Home className="h-4 w-4 text-blue-400 shrink-0" />
-                            <span className="truncate">HOUSE</span>
+                            {isCondominiumProperty(property) ? (
+                              <Building2 className="h-4 w-4 text-blue-400 shrink-0" />
+                            ) : (
+                              <Home className="h-4 w-4 text-blue-400 shrink-0" />
+                            )}
+                            <span className="truncate">{isCondominiumProperty(property) ? "CONDOMINIUM" : "HOUSE"}</span>
                           </div>
                           <div className="pointer-events-none absolute right-4 top-4 rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-bold text-slate-800 shadow-sm backdrop-blur-sm">
-                            House
+                            {isCondominiumProperty(property) ? "Condominium" : "House"}
                           </div>
                         </div>
 
                         <div className="relative p-5">
                           <div className="flex items-baseline justify-between gap-2">
                             <p className="text-2xl font-bold tracking-tight text-slate-950">
-                              ₱{price.toLocaleString()}<span className="ml-1 text-sm font-medium text-slate-500">/mo</span>
+                              {price > 0 ? (
+                                <>₱{price.toLocaleString()}<span className="ml-1 text-sm font-medium text-slate-500">/mo</span></>
+                              ) : isCondominiumProperty(property) ? (
+                                <span className="text-xl">Inquire for Rates</span>
+                              ) : (
+                                <>₱0<span className="ml-1 text-sm font-medium text-slate-500">/mo</span></>
+                              )}
                             </p>
                             <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide", isAvailable ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-amber-50 text-amber-700 border border-amber-200")}>
                               {isAvailable ? "Available" : "Occupied"}
@@ -1513,10 +1524,24 @@ export default function LandingPage() {
 
                           <div className="flex items-center justify-between border-t border-slate-200 pt-4 text-xs text-slate-500">
                             <span className="flex items-center gap-2 text-sm text-slate-700">
-                              <BedDouble className="h-4 w-4 text-blue-600" />{bedrooms}
-                              <Bath className="ml-2 h-4 w-4 text-blue-600" />{bathrooms}
+                              {bedrooms !== "Not specified" || bathrooms !== "Not specified" ? (
+                                <>
+                                  <BedDouble className="h-4 w-4 text-blue-600" />{bedrooms}
+                                  <Bath className="ml-2 h-4 w-4 text-blue-600" />{bathrooms}
+                                </>
+                              ) : isCondominiumProperty(property) ? (
+                                <>
+                                  <Building2 className="h-4 w-4 text-blue-600 shrink-0" />
+                                  <span>{propertyUnits.length > 0 ? `${propertyUnits.length} Units` : "Condo Building"}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Home className="h-4 w-4 text-blue-600 shrink-0" />
+                                  <span>Residential</span>
+                                </>
+                              )}
                             </span>
-                            <motion.button whileHover={{ x: 4 }} onClick={() => setSelectedProperty(property)} className="font-semibold text-blue-600 transition-colors hover:text-blue-800 flex items-center gap-1">
+                            <motion.button whileHover={{ x: 4 }} onClick={() => setSelectedProperty(property)} className="font-semibold text-blue-600 transition-colors hover:text-blue-800 flex items-center gap-1 cursor-pointer">
                               View Details <ArrowRight className="h-3.5 w-3.5" />
                             </motion.button>
                           </div>

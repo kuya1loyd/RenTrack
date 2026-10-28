@@ -259,9 +259,7 @@ export default function PropertiesPage() {
             onChange={(e) => setTypeFilter(e.target.value)}
             options={[
               { value: "all", label: "All Types" },
-              { value: "house", label: "House / Villa" },
-              { value: "residential", label: "Residential" },
-              { value: "building", label: "Commercial / Building" },
+              { value: "house", label: "House" },
               { value: "condominium", label: "Condominium" },
             ]}
           />
@@ -388,13 +386,15 @@ export default function PropertiesPage() {
                       <div className="grid grid-cols-3 gap-4 mb-4">
                         <div className="text-center">
                           <div className="flex items-center justify-center gap-1 text-sm font-semibold text-foreground">
-                            <Home className="h-3.5 w-3.5 text-primary-500" />{propertyUnits.length}
+                            <Home className="h-3.5 w-3.5 text-primary-500" />
+                            {property.type?.toLowerCase() === "house" ? "—" : propertyUnits.length}
                           </div>
                           <p className="text-[10px] text-text-secondary mt-0.5">Total Units</p>
                         </div>
                         <div className="text-center">
                           <div className="flex items-center justify-center gap-1 text-sm font-semibold text-foreground">
-                            <Users className="h-3.5 w-3.5 text-secondary-500" />{occupied}
+                            <Users className="h-3.5 w-3.5 text-secondary-500" />
+                            {property.type?.toLowerCase() === "house" ? "—" : occupied}
                           </div>
                           <p className="text-[10px] text-text-secondary mt-0.5">Occupied</p>
                         </div>
@@ -575,7 +575,9 @@ export default function PropertiesPage() {
               </div>
               <div className="p-4 rounded-xl bg-surface-secondary">
                 <p className="text-xs text-text-secondary">Total Units</p>
-                <p className="text-sm font-semibold text-foreground mt-1">{selectedProperty.units}</p>
+                <p className="text-sm font-semibold text-foreground mt-1">
+                  {selectedProperty.type?.toLowerCase() === "house" ? "—" : selectedProperty.units}
+                </p>
               </div>
                  <div className="p-4 rounded-xl bg-surface-secondary">
                    <p className="text-xs text-text-secondary">Monthly Revenue</p>

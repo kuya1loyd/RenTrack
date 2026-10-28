@@ -34,9 +34,10 @@ import ProfilePanel from "@/components/profile-panel";
 import AgentCertificateManager from "@/components/agent-certificate-manager";
 import ContractsPanel from "@/components/contracts-panel";
 import UnitImageCarousel from "@/components/unit-image-carousel";
-import { ManagementBanner, UnitMetrics, UnitStatus, ManagementPagination } from "@/components/management-panel";
+import { ManagementBanner, UnitMetrics, PropertyMetrics, UnitStatus, ManagementPagination } from "@/components/management-panel";
 import management from "@/components/management-panel.module.css";
 import { AgentVerificationGate } from "@/components/agent-verification-gate";
+import { AnimatedFilterDropdown } from "@/components/ui/animated-filter-dropdown";
 
 type Step = "overview" | "units" | "properties" | "assign" | "tenants" | "payments" | "history" | "messages" | "inquiries" | "contracts" | "profile" | "map" | "certificates";
 
@@ -119,6 +120,11 @@ export default function AgentDashboard() {
   const [tenantListSearch, setTenantListSearch] = useState("");
   const [tenantListFilter, setTenantListFilter] = useState("all");
   const [agentUnitsView, setAgentUnitsView] = useState<"units" | "properties">("units");
+  const [propertySearch, setPropertySearch] = useState("");
+  const [propertyTypeFilter, setPropertyTypeFilter] = useState("all");
+  const [propertyStatusFilter, setPropertyStatusFilter] = useState("all");
+  const [propertySort, setPropertySort] = useState("name-asc");
+  const [propertyPage, setPropertyPage] = useState(1);
   const [unitSearch, setUnitSearch] = useState("");
   const [unitStatusFilter, setUnitStatusFilter] = useState("all");
   const [unitPropertyFilter, setUnitPropertyFilter] = useState("all");
@@ -270,17 +276,19 @@ export default function AgentDashboard() {
   useEffect(() => {
     const handleTabSwitch = (e?: Event) => {
       const customDetail = (e as CustomEvent)?.detail;
-      const hash = typeof window !== "undefined" ? window.location.hash.replace("#", "") : "";
+      const eventTab = typeof customDetail === "string" ? customDetail : customDetail?.tab;
+      const hash = typeof window !== "undefined" ? window.location.hash.replace("#", "").split("?")[0] : "";
       const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-      const tabParam = params?.get("tab") || hash || customDetail?.tab;
+      // Prioritize explicit event or hash navigation over static query params
+      const tabParam = eventTab || hash || params?.get("tab");
 
       if (tabParam === "properties") {
-        setActiveTab("units");
+        setActiveTab("properties");
         setAgentUnitsView("properties");
       } else if (tabParam === "units") {
         setActiveTab("units");
         setAgentUnitsView("units");
-      } else if (tabParam && ["overview", "map", "units", "tenants", "payments", "contracts", "certificates", "messages", "inquiries", "profile"].includes(tabParam)) {
+      } else if (tabParam && ["overview", "map", "units", "properties", "tenants", "payments", "contracts", "certificates", "messages", "inquiries", "profile"].includes(tabParam)) {
         setActiveTab(tabParam as Step);
       }
     };
@@ -288,9 +296,11 @@ export default function AgentDashboard() {
     handleTabSwitch();
     window.addEventListener("hashchange", handleTabSwitch);
     window.addEventListener("renttrack-switch-tab", handleTabSwitch);
+    window.addEventListener("agent-dashboard-tab-change", handleTabSwitch);
     return () => {
       window.removeEventListener("hashchange", handleTabSwitch);
       window.removeEventListener("renttrack-switch-tab", handleTabSwitch);
+      window.removeEventListener("agent-dashboard-tab-change", handleTabSwitch);
     };
   }, []);
 
@@ -463,16 +473,30 @@ export default function AgentDashboard() {
   const filteredUnitRows = filteredUnitProperties.flatMap(({ property, visibleUnits }) =>
     visibleUnits.map((unit) => ({ property, unit }))
   );
-  const filteredProperties = properties.filter((property) => {
-    const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
-    const searchMatches = !normalizedUnitSearch || `${property.name} ${property.location} ${propertyUnits.map((u) => `${u.unitNumber} ${u.tenantName || ""}`).join(" ")}`.toLowerCase().includes(normalizedUnitSearch);
-    const statusMatches = unitStatusFilter === "all"
-      || propertyUnits.some((unit) => unit.status === unitStatusFilter)
-      || (unitStatusFilter === "vacant" && (property.availabilityStatus === "Available" || property.status === "active"))
-      || (unitStatusFilter === "occupied" && property.availabilityStatus === "Occupied")
-      || (unitStatusFilter === "maintenance" && property.availabilityStatus === "Under Maintenance");
-    return searchMatches && statusMatches && (unitTypeFilter === "all" || property.type === unitTypeFilter) && (unitPropertyFilter === "all" || property.id === unitPropertyFilter);
+  const normalizedPropertySearch = propertySearch.trim().toLowerCase();
+  const filteredPropertiesList = properties.filter((property) => {
+    const searchMatches = !normalizedPropertySearch || `${property.name} ${property.location}`.toLowerCase().includes(normalizedPropertySearch);
+    const typeMatches = propertyTypeFilter === "all" || property.type === propertyTypeFilter;
+    const statusMatches =
+      propertyStatusFilter === "all"
+        ? true
+        : propertyStatusFilter === "maintenance"
+          ? property.availabilityStatus === "Under Maintenance" || property.status === "inactive"
+          : property.status === propertyStatusFilter;
+    return searchMatches && typeMatches && statusMatches;
   });
+
+  const sortedProperties = [...filteredPropertiesList].sort((a, b) => {
+    if (propertySort === "location-asc") return (a.location || "").localeCompare(b.location || "");
+    if (propertySort === "location-desc") return (b.location || "").localeCompare(a.location || "");
+    if (propertySort === "revenue-desc") return (b.monthlyRevenue || 0) - (a.monthlyRevenue || 0);
+    if (propertySort === "revenue-asc") return (a.monthlyRevenue || 0) - (b.monthlyRevenue || 0);
+    const comp = a.name.localeCompare(b.name);
+    return propertySort === "name-desc" ? -comp : comp;
+  });
+  const currentPropertyPage = Math.min(propertyPage, Math.max(1, Math.ceil(sortedProperties.length / 10)));
+  const visibleProperties = sortedProperties.slice((currentPropertyPage - 1) * 10, currentPropertyPage * 10);
+
   const bannerProperty = properties.find((property) => property.imageUrls?.length || property.imageUrl);
   const bannerUnit = units.find((unit) => unit.imageUrls?.length || unit.imageUrl);
   const bannerPhotoImages = bannerProperty?.imageUrls?.length
@@ -705,6 +729,27 @@ export default function AgentDashboard() {
       ]),
     ];
     downloadExcelReport(`agent-units-${new Date().toISOString().slice(0, 10)}.xls`, [{ name: "Units", rows }]);
+  };
+
+  const downloadPropertiesExport = () => {
+    const rows: Array<Array<string | number>> = [
+      ["Property Name", "Address / Location", "Property Type", "Occupied Units", "Vacant Units", "Monthly Revenue", "Status"],
+      ...sortedProperties.map((property) => {
+        const propUnits = units.filter((u) => u.propertyId === property.id);
+        const occ = propUnits.filter((u) => u.status === "occupied").length;
+        const vac = propUnits.filter((u) => u.status === "vacant").length;
+        return [
+          property.name,
+          property.location || "—",
+          property.type === "condominium" ? "Condominium" : "Properties",
+          occ,
+          vac,
+          property.monthlyRevenue || 0,
+          property.status,
+        ];
+      }),
+    ];
+    downloadExcelReport(`agent-properties-${new Date().toISOString().slice(0, 10)}.xls`, [{ name: "Properties", rows }]);
   };
 
   const togglePaymentSort = (key: typeof paymentSort.key) => {
@@ -1139,171 +1184,326 @@ export default function AgentDashboard() {
               </motion.div>
             )}
 
-            {/* UNITS */}
+            {/* PROPERTIES PAGE - EXACT SAME DESIGN AS OWNER */}
+            {activeTab === "properties" && (
+              <motion.div initial={reduceMotion ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={cn(management.page, "space-y-6")}>
+                <ManagementBanner
+                  category="Property Portfolio"
+                  title="Properties"
+                  description="Browse, filter, and manage registered properties across your portfolio."
+                  icon={Building2}
+                />
+
+                <section id="properties-section" className="space-y-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                      <span>Properties List</span>
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                        {filteredPropertiesList.length} {filteredPropertiesList.length === 1 ? "property" : "properties"}
+                      </span>
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">Browse, filter, and manage your assigned property portfolio.</p>
+                  </div>
+
+                  {/* Filter Toolbar (exact same design as Owner) */}
+                  <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-xs dark:border-gray-800 dark:bg-gray-900">
+                    {/* Top Row: Search Input & Action Buttons */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="relative flex-1">
+                        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        <Input
+                          value={propertySearch}
+                          onChange={(e) => setPropertySearch(e.target.value)}
+                          placeholder="Search properties by name or address..."
+                          className="h-10 w-full rounded-xl border-gray-200 bg-white pl-10 text-sm focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800"
+                        />
+                        {propertySearch && (
+                          <button
+                            onClick={() => setPropertySearch("")}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-gray-400 hover:text-gray-600 cursor-pointer"
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={downloadPropertiesExport}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition-all hover:bg-blue-700 active:scale-95 cursor-pointer"
+                        >
+                          <Download className="h-4 w-4" />
+                          Export
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: Filter Dropdowns & Reset Button */}
+                    <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-800">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <AnimatedFilterDropdown
+                          label="Property type"
+                          value={propertyTypeFilter}
+                          onChange={(e) => setPropertyTypeFilter(e.target.value)}
+                          options={[
+                            { value: "all", label: "All types" },
+                            { value: "house", label: "Properties" },
+                            { value: "condominium", label: "Condominium" },
+                          ]}
+                        />
+
+                        <AnimatedFilterDropdown
+                          label="Status"
+                          value={propertyStatusFilter}
+                          onChange={(e) => setPropertyStatusFilter(e.target.value)}
+                          options={[
+                            { value: "all", label: "All statuses" },
+                            { value: "active", label: "Active" },
+                            { value: "inactive", label: "Inactive" },
+                            { value: "maintenance", label: "Under Maintenance" },
+                          ]}
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPropertySearch("");
+                          setPropertyTypeFilter("all");
+                          setPropertyStatusFilter("all");
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-white px-3.5 py-2 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50/60 dark:border-blue-900/40 dark:bg-gray-800 dark:text-blue-400 dark:hover:bg-blue-950/30 cursor-pointer"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* PropertyMetrics (exact same as Owner) */}
+                  <PropertyMetrics
+                    total={properties.length}
+                    active={properties.filter(p => p.status === "active").length}
+                    inactive={properties.filter(p => p.status === "inactive").length}
+                    revenue={formatCurrency(properties.reduce((sum, p) => sum + (p.monthlyRevenue || 0), 0))}
+                  />
+
+                  {/* Properties Table Panel (exact same design as Owner) */}
+                  <div className={management.tablePanel} aria-label="Properties">
+                    <div className={management.tableHeader}>
+                      <h3 className={management.tableTitle}>Properties List</h3>
+                      <div className={management.tableControls}>
+                        <select value={propertySort} onChange={(event) => setPropertySort(event.target.value)} aria-label="Sort properties">
+                          <option value="name-asc">Sort by: Name (A-Z)</option>
+                          <option value="name-desc">Name (Z-A)</option>
+                          <option value="location-asc">Location (A-Z)</option>
+                          <option value="location-desc">Location (Z-A)</option>
+                          <option value="revenue-desc">Highest Revenue</option>
+                          <option value="revenue-asc">Lowest Revenue</option>
+                        </select>
+                      </div>
+                    </div>
+                    {initialLoad ? (
+                      <div className={management.empty} role="status">Loading properties...</div>
+                    ) : loadError ? (
+                      <div className={management.empty} role="alert">
+                        <strong>Unable to load properties</strong>
+                        <Button variant="outline" onClick={() => void loadData()}>Try again</Button>
+                      </div>
+                    ) : filteredPropertiesList.length === 0 ? (
+                      <div className={management.empty}>
+                        <Building2 aria-hidden="true" />
+                        <strong>{properties.length ? "No properties match these filters" : "No properties yet"}</strong>
+                        <p>{properties.length ? "Adjust your search or reset the filters to see your properties." : "Properties assigned to you will appear here."}</p>
+                        {properties.length > 0 && (
+                          <div className="flex items-center justify-center gap-2 mt-2">
+                            <Button variant="outline" onClick={() => { setPropertySearch(""); setPropertyTypeFilter("all"); setPropertyStatusFilter("all"); }}>
+                              <RotateCcw className="mr-1 h-4 w-4" />Reset filters
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <div className={management.tableScroll}>
+                          <table className={management.table}>
+                            <thead>
+                              <tr>
+                                <th>Property Photo</th>
+                                <th>Property Name</th>
+                                <th>Address</th>
+                                <th>Property Type</th>
+                                <th>Monthly Revenue</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {visibleProperties.map((property) => {
+                                const propRevenue = property.monthlyRevenue || 0;
+                                const propImgs = property.imageUrls?.length ? property.imageUrls : property.imageUrl ? [property.imageUrl] : [];
+                                return (
+                                  <tr key={property.id}>
+                                    <td>
+                                      <UnitImageCarousel
+                                        images={propImgs}
+                                        alt={property.name}
+                                        title={property.name}
+                                        subtitle={property.location || ""}
+                                        className="h-10 w-14 shrink-0 rounded-md border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
+                                        imageClassName="group-hover:scale-100"
+                                      />
+                                    </td>
+                                    <td className="font-semibold text-slate-900">{property.name}</td>
+                                    <td>
+                                      <div className="flex items-center gap-2">
+                                        <MapPin className="h-4 w-4 text-blue-600 shrink-0" />
+                                        <span className="text-sm font-medium text-slate-800 truncate max-w-[200px]" title={property.location}>
+                                          {property.location || "—"}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="capitalize text-slate-700 font-medium">
+                                      {property.type === "condominium" ? "Condominium" : "Properties"}
+                                    </td>
+                                    <td className="font-semibold text-slate-900 tabular-nums">
+                                      {formatCurrency(propRevenue)}
+                                    </td>
+                                    <td>
+                                      {property.availabilityStatus === "Under Maintenance" || property.status === "inactive" ? (
+                                        <Badge variant="outline" className="capitalize bg-amber-50 text-amber-700 border-amber-300 shadow-2xs">
+                                          {property.availabilityStatus === "Under Maintenance" ? "Under Maintenance" : property.status}
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize">
+                                          {property.status}
+                                        </Badge>
+                                      )}
+                                    </td>
+                                    <td>
+                                      <div className="flex items-center justify-end pr-2">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => {
+                                            setUnitPropertyFilter(property.id);
+                                            setActiveTab("units");
+                                            setAgentUnitsView("units");
+                                            if (typeof window !== "undefined") {
+                                              window.history.pushState(null, "", `${window.location.pathname}#units`);
+                                              window.dispatchEvent(new CustomEvent("agent-dashboard-tab-change", { detail: "units" }));
+                                              window.dispatchEvent(new CustomEvent("renttrack-switch-tab", { detail: { tab: "units" } }));
+                                            }
+                                          }}
+                                          className="h-8 text-xs font-semibold text-blue-700 hover:text-blue-900 hover:bg-blue-50 cursor-pointer"
+                                        >
+                                          <Home className="mr-1 h-3.5 w-3.5" />
+                                          View Units
+                                        </Button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        <ManagementPagination page={currentPropertyPage} total={filteredPropertiesList.length} noun="properties" onPageChange={setPropertyPage} />
+                      </>
+                    )}
+                  </div>
+                </section>
+              </motion.div>
+            )}
+
+            {/* UNITS PAGE */}
             {activeTab === "units" && (
               <motion.div initial={reduceMotion ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={management.page}>
-                <ManagementBanner />
-                <div className={management.toolbar}>
-                  <label className={management.search}>
-                    <Search aria-hidden="true" />
-                    <input type="search" value={unitSearch} onChange={(event) => setUnitSearch(event.target.value)} placeholder="Search by unit number, property, or location..." aria-label="Search properties or units" />
-                  </label>
-                  <label className={management.filterCompact}><span>Property</span>
-                    <select value={unitPropertyFilter} onChange={(event) => setUnitPropertyFilter(event.target.value)} aria-label="Filter units by property">
-                      <option value="all">All properties</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
-                    </select>
-                  </label>
-                  <label className={management.filterCompact}><span>Property type</span>
-                    <select value={unitTypeFilter} onChange={(event) => setUnitTypeFilter(event.target.value)} aria-label="Filter units by property type">
-                      <option value="all">All types</option><option value="house">Properties</option><option value="condominium">Condominium</option>
-                    </select>
-                  </label>
-                  <label className={management.filterCompact}><span>Status</span>
-                    <select value={unitStatusFilter} onChange={(event) => setUnitStatusFilter(event.target.value)} aria-label="Filter units by status">
-                      <option value="all">All statuses</option><option value="vacant">Available</option><option value="occupied">Occupied</option><option value="maintenance">Under Maintenance</option>
-                    </select>
-                  </label>
-                  <div className={management.toolbarActions}>
-                    <button type="button" className={management.reset} onClick={() => { setUnitSearch(""); setUnitStatusFilter("all"); setUnitPropertyFilter("all"); setUnitTypeFilter("all"); }}><RotateCcw aria-hidden="true" />Reset</button>
-                    <Button onClick={downloadUnitsExport} className={management.export}><Download className="h-4 w-4" />Export</Button>
-                    <Button onClick={() => { setSelectedUnit(null); setSelectedTenant(null); setShowAssignModal(true); }} className="h-9 gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3"><UserPlus className="h-3.5 w-3.5" /> Assign Tenant</Button>
+                <ManagementBanner
+                  category="Rental management"
+                  title="Units"
+                  description="Browse and manage all available units across your assigned properties."
+                />
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-200 bg-white shadow-2xs">
+                  <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
+                    <div className="relative min-w-[220px] flex-1 max-w-sm">
+                      <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      <input
+                        type="search"
+                        value={unitSearch}
+                        onChange={(event) => setUnitSearch(event.target.value)}
+                        placeholder="Search by unit number, property, or location..."
+                        aria-label="Search properties or units"
+                        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 text-xs text-slate-800 placeholder:text-slate-400 transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15"
+                      />
+                    </div>
+                    <AnimatedFilterDropdown
+                      label="Property"
+                      value={unitPropertyFilter}
+                      onChange={(event) => setUnitPropertyFilter(event.target.value)}
+                      options={[
+                        { value: "all", label: "All properties" },
+                        ...properties.map((property) => ({ value: property.id, label: property.name })),
+                      ]}
+                    />
+                    <AnimatedFilterDropdown
+                      label="Property type"
+                      value={unitTypeFilter}
+                      onChange={(event) => setUnitTypeFilter(event.target.value)}
+                      options={[
+                        { value: "all", label: "All types" },
+                        { value: "house", label: "Properties" },
+                        { value: "condominium", label: "Condominium" },
+                      ]}
+                    />
+                    <AnimatedFilterDropdown
+                      label="Status"
+                      value={unitStatusFilter}
+                      onChange={(event) => setUnitStatusFilter(event.target.value)}
+                      options={[
+                        { value: "all", label: "All statuses" },
+                        { value: "vacant", label: "Available" },
+                        { value: "occupied", label: "Occupied" },
+                        { value: "maintenance", label: "Under Maintenance" },
+                      ]}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUnitSearch("");
+                        setUnitStatusFilter("all");
+                        setUnitPropertyFilter("all");
+                        setUnitTypeFilter("all");
+                      }}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 cursor-pointer shadow-2xs"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Reset
+                    </button>
+                    <Button
+                      onClick={downloadUnitsExport}
+                      className="h-9 gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 shadow-2xs cursor-pointer"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Export
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setSelectedUnit(null);
+                        setSelectedTenant(null);
+                        setShowAssignModal(true);
+                      }}
+                      className="h-9 gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3.5 shadow-2xs cursor-pointer"
+                    >
+                      <UserPlus className="h-3.5 w-3.5" />
+                      Assign Tenant
+                    </Button>
                   </div>
                 </div>
                 <UnitMetrics total={unitCounts.total} available={unitCounts.available} occupied={unitCounts.occupied} maintenance={unitCounts.maintenance} />
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className={management.tabs}>
-                    {(["units", "properties"] as const).map((view) => (
-                      <button
-                        key={view}
-                        type="button"
-                        data-active={agentUnitsView === view}
-                        onClick={() => { setAgentUnitsView(view); }}
-                        className={management.tabButton}
-                      >
-                        {view}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {agentUnitsView === "properties" && (
-                  initialLoad ? (
-                    <div className={management.empty} role="status">Loading assigned properties…</div>
-                  ) : loadError ? (
-                    <div className={management.empty} role="alert">
-                      <strong>Unable to load properties</strong>
-                      <Button variant="outline" onClick={() => void loadData()}>Try again</Button>
-                    </div>
-                  ) : properties.length === 0 ? (
-                    <div className={management.empty}>
-                      <Home aria-hidden="true" />
-                      <strong>No properties assigned yet</strong>
-                      <p>Properties will appear here once the owner assigns them to you.</p>
-                    </div>
-                  ) : filteredProperties.length === 0 ? (
-                    <div className={management.empty}>
-                      <Search aria-hidden="true" />
-                      <strong>No properties match these filters</strong>
-                      <p>Adjust your search or reset the filters to see available properties.</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                      {filteredProperties.map((property) => {
-                        const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
-                        const propImgs = property.imageUrls?.length ? property.imageUrls : property.imageUrl ? [property.imageUrl] : [];
-                        const occupiedUnits = propertyUnits.filter((u) => u.status === "occupied").length;
-                        const vacantUnitsCount = propertyUnits.filter((u) => u.status === "vacant").length;
-                        return (
-                          <Card key={property.id} className="overflow-hidden group hover:shadow-md transition-shadow">
-                            <div className="relative h-48 w-full bg-slate-100 overflow-hidden border-b border-border">
-                              <UnitImageCarousel
-                                images={propImgs}
-                                alt={property.name}
-                                title={property.name}
-                                subtitle={`${property.location} • ${propertyUnits.length} units`}
-                                className="h-full w-full rounded-none border-0"
-                                imageClassName="object-cover group-hover:scale-105 transition-transform duration-300"
-                              />
-                              <div className="absolute top-3 right-3 z-10 pointer-events-none">
-                                <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize backdrop-blur-md bg-white/90 shadow-2xs">
-                                  {property.status}
-                                </Badge>
-                              </div>
-                              <div className="absolute top-3 left-3 z-10 pointer-events-none">
-                                <span className="inline-flex items-center gap-1 rounded-md bg-slate-900/75 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-xs">
-                                  <Camera className="h-3 w-3" />
-                                  {propImgs.length} photo{propImgs.length === 1 ? "" : "s"}
-                                </span>
-                              </div>
-                            </div>
-                            <CardContent className="p-5">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <h3 className="truncate text-lg font-semibold">{property.name}</h3>
-                                    <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200 capitalize">
-                                      {property.type || "Standard"}
-                                    </Badge>
-                                  </div>
-                                  <p className="mt-1 line-clamp-2 text-sm text-text-secondary">{property.location}</p>
-                                </div>
-                                <Badge variant={property.status === "active" ? "success" : "outline"} className="capitalize">{property.status}</Badge>
-                              </div>
-                              <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-surface-secondary p-3 text-center text-sm">
-                                <div><p className="font-bold">{propertyUnits.length}</p><p className="text-xs text-text-tertiary">Units</p></div>
-                                <div><p className="font-bold text-blue-600">{occupiedUnits}</p><p className="text-xs text-text-tertiary">Occupied</p></div>
-                                <div><p className="font-bold text-green-600">{vacantUnitsCount}</p><p className="text-xs text-text-tertiary">Available</p></div>
-                              </div>
-                              <div className="mt-4 flex flex-wrap gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    setUnitPropertyFilter(property.id);
-                                    setAgentUnitsView("units");
-                                  }}
-                                  className="text-xs"
-                                >
-                                  <Home className="mr-1.5 h-3.5 w-3.5" />
-                                  View Units ({propertyUnits.length})
-                                </Button>
-                                {vacantUnitsCount > 0 && (
-                                  <Button
-                                    size="sm"
-                                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs"
-                                    onClick={() => {
-                                      const firstVacant = propertyUnits.find((u) => u.status === "vacant");
-                                      setSelectedUnit(firstVacant || null);
-                                      setSelectedTenant(null);
-                                      setShowAssignModal(true);
-                                    }}
-                                  >
-                                    <UserPlus className="mr-1.5 h-3.5 w-3.5" />
-                                    Assign Tenant
-                                  </Button>
-                                )}
-                              </div>
-                              {propertyUnits.length > 0 && (
-                                <div className="mt-4 space-y-2 border-t border-border pt-3">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">Units preview</p>
-                                  {propertyUnits.slice(0, 3).map((unit) => (
-                                    <div key={unit.id} className="flex items-center justify-between gap-3 text-sm">
-                                      <span className="truncate text-xs font-medium">Unit {unit.unitNumber} • {formatCurrency(unit.rentAmount)}/mo</span>
-                                      <Badge variant={unit.status === "vacant" ? "success" : unit.status === "occupied" ? "outline" : "warning"} className="capitalize text-[10px]">{unit.status}</Badge>
-                                    </div>
-                                  ))}
-                                  {propertyUnits.length > 3 && <p className="text-xs text-text-tertiary">and {propertyUnits.length - 3} more</p>}
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        );
-                      })}
-                    </div>
-                  )
-                )}
-
-                {agentUnitsView === "units" && (
                   <section className={management.tablePanel} aria-label="Units">
                     <div className={management.tableHeader}>
                       <h2 className={management.tableTitle}>Units <span className={management.count}>{filteredUnitRows.length} units</span></h2>
@@ -1370,7 +1570,6 @@ export default function AgentDashboard() {
                         <ManagementPagination page={currentUnitPage} total={filteredUnitRows.length} noun="units" onPageChange={setUnitPage} />
                       </>}
                   </section>
-                )}
               </motion.div>
             )}
 
