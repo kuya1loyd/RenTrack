@@ -318,12 +318,10 @@ export default function LandingPage() {
   };
 
   const matchesPropertyFilters = (property: any, unit?: any) => {
-    // If filtering specifically for units, hide properties
-    if (propertyTypeFilter === "units") return false;
-    // If filtering for houses, hide condominiums
-    if (propertyTypeFilter === "house" && isCondominiumProperty(property)) return false;
-    // If filtering for condominiums, hide non-condominiums
-    if ((propertyTypeFilter === "condominium" || propertyTypeFilter === "condo") && !isCondominiumProperty(property)) return false;
+    // Hide condominium building cards (only display their individual rental units)
+    if (isCondominiumProperty(property)) return false;
+    // If filtering specifically for units or condominiums, hide properties (since only units represent condo rentals)
+    if (propertyTypeFilter === "units" || propertyTypeFilter === "condominium" || propertyTypeFilter === "condo") return false;
 
     const propertyName = property?.name || "";
     const propertyLocation = property?.location || property?.city || property?.province || unit?.location || unit?.propertyLocation || "";
@@ -331,7 +329,8 @@ export default function LandingPage() {
     const propUnits = units.filter((u: any) => (u.propertyId || u.property_id) === property?.id);
     const rents = propUnits.map((u: any) => Number(u.rentAmount ?? u.rent_amount ?? 0)).filter(Boolean);
     const rentAmount = rents.length ? Math.min(...rents) : Number(unit?.rentAmount ?? unit?.rent_amount ?? property?.monthlyRevenue ?? property?.rentAmount ?? property?.monthlyRent ?? 0);
-    const haystack = [propertyName, propertyLocation, property?.address, property?.city, property?.province, propertyType, unit?.unitNumber, unit?.unit_number, unit?.status]
+    const unitKeywords = propUnits.map((u: any) => `${u.unitNumber} unit ${u.unitNumber} floor ${u.floor || ""}`).join(" ");
+    const haystack = [propertyName, propertyLocation, property?.address, property?.city, property?.province, propertyType, unitKeywords, unit?.unitNumber, unit?.unit_number, unit?.status]
       .filter(Boolean).join(" ").toLowerCase();
 
     return (!normalizedSearch || haystack.includes(normalizedSearch))
@@ -1513,7 +1512,11 @@ export default function LandingPage() {
                             </span>
                           </div>
 
-                          <h3 className="mt-2 text-lg font-semibold leading-snug text-slate-950 transition-colors group-hover:text-blue-700 truncate">
+                          <h3
+                            onClick={() => setSelectedProperty(property)}
+                            className="mt-2 text-lg font-semibold leading-snug text-slate-950 transition-colors group-hover:text-blue-700 truncate cursor-pointer hover:underline"
+                            title={`Click to view ${property.name} building details`}
+                          >
                             {property.name}
                           </h3>
 
@@ -2051,6 +2054,61 @@ export default function LandingPage() {
                     <p className="text-sm text-gray-700 leading-relaxed">{selectedProperty.description}</p>
                   </div>
                 )}
+
+                {/* Available Units in this Property */}
+                {(() => {
+                  const propUnits = units.filter((u: any) => (u.propertyId || u.property_id) === selectedProperty.id);
+                  if (propUnits.length === 0) return null;
+                  return (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
+                      <div className="flex items-center justify-between mb-3 border-b border-slate-200 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="h-4 w-4 text-blue-600" />
+                          <h4 className="text-sm font-bold text-slate-900">Units in {selectedProperty.name}</h4>
+                        </div>
+                        <span className="text-xs font-semibold text-slate-500">
+                          {propUnits.length} {propUnits.length === 1 ? "Unit" : "Units"}
+                        </span>
+                      </div>
+                      <div className="space-y-2.5">
+                        {propUnits.map((u: any) => {
+                          const rawNum = String(u.unitNumber || u.unit_number || "").trim();
+                          const labelNum = rawNum.toLowerCase().startsWith("unit") ? rawNum : `Unit ${rawNum}`;
+                          const uRent = Number(u.rentAmount ?? u.rent_amount ?? 0);
+                          const isVacant = (u.status || "vacant").toLowerCase() === "vacant";
+                          return (
+                            <div key={u.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs hover:border-blue-300 transition-colors">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-sm text-slate-900">{labelNum}</span>
+                                  {u.floor && (
+                                    <span className="text-xs text-slate-500">Floor {u.floor}</span>
+                                  )}
+                                  <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide", isVacant ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-slate-100 text-slate-600")}>
+                                    {isVacant ? "Available" : "Occupied"}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-slate-600 mt-1 font-semibold">
+                                  {uRent > 0 ? `₱${uRent.toLocaleString()}/mo` : "Inquire for Rates"}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedProperty(null);
+                                  setSelectedUnit(u);
+                                }}
+                                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-50 px-3.5 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer"
+                              >
+                                View Unit Details <ArrowRight className="h-3 w-3" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Agents in this Location */}
                 {(() => {
