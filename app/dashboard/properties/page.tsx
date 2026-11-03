@@ -135,6 +135,11 @@ export default function PropertiesPage() {
           reader.readAsDataURL(propertyImage);
         });
       }
+      if (user?.role === "owner" && (formData.type === "building" || formData.type === "condominium")) {
+        toast.error("Owners can only add units to condominiums/buildings, not register the building itself.");
+        return;
+      }
+
       const created = await addProperty(submitData as any, user.id);
       console.log("Added property result:", created);
       if (created?.id && created?.name) {
@@ -458,8 +463,12 @@ export default function PropertiesPage() {
               className="w-full h-12 rounded-xl border border-border bg-surface text-foreground px-4">
               <option value="house">House / Villa</option>
               <option value="residential">Residential Property</option>
-              <option value="building">Commercial / Building</option>
-              <option value="condominium">Condominium Complex</option>
+              {user?.role !== "owner" && (
+                <>
+                  <option value="building">Commercial / Building</option>
+                  <option value="condominium">Condominium Complex</option>
+                </>
+              )}
             </select>
           </div>
           <div>

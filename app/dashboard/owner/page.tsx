@@ -135,6 +135,11 @@ const PROPERTY_TYPES = [
   { value: "condominium", label: "Condominium Complex" },
 ];
 
+const OWNER_ADD_PROPERTY_TYPES = [
+  { value: "house", label: "House / Villa" },
+  { value: "residential", label: "Residential Property" },
+];
+
 const UNIT_TYPES = [
   { value: "condo", label: "Condominium Unit" },
   { value: "dorm", label: "Dormitory Room" },
@@ -185,7 +190,7 @@ export default function OwnerDashboard() {
   const [showCreateProperty, setShowCreateProperty] = useState(false);
   const [showAddUnit, setShowAddUnit] = useState(false);
   const [newUnitForm, setNewUnitForm] = useState({ propertyId: "", unitNumber: "", address: "", floor: "", type: "condo", condition: "", status: "vacant" as Unit["status"], rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
-  const [propertyForm, setPropertyForm] = useState({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house" as "house" | "residential" | "building" | "condominium", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
+  const [propertyForm, setPropertyForm] = useState({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house" as "house" | "residential", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
   const [isUploadingPropertyImage, setIsUploadingPropertyImage] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [reviewAssignment, setReviewAssignment] = useState<TenantRecord | null>(null);
@@ -318,6 +323,11 @@ export default function OwnerDashboard() {
     e.preventDefault();
     if (!propertyForm.name || !propertyForm.address || !propertyForm.city || !propertyForm.province) {
       toast.error("Please fill in property name, address, city, and province");
+      return;
+    }
+
+    if ((propertyForm.type as string) === "building" || (propertyForm.type as string) === "condominium") {
+      toast.error("Owners can only add units to condominiums/buildings, not register the building itself.");
       return;
     }
     setIsSubmitting(true);
@@ -516,6 +526,10 @@ export default function OwnerDashboard() {
   };
 
   const handleDeleteProperty = async (property: Property) => {
+    if (property.type === "condominium" || property.type === "building") {
+      toast.error("Condominium buildings cannot be deleted by owners. You can only manage and delete your own units.");
+      return;
+    }
     const propertyUnits = units.filter((u) => u.propertyId === property.id);
     const occupied = propertyUnits.filter((u) => u.status === "occupied").length;
     if (occupied > 0) {
@@ -1070,11 +1084,15 @@ export default function OwnerDashboard() {
 
   const openAddProperty = () => {
     setPropertyMaintenanceReason(PROPERTY_MAINTENANCE_REASONS[0]);
+    setPropertyForm((prev) => ({ ...prev, type: "house" }));
     setShowCreateProperty(true);
   };
 
-  const openAddUnit = () => {
-    const defaultProp = properties[0];
+  const openAddUnit = (targetPropertyId?: string | React.MouseEvent) => {
+    const propId = typeof targetPropertyId === "string" ? targetPropertyId : undefined;
+    const defaultProp = propId
+      ? properties.find((p) => p.id === propId)
+      : properties.find((p) => p.type?.toLowerCase() !== "house") || properties[0];
 
     setNewUnitMaintenanceReason(UNIT_MAINTENANCE_REASONS[0]);
     setNewUnitForm({
@@ -1494,9 +1512,10 @@ export default function OwnerDashboard() {
                     type="button"
                     onClick={openAddProperty}
                     className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition-all hover:bg-blue-700 active:scale-95 cursor-pointer"
+                    title="Add residential house (For Condos, add units under Units tab)"
                   >
-                    <Building2 className="h-4 w-4" />
-                    Add Property
+                    <Home className="h-4 w-4" />
+                    Add House
                   </button>
                 </div>
               </div>
@@ -1677,15 +1696,22 @@ export default function OwnerDashboard() {
                                       </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end">
+                                      {(property.type === "condominium" || property.type === "building") && (
+                                        <DropdownMenuItem onSelect={() => openAddUnit(property.id)} icon={<Plus className="h-4 w-4 text-blue-600" />}>
+                                          Add Unit to this Condo
+                                        </DropdownMenuItem>
+                                      )}
                                       <DropdownMenuItem onSelect={() => handleEditProperty(property)} icon={<Eye className="h-4 w-4" />}>
                                         Edit property
                                       </DropdownMenuItem>
                                       <DropdownMenuItem onSelect={() => setHistoryTarget({ propertyId: property.id, title: `Tenancy history · ${property.name}` })} icon={<HistoryIcon className="h-4 w-4" />}>
                                         Tenancy history
                                       </DropdownMenuItem>
-                                      <DropdownMenuItem onSelect={() => handleDeleteProperty(property)} icon={<Trash2 className="h-4 w-4" />} className="text-red-600">
-                                        Delete property
-                                      </DropdownMenuItem>
+                                      {property.type !== "condominium" && property.type !== "building" && (
+                                        <DropdownMenuItem onSelect={() => handleDeleteProperty(property)} icon={<Trash2 className="h-4 w-4" />} className="text-red-600">
+                                          Delete property
+                                        </DropdownMenuItem>
+                                      )}
                                     </DropdownMenuContent>
                                   </DropdownMenu>
                                 </div>
@@ -1749,8 +1775,15 @@ export default function OwnerDashboard() {
                             </div>
                           </div>
                           <div className="mt-4 flex flex-wrap gap-2">
+                            {(property.type === "condominium" || property.type === "building") && (
+                              <Button size="sm" variant="outline" className="border-blue-200 text-blue-700 hover:bg-blue-50 font-semibold" onClick={() => openAddUnit(property.id)}>
+                                <Plus className="mr-1 h-3.5 w-3.5" />Add Unit
+                              </Button>
+                            )}
                             <Button size="sm" variant="outline" onClick={() => handleEditProperty(property)}><Eye className="mr-1 h-3.5 w-3.5" />Edit</Button>
-                            <Button size="sm" variant="destructive" onClick={() => handleDeleteProperty(property)}><Trash2 className="mr-1 h-3.5 w-3.5" />Delete</Button>
+                            {property.type !== "condominium" && property.type !== "building" && (
+                              <Button size="sm" variant="destructive" onClick={() => handleDeleteProperty(property)}><Trash2 className="mr-1 h-3.5 w-3.5" />Delete</Button>
+                            )}
                           </div>
                         </CardContent>
                       </Card>
@@ -1764,7 +1797,7 @@ export default function OwnerDashboard() {
                         <p className="mt-1 text-sm text-text-tertiary">{properties.length ? "Try another search or filter." : "Click below to register your first property."}</p>
                         {properties.length === 0 && (
                           <Button className="mt-4" onClick={openAddProperty}>
-                            <Plus className="mr-1 h-4 w-4" /> Add Property
+                            <Plus className="mr-1 h-4 w-4" /> Add House Property
                           </Button>
                         )}
                       </CardContent>
@@ -3188,10 +3221,11 @@ export default function OwnerDashboard() {
             </div>
 
             <div className="space-y-4">
-              {/* Associated Property (Optional) */}
+              {/* Associated Condominium / Building */}
               <div>
-                <label className="mb-1.5 block text-sm font-medium">Associated Property (Optional)</label>
+                <label className="mb-1.5 block text-sm font-medium">Condominium / Building Complex *</label>
                 <select
+                  required
                   value={newUnitForm.propertyId}
                   onChange={(event) => {
                     const pId = event.target.value;
@@ -3199,12 +3233,12 @@ export default function OwnerDashboard() {
                     setNewUnitForm((curr) => ({
                       ...curr,
                       propertyId: pId,
-                      address: curr.address ? curr.address : (p?.location || ""),
+                      address: p?.location || curr.address || "",
                     }));
                   }}
                   className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm text-foreground focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">Standalone Unit (No Property)</option>
+                  <option value="">Select Condominium / Building...</option>
                   {properties
                     .filter((property) => property.type?.toLowerCase() !== "house")
                     .map((property) => (
@@ -3213,6 +3247,9 @@ export default function OwnerDashboard() {
                     </option>
                   ))}
                 </select>
+                <p className="mt-1 text-[11px] text-text-secondary">
+                  Owners add individual units to condominium developments and buildings.
+                </p>
               </div>
 
               {/* Unit Address */}
@@ -3420,7 +3457,7 @@ export default function OwnerDashboard() {
         </div>
       )}
 
-      {/* Create Property / Building Modal */}
+      {/* Create Property / House Modal */}
       {showCreateProperty && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowCreateProperty(false)} />
@@ -3429,16 +3466,16 @@ export default function OwnerDashboard() {
             <div className="sticky top-0 z-10 border-b border-border bg-white px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shrink-0">
-                  <Building2 className="h-5 w-5" />
+                  <Home className="h-5 w-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-semibold text-foreground">Add Property / Building</h3>
+                    <h3 className="text-lg font-semibold text-foreground">Add House / Residential Property</h3>
                     <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px]">
-                      Building &amp; Estate
+                      House &amp; Residential
                     </Badge>
                   </div>
-                  <p className="text-xs text-text-secondary">Register an entire building, condominium development, or property in a city.</p>
+                  <p className="text-xs text-text-secondary">Register a standalone residential house. For Condominiums &amp; Buildings, add units under the Units tab.</p>
                 </div>
               </div>
               <button onClick={() => setShowCreateProperty(false)} className="h-8 w-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-surface-secondary transition-colors">
@@ -3447,11 +3484,11 @@ export default function OwnerDashboard() {
             </div>
 
             <form onSubmit={handleCreateProperty} className="p-6 space-y-5">
-              {/* Building Name & Location */}
+              {/* House Name & Location */}
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1.5">Property / Building Name *</label>
-                  <Input value={propertyForm.name} onChange={(e) => setPropertyForm({ ...propertyForm, name: e.target.value })} placeholder="e.g. J Tower Residence, Avida Towers Riala" required />
+                  <label className="block text-sm font-medium mb-1.5">House / Property Name *</label>
+                  <Input value={propertyForm.name} onChange={(e) => setPropertyForm({ ...propertyForm, name: e.target.value })} placeholder="e.g. Sunnyvale House, Casa Bella" required />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1.5">Street Address *</label>
@@ -3476,7 +3513,7 @@ export default function OwnerDashboard() {
                   <div>
                     <label className="block text-sm font-medium mb-1.5">Property Type</label>
                     <select value={propertyForm.type} onChange={(e) => setPropertyForm({ ...propertyForm, type: e.target.value as any })} className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm">
-                      {PROPERTY_TYPES.map((pt) => (
+                      {OWNER_ADD_PROPERTY_TYPES.map((pt) => (
                         <option key={pt.value} value={pt.value}>{pt.label}</option>
                       ))}
                     </select>
@@ -3527,19 +3564,19 @@ export default function OwnerDashboard() {
               </div>
 
 
-              {/* Building Amenities */}
+              {/* House Amenities */}
               <div>
-                <label className="block text-sm font-medium mb-1.5">Building Amenities &amp; Facilities</label>
+                <label className="block text-sm font-medium mb-1.5">House Amenities &amp; Facilities</label>
                 <FeaturePicker value={propertyForm.features} onChange={(features) => setPropertyForm({ ...propertyForm, features })} />
               </div>
 
-              {/* Building Exterior Photos */}
+              {/* House Exterior Photos */}
               <div>
-                <label className="block text-sm font-medium mb-1.5">Building &amp; Facade Photos</label>
+                <label className="block text-sm font-medium mb-1.5">House Photos</label>
                 <div className="flex flex-col gap-3">
                   <label className="inline-flex w-fit items-center gap-2 px-4 py-2 rounded-xl border border-blue-200 bg-blue-50/50 text-blue-700 cursor-pointer hover:bg-blue-50 transition-colors">
                     <Camera className="h-4 w-4" />
-                    <span className="text-sm font-medium">{propertyForm.imageUrls.length ? "Add More Building Photos" : "Upload Building Photos"}</span>
+                    <span className="text-sm font-medium">{propertyForm.imageUrls.length ? "Add More Photos" : "Upload Photos"}</span>
                     <input type="file" accept="image/*" multiple className="hidden" onChange={handlePropertyImageUpload} disabled={isUploadingPropertyImage} />
                   </label>
                   {isUploadingPropertyImage && <span className="text-xs text-text-secondary">Uploading...</span>}
@@ -3571,7 +3608,7 @@ export default function OwnerDashboard() {
                   Cancel
                 </Button>
                 <Button type="submit" disabled={isSubmitting} className="bg-blue-600 text-white hover:bg-blue-700 font-medium">
-                  {isSubmitting ? "Registering..." : "Add Property"}
+                  {isSubmitting ? "Registering..." : "Add House Property"}
                 </Button>
               </div>
             </form>

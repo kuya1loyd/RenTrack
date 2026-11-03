@@ -58,6 +58,13 @@ export async function POST(request: NextRequest) {
     if (!sanitized.name || !sanitized.location) {
       return NextResponse.json({ success: false, error: "Name and location are required" }, { status: 400 });
     }
+
+    if (auth.user?.role === "owner" && (sanitized.type === "building" || sanitized.type === "condominium")) {
+      return NextResponse.json({
+        success: false,
+        error: "Owners can only add units to condominiums/buildings, not register the building itself."
+      }, { status: 403 });
+    }
     if (sanitized.latitude !== undefined && (sanitized.latitude < -90 || sanitized.latitude > 90)) {
       delete sanitized.latitude;
     }

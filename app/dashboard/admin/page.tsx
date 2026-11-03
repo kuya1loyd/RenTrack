@@ -2096,15 +2096,6 @@ export default function AdminDashboard() {
                   <Download className="h-4 w-4" />
                   Export
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => router.push("/dashboard/properties")}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition-all hover:bg-blue-700 active:scale-95 cursor-pointer"
-                >
-                  <Building2 className="h-4 w-4" />
-                  Add Property
-                </button>
               </div>
             </div>
 
@@ -2170,420 +2161,260 @@ export default function AdminDashboard() {
                     Showing {filteredProperties.length} of {properties.length} properties ({houseProperties.length} houses, {condoProperties.length} condominiums)
                   </CardDescription>
                 </div>
+
+                {/* Quick filter pills */}
+                <div className="flex items-center gap-1.5 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setPropertyTypeFilter("all")}
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer",
+                      propertyTypeFilter === "all"
+                        ? "bg-white text-gray-900 shadow-2xs dark:bg-gray-700 dark:text-white"
+                        : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                    )}
+                  >
+                    All ({properties.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPropertyTypeFilter("house")}
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-1.5",
+                      propertyTypeFilter === "house"
+                        ? "bg-white text-blue-600 shadow-2xs dark:bg-gray-700 dark:text-blue-400"
+                        : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                    )}
+                  >
+                    <Home className="h-3 w-3" />
+                    Houses ({houseProperties.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPropertyTypeFilter("condominium")}
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-1.5",
+                      propertyTypeFilter === "condominium"
+                        ? "bg-white text-purple-600 shadow-2xs dark:bg-gray-700 dark:text-purple-400"
+                        : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                    )}
+                  >
+                    <Building2 className="h-3 w-3" />
+                    Condos &amp; Buildings ({condoProperties.length})
+                  </button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
               {filteredProperties.length === 0 ? (
                 <div className="py-12 text-center text-sm text-gray-500">No properties match your search or filter.</div>
               ) : (
-                <div className="space-y-6">
-                  {/* HOUSES SECTION */}
-                  <div className="overflow-hidden">
-                    <div className="flex items-center justify-between px-6 py-3 bg-blue-50/70 dark:bg-blue-950/20 border-b border-blue-100 dark:border-blue-900/40">
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
-                          <Home className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <h3 className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                            Houses
-                            <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 dark:bg-blue-900/50 dark:text-blue-300 px-2 py-0.5 rounded-full">
-                              {houseProperties.length} {houseProperties.length === 1 ? "Property" : "Properties"}
-                            </span>
-                          </h3>
-                          <p className="text-[11px] text-gray-500 dark:text-gray-400">Single-dwelling houses rented as entire residential homes (no unit subdivisions)</p>
-                        </div>
-                      </div>
-                    </div>
+                <div className="table-scroll-box w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[680px]">
+                  <table className="w-full min-w-[1250px] border-collapse text-left caption-bottom text-xs">
+                    <TableHeader className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-800/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-800 shadow-2xs">
+                      <TableRow className="bg-transparent text-[10px] uppercase tracking-wider text-gray-500 font-semibold whitespace-nowrap">
+                        <TableHead className="pl-4 pr-2 py-2.5 h-10 font-semibold">Photo</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Property Name</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Location / Address</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Type</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Units / Occupancy</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Monthly Revenue</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Availability</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Condition</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Owner</TableHead>
+                        <TableHead className="px-2 py-2.5 h-10 font-semibold">Status</TableHead>
+                        <TableHead className="pr-4 pl-2 py-2.5 h-10 text-right font-semibold">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredProperties.map((p, i) => {
+                        const isHouse = p.type?.toLowerCase() === "house" || p.type?.toLowerCase() === "residential";
+                        const propUnits = units.filter((u) => u.propertyId === p.id);
+                        const occupiedCount = propUnits.length > 0 ? propUnits.filter((u) => u.status === "occupied").length : (p.occupiedUnits || 0);
+                        const totalUnits = propUnits.length > 0 ? propUnits.length : (p.units || (isHouse ? 1 : 0));
+                        const occPercent = totalUnits > 0 ? Math.round((occupiedCount / totalUnits) * 100) : 0;
+                        const propRevenue = propUnits.reduce((acc, u) => acc + (u.status === "occupied" ? (u.rentAmount || 0) : 0), 0) || p.monthlyRevenue || p.rentAmount || 0;
+                        const defaultOwner = users.find((usr) => usr.role === "owner") || users.find((usr) => usr.email.toLowerCase() === "renttrackowner@gmail.com");
+                        const owner = (p.createdBy && !["usr_builtin_admin", "admin"].includes(p.createdBy) && !p.createdBy.includes("admin")
+                          ? users.find((u) => u.role === "owner" && (u.id === p.createdBy || u.email === p.createdBy))
+                          : null) || defaultOwner || null;
+                        const propImgs = p.imageUrls?.length ? p.imageUrls : p.imageUrl ? [p.imageUrl] : [];
 
-                      {houseProperties.length === 0 ? (
-                        <div className="py-8 text-center text-xs text-gray-500">No houses match your search or filter.</div>
-                      ) : (
-                        <div className="table-scroll-box w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px]">
-                          <table className="w-full min-w-[1200px] border-collapse text-left caption-bottom text-xs">
-                            <TableHeader className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-800/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-800 shadow-2xs">
-                              <TableRow className="bg-transparent text-[10px] uppercase tracking-wider text-gray-500 font-semibold whitespace-nowrap">
-                                <TableHead className="pl-4 pr-2 py-2.5 h-10 font-semibold">Photo</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">House Name</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Location / Address</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Type</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Monthly Rent</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Availability</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Condition</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Owner</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Status</TableHead>
-                                <TableHead className="pr-4 pl-2 py-2.5 h-10 text-right font-semibold">Actions</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {houseProperties.map((p, i) => {
-                                const propUnits = units.filter((u) => u.propertyId === p.id);
-                                const occupiedCount = propUnits.length > 0 ? propUnits.filter((u) => u.status === "occupied").length : (p.occupiedUnits || 0);
-                                const propRevenue = propUnits.reduce((acc, u) => acc + (u.status === "occupied" ? (u.rentAmount || 0) : 0), 0) || p.monthlyRevenue || p.rentAmount || 0;
-                                const defaultOwner = users.find((usr) => usr.role === "owner") || users.find((usr) => usr.email.toLowerCase() === "renttrackowner@gmail.com");
-                                const owner = (p.createdBy && !["usr_builtin_admin", "admin"].includes(p.createdBy) && !p.createdBy.includes("admin")
-                                  ? users.find((u) => u.role === "owner" && (u.id === p.createdBy || u.email === p.createdBy))
-                                  : null) || defaultOwner || null;
-                                const agent = users.find((u) => u.id === p.agentId);
-                                const propImgs = p.imageUrls?.length ? p.imageUrls : p.imageUrl ? [p.imageUrl] : [];
+                        return (
+                          <motion.tr
+                            key={p.id}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: i * 0.02, duration: 0.2 }}
+                            className="border-b border-gray-100 hover:bg-surface-secondary transition-colors"
+                          >
+                            {/* Photo */}
+                            <TableCell className="pl-4 pr-2 py-2">
+                              <UnitImageCarousel
+                                images={propImgs}
+                                alt={p.name}
+                                title={p.name}
+                                subtitle={`${p.location} • ${isHouse ? "House" : "Condominium"}`}
+                                className="h-12 w-16 shrink-0 rounded-lg border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
+                                imageClassName="group-hover:scale-105 transition-transform duration-300"
+                              />
+                            </TableCell>
 
-                                return (
-                                  <motion.tr
-                                    key={p.id}
-                                    initial={{ opacity: 0, x: -10 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    transition={{ delay: i * 0.02, duration: 0.2 }}
-                                    className="border-b border-gray-100 hover:bg-surface-secondary transition-colors"
+                            {/* Property Name */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <div className={cn(
+                                  "flex h-7 w-7 items-center justify-center rounded-lg font-bold border",
+                                  isHouse
+                                    ? "bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-950/40 dark:border-blue-800"
+                                    : "bg-purple-50 text-purple-600 border-purple-200 dark:bg-purple-950/40 dark:border-purple-800"
+                                )}>
+                                  {isHouse ? <Home className="h-3.5 w-3.5" /> : <Building2 className="h-3.5 w-3.5" />}
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="font-bold text-gray-900 dark:text-white text-xs">{p.name}</span>
+                                  <span className="text-[10px] text-gray-400 font-mono">#{formatDisplayId(p.id)}</span>
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            {/* Location */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 max-w-[200px] truncate" title={p.location}>
+                                <MapPin className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                                <span className="truncate">{p.location || "—"}</span>
+                              </div>
+                            </TableCell>
+
+                            {/* Type */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <span className={cn(
+                                "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize border",
+                                isHouse
+                                  ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800"
+                                  : "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800"
+                              )}>
+                                {isHouse ? "House" : "Condominium"}
+                              </span>
+                            </TableCell>
+
+                            {/* Units / Occupancy */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              {isHouse ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-50 text-slate-600 border border-slate-200 dark:bg-slate-800/40 dark:text-slate-300 dark:border-slate-700">
+                                  Single Dwelling
+                                </span>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-xs text-gray-900 dark:text-white tabular-nums">
+                                    {totalUnits} {totalUnits === 1 ? "Unit" : "Units"}
+                                  </span>
+                                  <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                                    ({occupiedCount}/{totalUnits} occ • {occPercent}%)
+                                  </span>
+                                </div>
+                              )}
+                            </TableCell>
+
+                            {/* Monthly Revenue */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <span className="font-bold text-xs text-gray-900 dark:text-white tabular-nums">
+                                {formatCurrency(propRevenue)}
+                              </span>
+                            </TableCell>
+
+                            {/* Availability */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <span className={cn(
+                                "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold",
+                                (p.availabilityStatus === "Available" || (!p.availabilityStatus && occupiedCount === 0)) && "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
+                                (p.availabilityStatus === "Occupied" || (!p.availabilityStatus && occupiedCount > 0)) && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300",
+                                p.availabilityStatus === "Reserved" && "bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300",
+                                p.availabilityStatus === "Under Maintenance" && "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300",
+                              )}>
+                                {p.availabilityStatus || (occupiedCount > 0 ? "Occupied" : "Available")}
+                              </span>
+                            </TableCell>
+
+                            {/* Condition */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap text-xs text-gray-600 dark:text-gray-300">
+                              {p.condition || "Good"}
+                            </TableCell>
+
+                            {/* Owner */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <Avatar src={owner?.avatarUrl} fallback={getInitials(owner?.name || "Owner")} size="xs" className="h-6 w-6 shrink-0" />
+                                <div className="flex flex-col">
+                                  <span className="font-medium text-gray-900 dark:text-white text-xs">{owner?.name || "Property Owner"}</span>
+                                  <span className="text-[10px] text-gray-400">{owner?.email || "—"}</span>
+                                </div>
+                              </div>
+                            </TableCell>
+
+                            {/* Status */}
+                            <TableCell className="px-2 py-2.5 whitespace-nowrap">
+                              <span className={cn(
+                                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize",
+                                p.status === "active" && "bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800",
+                                p.status === "inactive" && "bg-gray-50 text-gray-600 border border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700",
+                              )}>
+                                <span className={cn("h-1.5 w-1.5 rounded-full", p.status === "active" ? "bg-green-500" : "bg-gray-400")} />
+                                {p.status}
+                              </span>
+                            </TableCell>
+
+                            {/* Actions */}
+                            <TableCell className="pr-4 pl-2 py-2.5 text-right whitespace-nowrap">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600 focus:outline-none dark:border-gray-700 dark:text-gray-400 cursor-pointer"
+                                    aria-label="Property actions"
                                   >
-                                    {/* Photo */}
-                                    <TableCell className="pl-4 pr-2 py-2">
-                                      <UnitImageCarousel
-                                        images={propImgs}
-                                        alt={p.name}
-                                        title={p.name}
-                                        subtitle={`${p.location} • House`}
-                                        className="h-12 w-16 shrink-0 rounded-lg border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
-                                        imageClassName="group-hover:scale-105 transition-transform duration-300"
-                                      />
-                                    </TableCell>
-
-                                    {/* House Name */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <div className="flex items-center gap-2">
-                                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600 font-bold border border-blue-200 dark:bg-blue-950/40 dark:border-blue-800">
-                                          <Home className="h-3.5 w-3.5" />
-                                        </div>
-                                        <div className="flex flex-col">
-                                          <span className="font-bold text-gray-900 dark:text-white text-xs">{p.name}</span>
-                                          <span className="text-[10px] text-gray-400 font-mono">#{formatDisplayId(p.id)}</span>
-                                        </div>
-                                      </div>
-                                    </TableCell>
-
-                                    {/* Location */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 max-w-[200px] truncate" title={p.location}>
-                                        <MapPin className="h-3.5 w-3.5 text-rose-500 shrink-0" />
-                                        <span className="truncate">{p.location || "—"}</span>
-                                      </div>
-                                    </TableCell>
-
-                                    {/* Type */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800">
-                                        House
-                                      </span>
-                                    </TableCell>
-
-                                    {/* Monthly Rent */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <span className="font-bold text-xs text-gray-900 dark:text-white tabular-nums">
-                                        {formatCurrency(propRevenue)}
-                                      </span>
-                                    </TableCell>
-
-                                    {/* Availability */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <span className={cn(
-                                        "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold",
-                                        (p.availabilityStatus === "Available" || (!p.availabilityStatus && occupiedCount === 0)) && "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
-                                        (p.availabilityStatus === "Occupied" || (!p.availabilityStatus && occupiedCount > 0)) && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300",
-                                        p.availabilityStatus === "Reserved" && "bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300",
-                                        p.availabilityStatus === "Under Maintenance" && "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300",
-                                      )}>
-                                        {p.availabilityStatus || (occupiedCount > 0 ? "Occupied" : "Available")}
-                                      </span>
-                                    </TableCell>
-
-                                    {/* Condition */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap text-xs text-gray-600 dark:text-gray-300">
-                                      {p.condition || "Good"}
-                                    </TableCell>
-
-                                    {/* Owner */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <div className="flex items-center gap-2">
-                                        <Avatar src={owner?.avatarUrl} fallback={getInitials(owner?.name || "Owner")} size="xs" className="h-6 w-6 shrink-0" />
-                                        <div className="flex flex-col">
-                                          <span className="font-medium text-gray-900 dark:text-white text-xs">{owner?.name || "Property Owner"}</span>
-                                          <span className="text-[10px] text-gray-400">{owner?.email || "—"}</span>
-                                        </div>
-                                      </div>
-                                    </TableCell>
-
-
-                                    {/* Status */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <span className={cn(
-                                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize",
-                                        p.status === "active" && "bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800",
-                                        p.status === "inactive" && "bg-gray-50 text-gray-600 border border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700",
-                                      )}>
-                                        <span className={cn("h-1.5 w-1.5 rounded-full", p.status === "active" ? "bg-green-500" : "bg-gray-400")} />
-                                        {p.status}
-                                      </span>
-                                    </TableCell>
-
-                                    {/* Actions */}
-                                    <TableCell className="pr-4 pl-2 py-2.5 text-right whitespace-nowrap">
-                                      <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                          <motion.button
-                                            whileHover={{ scale: 1.1 }}
-                                            whileTap={{ scale: 0.95 }}
-                                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600 focus:outline-none dark:border-gray-700 dark:text-gray-400"
-                                            aria-label="House actions"
-                                          >
-                                            <MoreHorizontal className="h-4 w-4" />
-                                          </motion.button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-xl">
-                                          <DropdownMenuItem
-                                            onSelect={() => setSelectedPropertyDetails(p)}
-                                            className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
-                                          >
-                                            <Eye className="h-3.5 w-3.5 text-blue-500" />
-                                            <span>View House Details</span>
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            onSelect={() => {
-                                              navigator.clipboard.writeText(p.id);
-                                              toast.success("House ID copied to clipboard");
-                                            }}
-                                            className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
-                                          >
-                                            <Copy className="h-3.5 w-3.5 text-gray-500" />
-                                            <span>Copy House ID</span>
-                                          </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                      </DropdownMenu>
-                                    </TableCell>
-                                  </motion.tr>
-                                );
-                              })}
-                            </TableBody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-
-                  {/* CONDOMINIUMS & BUILDINGS SECTION */}
-                  <div className="overflow-hidden border-t border-gray-200 dark:border-gray-800">
-                    <div className="flex items-center justify-between px-6 py-3 bg-purple-50/70 dark:bg-purple-950/20 border-b border-purple-100 dark:border-purple-900/40">
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
-                          <Building2 className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <h3 className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                            Condominiums &amp; Buildings
-                            <span className="text-[10px] font-semibold text-purple-700 bg-purple-100 dark:bg-purple-900/50 dark:text-purple-300 px-2 py-0.5 rounded-full">
-                              {condoProperties.length} {condoProperties.length === 1 ? "Property" : "Properties"}
-                            </span>
-                          </h3>
-                          <p className="text-[11px] text-gray-500 dark:text-gray-400">Multi-unit residential complexes &amp; commercial buildings with unit and occupancy management</p>
-                        </div>
-                      </div>
-                    </div>
-
-                      {condoProperties.length === 0 ? (
-                        <div className="py-8 text-center text-xs text-gray-500">No condominiums match your search or filter.</div>
-                      ) : (
-                        <div className="table-scroll-box w-full max-w-full min-w-0 overflow-x-auto overflow-y-auto max-h-[500px]">
-                          <table className="w-full min-w-[1400px] border-collapse text-left caption-bottom text-xs">
-                            <TableHeader className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-800/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-800 shadow-2xs">
-                              <TableRow className="bg-transparent text-[10px] uppercase tracking-wider text-gray-500 font-semibold whitespace-nowrap">
-                                <TableHead className="pl-4 pr-2 py-2.5 h-10 font-semibold">Photo</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Condominium Name</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Location / Address</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Type</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Total Units</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Occupancy</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Monthly Revenue</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Availability</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Condition</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Owner</TableHead>
-                                <TableHead className="px-2 py-2.5 h-10 font-semibold">Status</TableHead>
-                                <TableHead className="pr-4 pl-2 py-2.5 h-10 text-right font-semibold">Actions</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {condoProperties.map((p, i) => {
-                                const propUnits = units.filter((u) => u.propertyId === p.id);
-                                const occupiedCount = propUnits.length > 0 ? propUnits.filter((u) => u.status === "occupied").length : (p.occupiedUnits || 0);
-                                const totalUnits = propUnits.length > 0 ? propUnits.length : (p.units || 0);
-                                const occPercent = totalUnits > 0 ? Math.round((occupiedCount / totalUnits) * 100) : 0;
-                                const propRevenue = propUnits.reduce((acc, u) => acc + (u.status === "occupied" ? (u.rentAmount || 0) : 0), 0) || p.monthlyRevenue || 0;
-                                const defaultOwner = users.find((usr) => usr.role === "owner") || users.find((usr) => usr.email.toLowerCase() === "renttrackowner@gmail.com");
-                                const owner = (p.createdBy && !["usr_builtin_admin", "admin"].includes(p.createdBy) && !p.createdBy.includes("admin")
-                                  ? users.find((u) => u.role === "owner" && (u.id === p.createdBy || u.email === p.createdBy))
-                                  : null) || defaultOwner || null;
-                                const agent = users.find((u) => u.id === p.agentId);
-                                const propImgs = p.imageUrls?.length ? p.imageUrls : p.imageUrl ? [p.imageUrl] : [];
-
-                                return (
-                                  <motion.tr
-                                    key={p.id}
-                                    initial={{ opacity: 0, x: -10 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    transition={{ delay: i * 0.02, duration: 0.2 }}
-                                    className="border-b border-gray-100 hover:bg-surface-secondary transition-colors"
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </motion.button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-xl">
+                                  <DropdownMenuItem
+                                    onSelect={() => setSelectedPropertyDetails(p)}
+                                    className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
                                   >
-                                    {/* Photo */}
-                                    <TableCell className="pl-4 pr-2 py-2">
-                                      <UnitImageCarousel
-                                        images={propImgs}
-                                        alt={p.name}
-                                        title={p.name}
-                                        subtitle={`${p.location} • ${p.type} • ${totalUnits} units`}
-                                        className="h-12 w-16 shrink-0 rounded-lg border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
-                                        imageClassName="group-hover:scale-105 transition-transform duration-300"
-                                      />
-                                    </TableCell>
-
-                                    {/* Property Name */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <div className="flex items-center gap-2">
-                                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-50 text-purple-600 font-bold border border-purple-200 dark:bg-purple-950/40 dark:border-purple-800">
-                                          <Building2 className="h-3.5 w-3.5" />
-                                        </div>
-                                        <div className="flex flex-col">
-                                          <span className="font-bold text-gray-900 dark:text-white text-xs">{p.name}</span>
-                                          <span className="text-[10px] text-gray-400 font-mono">#{formatDisplayId(p.id)}</span>
-                                        </div>
-                                      </div>
-                                    </TableCell>
-
-                                    {/* Location */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 max-w-[200px] truncate" title={p.location}>
-                                        <MapPin className="h-3.5 w-3.5 text-rose-500 shrink-0" />
-                                        <span className="truncate">{p.location || "—"}</span>
-                                      </div>
-                                    </TableCell>
-
-                                    {/* Type */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800">
-                                        {p.type || "Condominium"}
-                                      </span>
-                                    </TableCell>
-
-                                    {/* Total Units */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap font-semibold text-xs text-gray-900 dark:text-white">
-                                      {totalUnits} {totalUnits === 1 ? "Unit" : "Units"}
-                                    </TableCell>
-
-                                    {/* Occupancy */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <div className="flex flex-col gap-1 min-w-[110px]">
-                                        <div className="flex items-center justify-between text-[11px]">
-                                          <span className="font-semibold text-gray-800 dark:text-gray-200">{occupiedCount}/{totalUnits}</span>
-                                          <span className="text-[10px] text-gray-500">{occPercent}%</span>
-                                        </div>
-                                        <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-                                          <div
-                                            className={cn(
-                                              "h-full rounded-full transition-all",
-                                              occPercent === 100 ? "bg-emerald-500" : occPercent > 50 ? "bg-blue-500" : "bg-amber-500"
-                                            )}
-                                            style={{ width: `${Math.min(occPercent, 100)}%` }}
-                                          />
-                                        </div>
-                                      </div>
-                                    </TableCell>
-
-                                    {/* Monthly Revenue */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <span className="font-bold text-xs text-gray-900 dark:text-white tabular-nums">
-                                        {formatCurrency(propRevenue)}
-                                      </span>
-                                    </TableCell>
-
-                                    {/* Availability */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <span className={cn(
-                                        "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold",
-                                        (p.availabilityStatus === "Available" || (!p.availabilityStatus && occPercent < 100)) && "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
-                                        (p.availabilityStatus === "Occupied" || (!p.availabilityStatus && occPercent === 100)) && "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300",
-                                        p.availabilityStatus === "Reserved" && "bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300",
-                                        p.availabilityStatus === "Under Maintenance" && "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300",
-                                      )}>
-                                        {p.availabilityStatus || (occPercent === 100 ? "Occupied" : "Available")}
-                                      </span>
-                                    </TableCell>
-
-                                    {/* Condition */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap text-xs text-gray-600 dark:text-gray-300">
-                                      {p.condition || "Good"}
-                                    </TableCell>
-
-                                    {/* Owner */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <div className="flex items-center gap-2">
-                                        <Avatar src={owner?.avatarUrl} fallback={getInitials(owner?.name || "Owner")} size="xs" className="h-6 w-6 shrink-0" />
-                                        <div className="flex flex-col">
-                                          <span className="font-medium text-gray-900 dark:text-white text-xs">{owner?.name || "Property Owner"}</span>
-                                          <span className="text-[10px] text-gray-400">{owner?.email || "—"}</span>
-                                        </div>
-                                      </div>
-                                    </TableCell>
-
-
-                                    {/* Status */}
-                                    <TableCell className="px-2 py-2.5 whitespace-nowrap">
-                                      <span className={cn(
-                                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize",
-                                        p.status === "active" && "bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800",
-                                        p.status === "inactive" && "bg-gray-50 text-gray-600 border border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700",
-                                      )}>
-                                        <span className={cn("h-1.5 w-1.5 rounded-full", p.status === "active" ? "bg-green-500" : "bg-gray-400")} />
-                                        {p.status}
-                                      </span>
-                                    </TableCell>
-
-                                    {/* Actions */}
-                                    <TableCell className="pr-4 pl-2 py-2.5 text-right whitespace-nowrap">
-                                      <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                          <motion.button
-                                            whileHover={{ scale: 1.1 }}
-                                            whileTap={{ scale: 0.95 }}
-                                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600 focus:outline-none dark:border-gray-700 dark:text-gray-400"
-                                            aria-label="Condominium actions"
-                                          >
-                                            <MoreHorizontal className="h-4 w-4" />
-                                          </motion.button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-xl">
-                                          <DropdownMenuItem
-                                            onSelect={() => setSelectedPropertyDetails(p)}
-                                            className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
-                                          >
-                                            <Eye className="h-3.5 w-3.5 text-blue-500" />
-                                            <span>View Condominium Details</span>
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            onSelect={() => {
-                                              navigator.clipboard.writeText(p.id);
-                                              toast.success("Condominium ID copied to clipboard");
-                                            }}
-                                            className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
-                                          >
-                                            <Copy className="h-3.5 w-3.5 text-gray-500" />
-                                            <span>Copy Property ID</span>
-                                          </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                      </DropdownMenu>
-                                    </TableCell>
-                                  </motion.tr>
-                                );
-                              })}
-                            </TableBody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
+                                    <Eye className="h-3.5 w-3.5 text-blue-500" />
+                                    <span>View Property Details</span>
+                                  </DropdownMenuItem>
+                                  {!isHouse && (
+                                    <DropdownMenuItem
+                                      onSelect={() => {
+                                        setUnitPropertyFilter(p.id);
+                                        router.push("/dashboard/admin?tab=units");
+                                      }}
+                                      className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
+                                    >
+                                      <DoorOpen className="h-3.5 w-3.5 text-indigo-500" />
+                                      <span>View Units ({propUnits.length})</span>
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem
+                                    onSelect={() => {
+                                      navigator.clipboard.writeText(p.id);
+                                      toast.success("Property ID copied to clipboard");
+                                    }}
+                                    className="flex items-center gap-2 px-2.5 py-2 text-xs font-medium cursor-pointer"
+                                  >
+                                    <Copy className="h-3.5 w-3.5 text-gray-500" />
+                                    <span>Copy Property ID</span>
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </motion.tr>
+                        );
+                      })}
+                    </TableBody>
+                  </table>
                 </div>
               )}
             </CardContent>
