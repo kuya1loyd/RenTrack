@@ -616,6 +616,14 @@ export default function OwnerDashboard() {
   };
 
   const handleAssignAgent = async (propertyId: string, agentId: string) => {
+    if (agentId) {
+      const targetAgent = agents.find((a) => a.id === agentId);
+      const isApproved = targetAgent?.idVerificationStatus === "approved" || (targetAgent as any)?.idVerified === true;
+      if (targetAgent && !isApproved) {
+        toast.error(`Cannot assign ${targetAgent.name}: Agent ID verification is ${targetAgent.idVerificationStatus || "pending"}. You must approve their ID before assigning properties.`);
+        return;
+      }
+    }
     try {
       const updated = await updateProperty(propertyId, { agentId: agentId || "" });
       if (updated) {
@@ -2012,18 +2020,24 @@ export default function OwnerDashboard() {
                                   >
                                     <HistoryIcon className="mr-1 h-3.5 w-3.5" />History
                                   </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setUnitSearch(property.name);
-                                      setActiveTab("units");
-                                      window.location.hash = "units";
-                                    }}
-                                    className="h-8 text-xs font-semibold text-blue-700 hover:bg-blue-50 border-blue-200"
-                                  >
-                                    View Units
-                                  </Button>
+                                  {property.type === "condominium" ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setUnitSearch(property.name);
+                                        setActiveTab("units");
+                                        window.location.hash = "units";
+                                      }}
+                                      className="h-8 text-xs font-semibold text-blue-700 hover:bg-blue-50 border-blue-200"
+                                    >
+                                      View Units
+                                    </Button>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-50 text-slate-600 border border-slate-200">
+                                      Single Dwelling
+                                    </span>
+                                  )}
                                 </div>
                               </td>
                             </tr>

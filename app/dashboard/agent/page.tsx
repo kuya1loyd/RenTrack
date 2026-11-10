@@ -36,7 +36,6 @@ import ContractsPanel from "@/components/contracts-panel";
 import UnitImageCarousel from "@/components/unit-image-carousel";
 import { ManagementBanner, UnitMetrics, PropertyMetrics, UnitStatus, ManagementPagination } from "@/components/management-panel";
 import management from "@/components/management-panel.module.css";
-import { AgentVerificationGate } from "@/components/agent-verification-gate";
 import { AnimatedFilterDropdown } from "@/components/ui/animated-filter-dropdown";
 
 type Step = "overview" | "units" | "properties" | "assign" | "tenants" | "payments" | "history" | "messages" | "inquiries" | "contracts" | "profile" | "map" | "certificates";
@@ -114,6 +113,7 @@ export default function AgentDashboard() {
   const threadEndRef = useRef<HTMLDivElement>(null);
   const lastLocalReplyAt = useRef<string | null>(null);
 
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   const [selectedTenant, setSelectedTenant] = useState<TenantRecord | null>(null);
   const [tenantSearch, setTenantSearch] = useState("");
@@ -156,7 +156,21 @@ export default function AgentDashboard() {
   const [loadError, setLoadError] = useState(false);
 
   const loadData = useCallback(async () => {
-    if (!user || !isAgentVerified) return [];
+    if (!user) return [];
+
+    // An agent won't be assigned properties, units, or tenants once they are not verified
+    if (!isAgentVerified) {
+      setProperties([]);
+      setUnits([]);
+      setTenants([]);
+      setPayments([]);
+      setConversations([]);
+      setInquiries([]);
+      setInitialLoad(false);
+      setIsRefreshing(false);
+      return [];
+    }
+
     setIsRefreshing(true);
     setLoadError(false);
     try {
@@ -168,10 +182,7 @@ export default function AgentDashboard() {
         getConversations(),
         getInquiries(),
       ]);
-      const explicitlyAssigned = props.filter((property) => property.agentId === user.id);
-      const assignedProperties = explicitlyAssigned.length > 0
-        ? props.filter((property) => property.agentId === user.id || !property.agentId)
-        : props;
+      const assignedProperties = props.filter((property) => property.agentId === user.id);
       const assignedPropertyIds = new Set(assignedProperties.map((property) => property.id));
       const assignedUnits = unitsData.filter((unit) => Boolean(unit.propertyId && assignedPropertyIds.has(unit.propertyId)));
       setProperties(assignedProperties);
@@ -427,10 +438,7 @@ export default function AgentDashboard() {
     }
   }, [isLoading, isAuthenticated]);
 
-  if (!isLoading && isAuthenticated && user?.role === "agent" && !isAgentVerified) {
-    return <AgentVerificationGate user={user} refreshUser={refreshUser} />;
-  }
-
+  
   const vacantUnits = units.filter((u) => u.status === "vacant");
   const pendingTenants = tenants.filter((t) => t.assignmentStatus === "pending");
   const activeTenants = tenants.filter((t) => t.status === "active");
@@ -760,10 +768,7 @@ export default function AgentDashboard() {
     setPaymentPage(1);
   };
 
-  if (user?.role === "agent" && !isAgentVerified) {
-    return <AgentVerificationGate user={user} refreshUser={refreshUser} />;
-  }
-
+  
   return (
     <div className="w-full max-w-full min-w-0 overflow-x-hidden">
             {activeTab === "contracts" && (
@@ -913,7 +918,13 @@ export default function AgentDashboard() {
 
                       <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {[
-                          { label: "Pending assignments", value: pendingTenants.length, onClick: () => { setSelectedTenant(null); setSelectedUnit(null); setShowAssignModal(true); }, icon: Users, tone: "bg-blue-50 text-blue-600" },
+                          { label: "Pending assignments", value: pendingTenants.length, onClick: () => {
+    if (!isAgentVerified) {
+      toast.error("ID Verification Required: You must be verified by the owner before you can assign tenants.");
+      return;
+    }
+    setSelectedTenant(null); setSelectedUnit(null); setSelectedProperty(null); setShowAssignModal(true);
+  }, icon: Users, tone: "bg-blue-50 text-blue-600" },
                           { label: "Payment reviews", value: pendingPayments.length, onClick: () => { setActiveTab("payments"); window.location.hash = "payments"; }, icon: CreditCard, tone: "bg-emerald-50 text-emerald-600" },
                           { label: "Available units", value: vacantUnits.length, onClick: () => { setActiveTab("units"); window.location.hash = "units"; }, icon: Home, tone: "bg-violet-50 text-violet-600" },
                           { label: "Payments overdue", value: overduePayments.length, onClick: () => { setActiveTab("payments"); window.location.hash = "payments"; }, icon: Clock, tone: "bg-amber-50 text-amber-600" },
@@ -941,7 +952,13 @@ export default function AgentDashboard() {
                       <Button
                         size="sm"
                         className="h-8 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
-                        onClick={() => { setSelectedTenant(null); setSelectedUnit(null); setShowAssignModal(true); }}
+                        onClick={() => {
+                          if (!isAgentVerified) {
+                            toast.error("ID Verification Required: You must be verified by the owner before you can assign tenants.");
+                            return;
+                          }
+                          setSelectedTenant(null); setSelectedUnit(null); setSelectedProperty(null); setShowAssignModal(true);
+                        }}
                       >
                         <UserPlus className="h-3.5 w-3.5" /> Assign Tenant
                       </Button>
@@ -1248,8 +1265,8 @@ export default function AgentDashboard() {
                           onChange={(e) => setPropertyTypeFilter(e.target.value)}
                           options={[
                             { value: "all", label: "All types" },
-                            { value: "house", label: "Properties" },
-                            { value: "condominium", label: "Condominium" },
+                            { value: "house", label: "Houses" },
+                            { value: "condominium", label: "Condominiums" },
                           ]}
                         />
 
@@ -1365,7 +1382,14 @@ export default function AgentDashboard() {
                                       </div>
                                     </td>
                                     <td className="capitalize text-slate-700 font-medium">
-                                      {property.type === "condominium" ? "Condominium" : "Properties"}
+                                      <span className={cn(
+                                        "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border",
+                                        property.type === "house" || property.type === "residential"
+                                          ? "bg-blue-50 text-blue-700 border-blue-200"
+                                          : "bg-purple-50 text-purple-700 border-purple-200"
+                                      )}>
+                                        {property.type === "condominium" ? "Condominium" : "House"}
+                                      </span>
                                     </td>
                                     <td className="font-semibold text-slate-900 tabular-nums">
                                       {formatCurrency(propRevenue)}
@@ -1382,25 +1406,51 @@ export default function AgentDashboard() {
                                       )}
                                     </td>
                                     <td>
-                                      <div className="flex items-center justify-end pr-2">
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          onClick={() => {
-                                            setUnitPropertyFilter(property.id);
-                                            setActiveTab("units");
-                                            setAgentUnitsView("units");
-                                            if (typeof window !== "undefined") {
-                                              window.history.pushState(null, "", `${window.location.pathname}#units`);
-                                              window.dispatchEvent(new CustomEvent("agent-dashboard-tab-change", { detail: "units" }));
-                                              window.dispatchEvent(new CustomEvent("renttrack-switch-tab", { detail: { tab: "units" } }));
-                                            }
-                                          }}
-                                          className="h-8 text-xs font-semibold text-blue-700 hover:text-blue-900 hover:bg-blue-50 cursor-pointer"
-                                        >
-                                          <Home className="mr-1 h-3.5 w-3.5" />
-                                          View Units
-                                        </Button>
+                                      <div className="flex items-center justify-end pr-2 gap-2">
+                                        {property.type === "condominium" ? (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                              setUnitPropertyFilter(property.id);
+                                              setActiveTab("units");
+                                              setAgentUnitsView("units");
+                                              if (typeof window !== "undefined") {
+                                                window.history.pushState(null, "", `${window.location.pathname}#units`);
+                                                window.dispatchEvent(new CustomEvent("agent-dashboard-tab-change", { detail: "units" }));
+                                                window.dispatchEvent(new CustomEvent("renttrack-switch-tab", { detail: { tab: "units" } }));
+                                              }
+                                            }}
+                                            className="h-8 text-xs font-semibold text-blue-700 hover:text-blue-900 hover:bg-blue-50 cursor-pointer"
+                                          >
+                                            <Building2 className="mr-1 h-3.5 w-3.5" />
+                                            View Units
+                                          </Button>
+                                        ) : (
+                                          <div className="flex items-center gap-1.5">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-50 text-slate-600 border border-slate-200">
+                                              Single Dwelling
+                                            </span>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={() => {
+                                                if (!isAgentVerified) {
+                                                  toast.error("ID Verification Required: You must be verified by the owner before you can assign tenants.");
+                                                  return;
+                                                }
+                                                setSelectedProperty(property);
+                                                setSelectedUnit(null);
+                                                setSelectedTenant(null);
+                                                setShowAssignModal(true);
+                                              }}
+                                              className="h-8 text-xs font-semibold text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 border-emerald-200 cursor-pointer"
+                                            >
+                                              <UserPlus className="mr-1 h-3.5 w-3.5" />
+                                              Assign Tenant
+                                            </Button>
+                                          </div>
+                                        )}
                                       </div>
                                     </td>
                                   </tr>
@@ -1439,22 +1489,14 @@ export default function AgentDashboard() {
                       />
                     </div>
                     <AnimatedFilterDropdown
-                      label="Property"
+                      label="Condominium"
                       value={unitPropertyFilter}
                       onChange={(event) => setUnitPropertyFilter(event.target.value)}
                       options={[
-                        { value: "all", label: "All properties" },
-                        ...properties.map((property) => ({ value: property.id, label: property.name })),
-                      ]}
-                    />
-                    <AnimatedFilterDropdown
-                      label="Property type"
-                      value={unitTypeFilter}
-                      onChange={(event) => setUnitTypeFilter(event.target.value)}
-                      options={[
-                        { value: "all", label: "All types" },
-                        { value: "house", label: "Properties" },
-                        { value: "condominium", label: "Condominium" },
+                        { value: "all", label: "All condominiums" },
+                        ...properties
+                          .filter((p) => p.type === "condominium" || p.type === "building" || units.some((u) => u.propertyId === p.id))
+                          .map((property) => ({ value: property.id, label: property.name })),
                       ]}
                     />
                     <AnimatedFilterDropdown
@@ -1492,7 +1534,12 @@ export default function AgentDashboard() {
                     </Button>
                     <Button
                       onClick={() => {
+                        if (!isAgentVerified) {
+                          toast.error("ID Verification Required: You must be verified by the owner before you can assign tenants.");
+                          return;
+                        }
                         setSelectedUnit(null);
+                        setSelectedProperty(null);
                         setSelectedTenant(null);
                         setShowAssignModal(true);
                       }}
@@ -1562,7 +1609,24 @@ export default function AgentDashboard() {
                                 <td className="whitespace-nowrap tabular-nums">{formatCurrency(unit.rentAmount)}</td>
                                 <td><UnitStatus status={unit.status} /></td>
                                 <td>{tenantName ? <span className={management.tenantCell}><User aria-hidden="true" />{tenantName}</span> : "—"}</td>
-                                <td>{unit.status === "vacant" ? <Button variant="outline" className="border-blue-200 text-blue-600" onClick={() => { setSelectedUnit(unit); setSelectedTenant(null); setShowAssignModal(true); }}>Assign tenant</Button> : "—"}</td>
+                                <td>{unit.status === "vacant" ? (
+                                  <Button
+                                    variant="outline"
+                                    className="border-blue-200 text-blue-600"
+                                    onClick={() => {
+                                      if (!isAgentVerified) {
+                                        toast.error("ID Verification Required: You must be verified by the owner before you can assign tenants.");
+                                        return;
+                                      }
+                                      setSelectedUnit(unit);
+                                      setSelectedProperty(null);
+                                      setSelectedTenant(null);
+                                      setShowAssignModal(true);
+                                    }}
+                                  >
+                                    Assign tenant
+                                  </Button>
+                                ) : "—"}</td>
                               </tr>;
                             })}</tbody>
                           </table>
@@ -2526,12 +2590,14 @@ export default function AgentDashboard() {
             setShowAssignModal(false);
             setSelectedTenant(null);
             setSelectedUnit(null);
+            setSelectedProperty(null);
           }}
           tenants={tenants}
           units={units}
           properties={properties}
           initialTenant={selectedTenant}
           initialUnit={selectedUnit}
+          initialProperty={selectedProperty}
           onSuccess={async () => {
             await loadData();
           }}

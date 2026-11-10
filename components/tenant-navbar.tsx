@@ -146,19 +146,19 @@ export default function TenantNavbar() {
 
   return (
     <nav data-tenant-navbar aria-label="Tenant navigation">
-      <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-white/10 bg-[#071326] px-4 sm:px-6 lg:px-8 text-white shadow-sm">
+      <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/80 backdrop-blur-md px-4 sm:px-6 lg:px-8 text-slate-800 shadow-xs transition-colors">
         {/* Left: Brand + Nav Links */}
         <div className="flex items-center gap-6 lg:gap-8">
           <Link
             href="/dashboard/tenant"
-            className="flex items-center gap-3"
+            className="flex items-center gap-3 transition-transform hover:scale-[1.02]"
             onClick={() => { setMobileOpen(false); setAccountOpen(false); setOptionsOpen(false); setPropertyOpen(false); }}
             aria-label="RentTrack dashboard"
           >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl overflow-hidden shadow-sm">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl overflow-hidden shadow-xs">
               <Image src="/images/landing/logo.png" alt="RentTrack" width={36} height={36} className="h-full w-full object-contain" />
             </span>
-            <span className="text-lg font-bold tracking-tight text-white">RentTrack</span>
+            <span className="text-lg font-bold tracking-tight text-slate-900">Rent<span className="text-blue-600">Track</span></span>
           </Link>
 
           {/* Desktop Nav Links */}
@@ -168,11 +168,11 @@ export default function TenantNavbar() {
               className={cn(
                 "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
                 isActive("/dashboard/tenant")
-                  ? "bg-white/10 text-white shadow-sm"
-                  : "text-slate-300 hover:bg-white/5 hover:text-white"
+                  ? "bg-blue-50 text-blue-700 shadow-xs"
+                  : "text-slate-700 hover:bg-slate-100/90 hover:text-slate-950 font-medium"
               )}
             >
-              <Home className="h-4 w-4" />
+              <Home className={cn("h-4 w-4", isActive("/dashboard/tenant") ? "text-blue-600" : "text-slate-600")} />
               <span>Dashboard</span>
             </Link>
 
@@ -181,11 +181,11 @@ export default function TenantNavbar() {
               className={cn(
                 "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
                 isActive("/dashboard/tenant/payments")
-                  ? "bg-white/10 text-white shadow-sm"
-                  : "text-slate-300 hover:bg-white/5 hover:text-white"
+                  ? "bg-blue-50 text-blue-700 shadow-xs"
+                  : "text-slate-700 hover:bg-slate-100/90 hover:text-slate-950 font-medium"
               )}
             >
-              <CreditCard className="h-4 w-4" />
+              <CreditCard className={cn("h-4 w-4", isActive("/dashboard/tenant/payments") ? "text-blue-600" : "text-slate-600")} />
               <span>My Payments</span>
             </Link>
 
@@ -207,15 +207,15 @@ export default function TenantNavbar() {
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
                   isActive("/dashboard/tenant/properties-page") || isActive("/dashboard/tenant/units") || propertyOpen
-                    ? "bg-white/10 text-white shadow-sm"
-                    : "text-slate-300 hover:bg-white/5 hover:text-white"
+                    ? "bg-blue-50 text-blue-700 shadow-xs"
+                    : "text-slate-700 hover:bg-slate-100/90 hover:text-slate-950 font-medium"
                 )}
                 aria-expanded={propertyOpen}
                 aria-haspopup="true"
               >
-                <Building2 className="h-4 w-4" />
+                <Building2 className={cn("h-4 w-4", (isActive("/dashboard/tenant/properties-page") || isActive("/dashboard/tenant/units") || propertyOpen) ? "text-blue-600" : "text-slate-600")} />
                 <span>My Property</span>
-                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", propertyOpen && "rotate-180")} />
+                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200 text-slate-500", propertyOpen && "rotate-180 text-blue-600")} />
               </button>
 
               <AnimatePresence>
@@ -263,11 +263,11 @@ export default function TenantNavbar() {
               className={cn(
                 "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
                 isActive("/dashboard/tenant/contact")
-                  ? "bg-white/10 text-white shadow-sm"
-                  : "text-slate-300 hover:bg-white/5 hover:text-white"
+                  ? "bg-blue-50 text-blue-700 shadow-xs"
+                  : "text-slate-700 hover:bg-slate-100/90 hover:text-slate-950 font-medium"
               )}
             >
-              <HelpCircle className="h-4 w-4" />
+              <HelpCircle className={cn("h-4 w-4", isActive("/dashboard/tenant/contact") ? "text-blue-600" : "text-slate-600")} />
               <span>Support</span>
             </Link>
 
@@ -283,15 +283,15 @@ export default function TenantNavbar() {
                 onClick={() => { setOptionsOpen((prev) => !prev); setPropertyOpen(false); setAccountOpen(false); setNotificationsOpen(false); }}
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                  optionsOpen
-                    ? "bg-white/15 text-white"
-                    : "bg-white/10 text-slate-200 hover:bg-white/15 hover:text-white"
+                  optionsOpen || isActive("/dashboard/tenant/move-out") || isActive("/dashboard/tenant/map")
+                    ? "bg-blue-50 text-blue-700 shadow-xs"
+                    : "text-slate-700 hover:bg-slate-100/90 hover:text-slate-950 font-medium"
                 )}
                 aria-expanded={optionsOpen}
                 aria-haspopup="true"
               >
                 <span>Options</span>
-                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", optionsOpen && "rotate-180")} />
+                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200 text-slate-500", optionsOpen && "rotate-180 text-blue-600")} />
               </button>
 
               <AnimatePresence>
@@ -336,11 +336,11 @@ export default function TenantNavbar() {
             onClick={toggleNotifications}
             aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
             aria-expanded={notificationsOpen}
-            className="relative rounded-lg p-2 text-slate-300 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="relative rounded-lg p-2 text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
-            <Bell className="h-4.5 w-4.5" aria-hidden="true" />
+            <Bell className="h-5 w-5 text-slate-700" aria-hidden="true" />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-[#071326]">
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-xs ring-2 ring-white">
                 {unreadCount > 99 ? "99+" : unreadCount}
               </span>
             )}
@@ -354,9 +354,9 @@ export default function TenantNavbar() {
                 onClick={() => { setAccountOpen((prev) => !prev); setPropertyOpen(false); setOptionsOpen(false); setNotificationsOpen(false); }}
                 aria-label="Open tenant account menu"
                 aria-expanded={accountOpen}
-                className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-left"
+                className="flex items-center gap-2.5 rounded-xl border border-slate-200/90 bg-white/90 px-2.5 py-1.5 transition-colors hover:bg-white hover:border-slate-300 shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-left"
               >
-                <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-800 font-bold text-xs">
+                <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-900 font-bold text-xs ring-1 ring-blue-300/80">
                   {user.avatarUrl && !avatarError ? (
                     <img
                       src={user.avatarUrl}
@@ -368,20 +368,20 @@ export default function TenantNavbar() {
                     initials
                   )}
                   {unreadMessageCount > 0 ? (
-                    <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-blue-500 border-2 border-[#071326]" />
+                    <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-blue-500 border-2 border-white" />
                   ) : (
-                    <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-[#071326]" />
+                    <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-white" />
                   )}
                 </div>
                 <div className="hidden sm:block min-w-0 max-w-[130px]">
-                  <p className="truncate text-xs font-semibold text-white leading-tight">
+                  <p className="truncate text-xs font-bold text-slate-900 leading-tight">
                     {user.name || "Tenant"}
                   </p>
-                  <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
+                  <p className="text-[10px] font-medium text-slate-600 leading-tight mt-0.5">
                     Tenant
                   </p>
                 </div>
-                <ChevronDown className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                <ChevronDown className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
               </button>
 
               <AnimatePresence>
@@ -447,7 +447,7 @@ export default function TenantNavbar() {
             type="button"
             onClick={() => setMobileOpen((prev) => !prev)}
             aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
-            className="md:hidden rounded-lg p-2 text-slate-300 hover:bg-white/10 hover:text-white"
+            className="md:hidden rounded-lg p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -470,19 +470,19 @@ export default function TenantNavbar() {
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ type: "tween", duration: 0.22 }}
-              className="fixed inset-y-0 left-0 z-50 w-72 bg-[#071326] p-4 text-white shadow-2xl md:hidden overflow-y-auto"
+              className="fixed inset-y-0 left-0 z-50 w-72 bg-white/95 backdrop-blur-xl p-4 text-slate-900 shadow-2xl md:hidden overflow-y-auto border-r border-slate-200"
             >
-              <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-4">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-4 mb-4">
                 <div className="flex items-center gap-2.5">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl overflow-hidden shadow-sm">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl overflow-hidden shadow-xs">
                     <Image src="/images/landing/logo.png" alt="RentTrack" width={32} height={32} className="h-full w-full object-contain" />
                   </span>
-                  <span className="font-bold text-white text-base">RentTrack</span>
+                  <span className="font-bold text-slate-900 text-base">Rent<span className="text-blue-600">Track</span></span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setMobileOpen(false)}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white"
+                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -495,8 +495,8 @@ export default function TenantNavbar() {
                   className={cn(
                     "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
                     isActive("/dashboard/tenant")
-                      ? "bg-white/15 text-white"
-                      : "text-slate-300 hover:bg-white/5 hover:text-white"
+                      ? "bg-blue-50 text-blue-700 font-semibold"
+                      : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
                   )}
                 >
                   <Home className="h-4 w-4" />
@@ -509,8 +509,8 @@ export default function TenantNavbar() {
                   className={cn(
                     "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
                     isActive("/dashboard/tenant/payments")
-                      ? "bg-white/15 text-white"
-                      : "text-slate-300 hover:bg-white/5 hover:text-white"
+                      ? "bg-blue-50 text-blue-700 font-semibold"
+                      : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
                   )}
                 >
                   <CreditCard className="h-4 w-4" />
@@ -525,8 +525,8 @@ export default function TenantNavbar() {
                     className={cn(
                       "w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition-colors cursor-pointer text-left",
                       isActive("/dashboard/tenant/properties-page") || isActive("/dashboard/tenant/units") || mobilePropertyOpen
-                        ? "bg-white/15 text-white"
-                        : "text-slate-300 hover:bg-white/5 hover:text-white"
+                        ? "bg-blue-50 text-blue-700 font-semibold"
+                        : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
                     )}
                   >
                     <div className="flex items-center gap-3">
@@ -536,18 +536,18 @@ export default function TenantNavbar() {
                     <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", mobilePropertyOpen && "rotate-180")} />
                   </button>
                   {mobilePropertyOpen && (
-                    <div className="ml-7 mt-1 space-y-1 border-l border-white/10 pl-3">
+                    <div className="ml-7 mt-1 space-y-1 border-l border-slate-200 pl-3">
                       <Link
                         href="/dashboard/tenant/properties-page"
                         onClick={() => setMobileOpen(false)}
                         className={cn(
                           "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors",
                           isActive("/dashboard/tenant/properties-page")
-                            ? "bg-white/15 text-white font-semibold"
-                            : "text-slate-300 hover:bg-white/5 hover:text-white"
+                            ? "bg-blue-50 text-blue-700 font-semibold"
+                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                         )}
                       >
-                        <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                        <Building2 className="h-3.5 w-3.5 text-slate-500" />
                         <span>My Property</span>
                       </Link>
                       <Link
@@ -556,11 +556,11 @@ export default function TenantNavbar() {
                         className={cn(
                           "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors",
                           isActive("/dashboard/tenant/units")
-                            ? "bg-white/15 text-white font-semibold"
-                            : "text-slate-300 hover:bg-white/5 hover:text-white"
+                            ? "bg-blue-50 text-blue-700 font-semibold"
+                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                         )}
                       >
-                        <Layers className="h-3.5 w-3.5 text-slate-400" />
+                        <Layers className="h-3.5 w-3.5 text-slate-500" />
                         <span>My Units</span>
                       </Link>
                     </div>
@@ -582,12 +582,12 @@ export default function TenantNavbar() {
                         setMobileOpen(false);
                         window.dispatchEvent(new CustomEvent("renttrack-open-messages"));
                       }}
-                      className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors text-slate-300 hover:bg-white/5 hover:text-white cursor-pointer text-left"
+                      className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors text-slate-700 hover:bg-slate-100 hover:text-slate-900 cursor-pointer text-left"
                     >
                       <Icon className="h-4 w-4" />
                       <span>{label}</span>
                       {unreadMessageCount > 0 && (
-                        <span className="ml-auto rounded-full bg-blue-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
+                        <span className="ml-auto rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
                           {unreadMessageCount > 99 ? "99+" : unreadMessageCount}
                         </span>
                       )}
@@ -600,8 +600,8 @@ export default function TenantNavbar() {
                       className={cn(
                         "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
                         isActive(href)
-                          ? "bg-white/15 text-white"
-                          : "text-slate-300 hover:bg-white/5 hover:text-white"
+                          ? "bg-blue-50 text-blue-700 font-semibold"
+                          : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
                       )}
                     >
                       <Icon className="h-4 w-4" />
@@ -611,11 +611,11 @@ export default function TenantNavbar() {
                 )}
               </div>
 
-              <div className="mt-6 border-t border-white/10 pt-4">
+              <div className="mt-6 border-t border-slate-200 pt-4">
                 <button
                   type="button"
                   onClick={() => { setConfirmLogout(true); setMobileOpen(false); }}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-rose-400 hover:bg-rose-500/10 transition-colors"
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-rose-600 hover:bg-rose-50 transition-colors"
                 >
                   <LogOut className="h-4 w-4" />
                   <span>Sign out</span>

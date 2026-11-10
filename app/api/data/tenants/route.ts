@@ -190,6 +190,17 @@ export async function PATCH(request: NextRequest) {
       cleaned[snake] = value;
     }
 
+    // Prevent unverified agents from assigning tenants
+    if (auth.user.role === "agent") {
+      const isAgentVerified = auth.user.idVerificationStatus === "approved" || (auth.user as any)?.idVerified === true;
+      if (!isAgentVerified) {
+        return NextResponse.json(
+          { success: false, error: "Access denied: Unverified agents cannot assign tenants. Your ID must be approved by the owner first." },
+          { status: 403 }
+        );
+      }
+    }
+
     // Link agent to property if agent is assigning
     if (auth.user.role === "agent") {
       try {

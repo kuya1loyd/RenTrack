@@ -15,7 +15,6 @@ import {
   Home,
   MapPin,
   Search,
-  Sparkles,
   ShieldCheck,
   Clock,
   Wallet,
@@ -99,12 +98,6 @@ export default function TenantDashboard() {
     { name: "Overdue", value: overdueCount, color: "#ef4444" },
   ];
 
-  const tenantStatusLabel = tenant?.unitId
-    ? tenant.assignmentStatus === "confirmed"
-      ? "Active Tenant"
-      : "Assigned Tenant"
-    : "Prospective Tenant";
-
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return "Good morning";
@@ -156,12 +149,7 @@ export default function TenantDashboard() {
 
         <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between w-full">
           <div className="min-w-0 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-[10px] font-bold uppercase tracking-widest text-blue-200 shadow-xs">
-              <Sparkles className="h-3 w-3 text-blue-300 animate-pulse" />
-              <span>Tenant Hub</span>
-            </div>
-
-            <h1 className="mt-2.5 text-2xl sm:text-3xl font-extrabold tracking-tight text-white drop-shadow-sm">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white drop-shadow-sm">
               {greeting}, {user?.name?.split(" ")[0] || "Junrich"}.
             </h1>
 
@@ -169,20 +157,15 @@ export default function TenantDashboard() {
               Welcome back to your personalized home dashboard. Track your monthly payments, inspect lease records, and manage your tenancy.
             </p>
 
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-950/70 backdrop-blur-md px-3 py-1 text-xs font-semibold text-emerald-200 shadow-sm">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>Status: {tenantStatusLabel}</span>
-              </span>
-
-              {tenant?.propertyName && (
+            {tenant?.propertyName && (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/40 bg-[#071326]/80 backdrop-blur-md px-3 py-1 text-xs font-semibold text-blue-200 shadow-sm">
                   <Building2 className="h-3.5 w-3.5 text-blue-300" />
                   <span>{tenant.propertyName}</span>
                   {tenant?.unitNumber && <span className="font-bold">• Unit {tenant.unitNumber}</span>}
                 </span>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </motion.section>

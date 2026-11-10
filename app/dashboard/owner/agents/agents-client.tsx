@@ -157,29 +157,32 @@ export default function OwnerAgentsPage() {
       const propertiesById = new Map(properties.map((property) => [property.id, property]));
 
       agentRecords.forEach((agent) => {
-        const isSingleAgent = agentRecords.length === 1;
+        const isVerified = agent.idVerificationStatus === "approved" || (agent as any).idVerified === true;
         const agentPropertyIds = new Set(
-          properties
-            .filter((property) => property.agentId === agent.id || (!property.agentId && isSingleAgent))
-            .map((property) => property.id)
+          isVerified
+            ? properties
+                .filter((property) => property.agentId === agent.id)
+                .map((property) => property.id)
+            : []
         );
         const agentPropertyNames = new Set(
-          properties
-            .filter((property) => property.agentId === agent.id || (!property.agentId && isSingleAgent))
-            .map((property) => String(property.name || "").trim().toLowerCase())
-            .filter(Boolean)
+          isVerified
+            ? properties
+                .filter((property) => property.agentId === agent.id)
+                .map((property) => String(property.name || "").trim().toLowerCase())
+                .filter(Boolean)
+            : []
         );
         const agentUnitIds = new Set(units.filter((unit) => Boolean(unit.propertyId && agentPropertyIds.has(unit.propertyId))).map((unit) => unit.id));
 
         // Use API-returned assisted tenants or comprehensive local resolution
-        let agentAssistedList = assistedTenantsMap[agent.id]?.tenants || [];
-        if (!agentAssistedList || agentAssistedList.length === 0) {
+        let agentAssistedList = isVerified ? (assistedTenantsMap[agent.id]?.tenants || []) : [];
+        if (isVerified && (!agentAssistedList || agentAssistedList.length === 0)) {
           agentAssistedList = tenants.filter((tenant) => {
             if (tenant.assignedAgentId === agent.id) return true;
             if (tenant.createdBy === agent.id) return true;
             if (tenant.unitId && agentUnitIds.has(tenant.unitId)) return true;
             if (tenant.propertyName && agentPropertyNames.has(String(tenant.propertyName).trim().toLowerCase())) return true;
-            if (isSingleAgent && (tenant.unitId || tenant.propertyName || tenant.assignmentStatus === "pending")) return true;
             return false;
           }).map((tenant) => {
             let reason = "Assisted Tenant";
@@ -188,7 +191,6 @@ export default function OwnerAgentsPage() {
             else if (tenant.unitId && agentUnitIds.has(tenant.unitId)) reason = tenant.propertyName ? `Assigned to ${tenant.propertyName}` : "Assigned Unit";
             else if (tenant.propertyName && agentPropertyNames.has(String(tenant.propertyName).trim().toLowerCase())) reason = `Property: ${tenant.propertyName}`;
             else if (tenant.assignmentStatus === "pending") reason = "Pending Assignment Review";
-            else if (isSingleAgent && (tenant.unitId || tenant.propertyName)) reason = tenant.propertyName ? `Managed Property (${tenant.propertyName})` : "Managed Unit";
             return {
               id: tenant.id,
               name: tenant.name,

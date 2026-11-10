@@ -12,14 +12,13 @@ import Link from "next/link";
 import { Avatar } from "@/components/ui/avatar";
 import {
   LayoutDashboard, Home, MapPinned, CreditCard, Send, LogOut, ChevronRight, Menu, X, Award,
-  Loader2, ChevronDown, ChevronLeft, Bell, Mail, User, FileText, ShieldAlert, Lock, Building2, DoorOpen,
+  Loader2, ChevronDown, ChevronLeft, Bell, Mail, User, FileText, ShieldAlert, Building2, DoorOpen,
 } from "lucide-react";
 import { getNotifications, getUnreadMessageCount, getUnreadInquiryCount, markNotificationRead, markAllNotificationsRead, markAllMessagesRead, Notification } from "@/lib/data";
 import { getProperties, Property } from "@/lib/data";
 import MessagingPanel from "@/components/messaging-panel";
 import MessagingModal from "@/components/messaging-modal";
 import { getNotificationDashboardHref } from "@/lib/notification-routing";
-import { AgentVerificationGate } from "@/components/agent-verification-gate";
 import { toast } from "sonner";
 
 type AgentNavSubItem = {
@@ -265,9 +264,31 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
     router.push("/login");
   };
 
+  const verificationNotification: Notification | null = !isAgentVerified && user ? {
+    id: `verification-alert-${user.id}`,
+    userId: user.id,
+    title: user.idVerificationStatus === "pending"
+      ? "Government ID Awaiting Owner Approval"
+      : user.idVerificationStatus === "rejected"
+      ? "Government ID Rejected by Owner"
+      : "ID Verification Required to Unlock Panel",
+    message: user.idVerificationStatus === "pending"
+      ? "Your document was submitted and is in the owner's review queue. Management access unlocks once approved."
+      : user.idVerificationStatus === "rejected"
+      ? "Your document was rejected. Please re-upload a clear government ID to activate your account."
+      : "Please upload your valid government ID to activate your agent panel and unlock property features.",
+    type: "system",
+    read: false,
+    createdAt: new Date().toISOString(),
+  } : null;
+
+  const displayNotifications = verificationNotification
+    ? [verificationNotification, ...notifications.filter((n) => !n.id.startsWith("verification-alert-"))]
+    : notifications;
+
   const unreadNotificationCount = notifications.filter(
     (notification) => !notification.read && !notification.title.toLowerCase().startsWith("new landing inquiry")
-  ).length;
+  ).length + (!isAgentVerified ? 1 : 0);
   const unreadCount = unreadNotificationCount + unreadInquiryCount;
   const unreadBadge = unreadCount > 99 ? "99+" : unreadCount;
 
@@ -294,15 +315,28 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
 
     try {
       await refreshUser();
+    } catch (err) {
+      console.error("Failed to refresh user:", err);
+    }
+  };
+
+  const handleMarkAllNotifications = async () => {
+    if (!user) return;
+    try {
       await markAllNotificationsRead(user.id);
       setNotifications((current) => current.map((notification) => ({ ...notification, read: true })));
       window.dispatchEvent(new Event("renttrack-notifications-updated"));
     } catch (err) {
-      console.error("Failed to refresh user or mark notifications as read:", err);
+      console.error("Failed to mark notifications as read:", err);
     }
   };
 
   const handleNotificationClick = async (n: Notification) => {
+    if (n.id.startsWith("verification-alert-")) {
+      setShowNotifications(false);
+      openAgentTab("profile");
+      return;
+    }
     if (!n.read) {
       await markNotificationRead(n.id).catch(() => {});
       setNotifications((current) => current.map((notification) => notification.id === n.id ? { ...notification, read: true } : notification));
@@ -363,7 +397,26 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
               aria-expanded={showUserMenu}
               className="relative rounded-lg p-1.5 hover:bg-surface-secondary"
             >
-              <Avatar src={user.avatarUrl} fallback={user.name.split(" ").map((name: string) => name[0]).join("").toUpperCase().slice(0, 2)} size="sm" />
+              <div className="relative">
+                <Avatar src={user.avatarUrl} fallback={user.name.split(" ").map((name: string) => name[0]).join("").toUpperCase().slice(0, 2)} size="sm" />
+                {!isAgentVerified ? (
+                  <span
+                    className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5"
+                    title={
+                      user.idVerificationStatus === "pending"
+                        ? "Pending Owner Approval"
+                        : user.idVerificationStatus === "rejected"
+                        ? "Verification Rejected"
+                        : "ID Verification Required"
+                    }
+                  >
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-80" />
+                    <span className="relative inline-flex rounded-full h-3.5 w-3.5 border-2 border-surface bg-yellow-500 shadow-xs" />
+                  </span>
+                ) : (
+                  <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface bg-green-500" title="Verified Agent" />
+                )}
+              </div>
             </button>
             <AnimatePresence initial={false}>
               {showUserMenu && (
@@ -380,23 +433,14 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                   <div className="p-1.5">
                     <button
                       onClick={() => {
-                        if (!isAgentVerified) {
-                          toast.error("ID Verification Required: Direct messaging is locked until your ID is approved by the owner.");
-                          return;
-                        }
                         setShowUserMenu(false);
                         setShowMessages(true);
                       }}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer w-full",
-                        !isAgentVerified ? "text-text-secondary/60 opacity-60" : "text-text-secondary hover:bg-surface-secondary hover:text-foreground"
-                      )}
+                      className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer w-full text-text-secondary hover:bg-surface-secondary hover:text-foreground"
                     >
                       <Send className="h-4 w-4" />
                       <span className="flex-1 text-left">Messages</span>
-                      {!isAgentVerified ? (
-                        <Lock className="h-3.5 w-3.5 text-text-secondary/60" />
-                      ) : unreadMessageCount > 0 ? (
+                      {unreadMessageCount > 0 ? (
                         <span className="min-w-5 h-5 px-1 flex items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white shadow-xs">{unreadMessageCount}</span>
                       ) : null}
                     </button>
@@ -409,10 +453,10 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
             </AnimatePresence>
           </div>
           <div className="relative">
-            <button onClick={() => setShowNotifications(!showNotifications)} aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`} aria-expanded={showNotifications} className="p-2 rounded-lg hover:bg-surface-secondary relative">
+            <button onClick={() => setShowNotifications(!showNotifications)} aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`} aria-expanded={showNotifications} className="p-2 rounded-lg hover:bg-surface-secondary relative cursor-pointer">
               <Bell className="h-5 w-5" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+              {(unreadCount > 0 || !isAgentVerified) && (
+                <span className="absolute -top-0.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-xs">
                   {unreadBadge}
                 </span>
               )}
@@ -426,38 +470,56 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                   className="absolute right-0 mt-2 w-72 sm:w-80 rounded-2xl border border-border bg-surface shadow-dropdown overflow-hidden z-50"
                 >
                   <div className="p-3 border-b border-border flex items-center justify-between gap-2">
-                    <h3 className="font-semibold text-foreground text-sm">Notifications</h3>
-                    {unreadNotificationCount > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="font-semibold text-foreground text-sm">Notifications</h3>
+                      {!isAgentVerified && (
+                        <span className="rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 px-1.5 py-0.2 text-[9px] font-bold">
+                          Pending ID
+                        </span>
+                      )}
+                    </div>
+                    {unreadNotificationCount > (!isAgentVerified ? 1 : 0) && (
                       <button
                         type="button"
-                        onClick={async () => {
-                          await markAllNotificationsRead(user.id);
-                          setNotifications((current) => current.map((notification) => ({ ...notification, read: true })));
-                          window.dispatchEvent(new Event("renttrack-notifications-updated"));
-                        }}
-                        className="text-xs text-primary-600 hover:text-primary-700"
+                        onClick={handleMarkAllNotifications}
+                        className="text-xs text-primary-600 hover:text-primary-700 cursor-pointer"
                       >
                         Mark all read
                       </button>
                     )}
                   </div>
                   <div className="max-h-72 overflow-y-auto">
-                    {notifications.length === 0 ? (
+                    {displayNotifications.length === 0 ? (
                       <p className="px-4 py-6 text-center text-xs text-text-secondary">No notifications yet</p>
                     ) : (
-                      notifications.slice(0, 10).map((n) => (
-                        <button
-                          key={n.id}
-                          onClick={() => handleNotificationClick(n)}
-                          className={cn(
-                            "w-full text-left p-3 border-b border-border last:border-0 hover:bg-surface-secondary transition-colors cursor-pointer",
-                            !n.read && "bg-primary-50/50"
-                          )}
-                        >
-                          <p className="text-xs font-medium text-foreground">{n.title}</p>
-                          <p className="text-[11px] text-text-secondary mt-0.5 line-clamp-2">{n.message}</p>
-                        </button>
-                      ))
+                      displayNotifications.slice(0, 10).map((n) => {
+                        const isVerif = n.id.startsWith("verification-alert-");
+                        return (
+                          <button
+                            key={n.id}
+                            onClick={() => handleNotificationClick(n)}
+                            className={cn(
+                              "w-full text-left p-3 border-b border-border last:border-0 hover:bg-surface-secondary transition-colors cursor-pointer",
+                              isVerif
+                                ? "bg-amber-50/80 dark:bg-amber-950/30 border-l-4 border-l-amber-500"
+                                : (!n.read && "bg-primary-50/50")
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className={cn("text-xs font-medium", isVerif ? "text-amber-950 dark:text-amber-200 font-bold flex items-center gap-1.5" : "text-foreground")}>
+                                {isVerif && <ShieldAlert className="h-3.5 w-3.5 text-amber-600 shrink-0" />}
+                                {n.title}
+                              </p>
+                              {isVerif && (
+                                <span className="shrink-0 rounded-full bg-amber-200 dark:bg-amber-900/60 px-1.5 py-0.2 text-[9px] font-bold text-amber-900 dark:text-amber-200">
+                                  Required
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-text-secondary mt-0.5 line-clamp-2">{n.message}</p>
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 </motion.div>
@@ -480,24 +542,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
             </Link>
           </div>
           <nav aria-label="Agent navigation" className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
-            {!isAgentVerified && (
-              <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
-                <div className="flex items-center gap-2 font-semibold">
-                  <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
-                  {sidebarOpen && <span>ID Verification Required</span>}
-                </div>
-                {sidebarOpen && (
-                  <p className="mt-1 text-[11px] text-amber-800/80 leading-snug">
-                    {user?.idVerificationStatus === "pending"
-                      ? "Awaiting owner approval"
-                      : user?.idVerificationStatus === "rejected"
-                      ? "Verification rejected by owner"
-                      : "Upload your ID to activate"}
-                  </p>
-                )}
-              </div>
-            )}
-            {navItems.map((item) => {
+                        {navItems.map((item) => {
               const Icon = item.icon;
 
               if (item.children) {
@@ -509,28 +554,18 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                     <button
                       type="button"
                       id={`sidebar-${item.tab}`}
-                      disabled={!isAgentVerified}
-                      onClick={() => {
-                        if (!isAgentVerified) {
-                          toast.error(`Access locked: You must be verified by the owner to access ${item.label}.`);
-                          return;
-                        }
-                        setRentalManagementOpen((prev) => !prev);
-                      }}
+                      onClick={() => setRentalManagementOpen((prev) => !prev)}
                       className={cn(
                         "w-full flex items-center justify-between rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
-                        !isAgentVerified
-                          ? "opacity-45 cursor-not-allowed text-slate-400 hover:bg-transparent"
-                          : isOpen
+                        isOpen
                           ? "bg-slate-100 text-slate-900 font-semibold"
                           : isChildActive
                           ? "bg-blue-50 text-blue-700 font-semibold"
                           : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
                       )}
-                      title={!isAgentVerified ? `Locked: Owner ID verification required to access ${item.label}` : undefined}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <Icon className={cn("h-4 w-4 shrink-0 transition-colors", !isAgentVerified ? "text-slate-400" : (isOpen || isChildActive) ? "text-blue-600" : "text-slate-400")} />
+                        <Icon className={cn("h-4 w-4 shrink-0 transition-colors", (isOpen || isChildActive) ? "text-blue-600" : "text-slate-400")} />
                         {sidebarOpen && <span className="truncate">{item.label}</span>}
                       </div>
                       {sidebarOpen && (
@@ -553,18 +588,14 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                           className="overflow-hidden space-y-1 pl-3.5 ml-3 border-l border-slate-200/90 my-1 pt-0.5"
                         >
                           {item.children.map((sub) => {
-                            const isSubActive = activeTab === sub.tab && isAgentVerified;
+                            const isSubActive = activeTab === sub.tab;
                             const SubIcon = sub.icon;
                             return (
                               <button
                                 key={sub.tab}
                                 id={`sidebar-${sub.tab}`}
                                 type="button"
-                                disabled={!isAgentVerified}
-                                onClick={() => {
-                                  if (!isAgentVerified) return;
-                                  handleNavigationClick(sub.tab, false);
-                                }}
+                                onClick={() => handleNavigationClick(sub.tab, false)}
                                 className={cn(
                                   "w-full flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer text-left",
                                   isSubActive
@@ -584,39 +615,27 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                 );
               }
 
-              const isActive = activeTab === item.tab && isAgentVerified;
+              const isActive = activeTab === item.tab;
               return (
                 <button
                   key={item.tab}
                   id={`sidebar-${item.tab}`}
-                  disabled={!isAgentVerified}
-                  onClick={() => {
-                    if (!isAgentVerified) {
-                      toast.error(`Access locked: You must be verified by the owner to access ${item.label}.`);
-                      return;
-                    }
-                    handleNavigationClick(item.tab, false);
-                  }}
+                  onClick={() => handleNavigationClick(item.tab, false)}
                   className={cn(
                     "w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
-                    !isAgentVerified
-                      ? "opacity-45 cursor-not-allowed text-slate-400 hover:bg-transparent"
-                      : isActive
+                    isActive
                       ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/25"
                       : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
                   )}
-                  title={!isAgentVerified ? `Locked: Owner ID verification required to access ${item.label}` : undefined}
                 >
-                  <Icon className={cn("h-4 w-4 shrink-0", !isAgentVerified ? "text-slate-400" : isActive ? "text-white" : "text-slate-400")} />
+                  <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-white" : "text-slate-400")} />
                   {sidebarOpen && <span className="truncate">{item.label}</span>}
-                  {!isAgentVerified ? (
-                    sidebarOpen && <Lock className="ml-auto h-3.5 w-3.5 text-slate-400 shrink-0" />
-                  ) : item.tab === "inquiries" && unreadInquiryCount > 0 ? (
+                  {item.tab === "inquiries" && unreadInquiryCount > 0 ? (
                     <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
                       {unreadInquiryCount}
                     </span>
                   ) : null}
-                  {isActive && sidebarOpen && isAgentVerified && (
+                  {isActive && sidebarOpen && (
                     <span aria-hidden="true" className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-white" />
                   )}
                 </button>
@@ -665,22 +684,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                   </button>
                 </div>
                 <nav aria-label="Agent navigation" className="flex-1 space-y-1 overflow-y-auto p-3">
-                  {!isAgentVerified && (
-                    <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                      <div className="flex items-center gap-2 font-semibold">
-                        <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
-                        <span>ID Verification Required</span>
-                      </div>
-                      <p className="mt-1 text-[11px] text-amber-800/80 leading-snug">
-                        {user?.idVerificationStatus === "pending"
-                          ? "Awaiting owner approval"
-                          : user?.idVerificationStatus === "rejected"
-                          ? "Verification rejected by owner"
-                          : "Upload your ID to activate"}
-                      </p>
-                    </div>
-                  )}
-                  {navItems.map((item) => {
+                                    {navItems.map((item) => {
                     const Icon = item.icon;
 
                     if (item.children) {
@@ -692,19 +696,10 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                           <button
                             type="button"
                             id={`mobile-sidebar-${item.tab}`}
-                            disabled={!isAgentVerified}
-                            onClick={() => {
-                              if (!isAgentVerified) {
-                                toast.error(`Access locked: You must be verified by the owner to access ${item.label}.`);
-                                return;
-                              }
-                              setRentalManagementOpen((prev) => !prev);
-                            }}
+                            onClick={() => setRentalManagementOpen((prev) => !prev)}
                             className={cn(
                               "w-full flex items-center justify-between rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
-                              !isAgentVerified
-                                ? "opacity-45 cursor-not-allowed text-slate-400"
-                                : isOpen
+                              isOpen
                                 ? "bg-slate-100 text-slate-900 font-semibold"
                                 : isChildActive
                                 ? "bg-blue-50 text-blue-700 font-semibold"
@@ -712,7 +707,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                             )}
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <Icon className={cn("h-4 w-4 shrink-0", !isAgentVerified ? "text-slate-400" : (isOpen || isChildActive) ? "text-blue-600" : "text-slate-400")} />
+                              <Icon className={cn("h-4 w-4 shrink-0", (isOpen || isChildActive) ? "text-blue-600" : "text-slate-400")} />
                               <span className="truncate">{item.label}</span>
                             </div>
                             <ChevronDown
@@ -733,18 +728,14 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                                 className="overflow-hidden space-y-1 pl-3.5 ml-3 border-l border-slate-200/90 my-1 pt-0.5"
                               >
                                 {item.children.map((sub) => {
-                                  const isSubActive = activeTab === sub.tab && isAgentVerified;
+                                  const isSubActive = activeTab === sub.tab;
                                   const SubIcon = sub.icon;
                                   return (
                                     <button
                                       key={sub.tab}
                                       id={`mobile-sidebar-${sub.tab}`}
                                       type="button"
-                                      disabled={!isAgentVerified}
-                                      onClick={() => {
-                                        if (!isAgentVerified) return;
-                                        handleNavigationClick(sub.tab, true);
-                                      }}
+                                      onClick={() => handleNavigationClick(sub.tab, true)}
                                       className={cn(
                                         "w-full flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer text-left",
                                         isSubActive
@@ -764,33 +755,22 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                       );
                     }
 
-                    const isActive = activeTab === item.tab && isAgentVerified;
+                    const isActive = activeTab === item.tab;
                     return (
                       <button
                         key={item.tab}
                         id={`sidebar-${item.tab}`}
-                        disabled={!isAgentVerified}
-                        onClick={() => {
-                          if (!isAgentVerified) {
-                            toast.error(`Access locked: You must be verified by the owner to access ${item.label}.`);
-                            return;
-                          }
-                          handleNavigationClick(item.tab, true);
-                        }}
+                        onClick={() => handleNavigationClick(item.tab, true)}
                         className={cn(
                           "w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
-                          !isAgentVerified
-                            ? "opacity-45 cursor-not-allowed text-slate-400 hover:bg-transparent"
-                            : isActive
+                          isActive
                             ? "bg-blue-600 text-white font-semibold shadow-sm shadow-blue-500/25"
                             : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
                         )}
                       >
-                        <Icon className={cn("h-4 w-4 shrink-0", !isAgentVerified ? "text-slate-400" : isActive ? "text-white" : "text-slate-400")} />
+                        <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-white" : "text-slate-400")} />
                         <span className="truncate">{item.label}</span>
-                        {!isAgentVerified ? (
-                          <Lock className="ml-auto h-3.5 w-3.5 text-slate-400 shrink-0" />
-                        ) : item.tab === "inquiries" && unreadInquiryCount > 0 ? (
+                        {item.tab === "inquiries" && unreadInquiryCount > 0 ? (
                           <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
                             {unreadInquiryCount}
                           </span>
@@ -831,11 +811,11 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                   onClick={handleOpenNotifications}
                   aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`}
                   aria-expanded={showNotifications}
-                  className="relative p-2 rounded-lg hover:bg-surface-secondary transition-colors text-text-secondary hover:text-foreground"
+                  className="relative p-2 rounded-lg hover:bg-surface-secondary transition-colors text-text-secondary hover:text-foreground cursor-pointer"
                 >
                   <Bell className="h-5 w-5" />
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-0.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                  {(unreadCount > 0 || !isAgentVerified) && (
+                    <span className="absolute -top-0.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-xs">
                       {unreadBadge}
                     </span>
                   )}
@@ -849,38 +829,56 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                       className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-surface shadow-dropdown overflow-hidden"
                     >
                       <div className="p-4 border-b border-border flex items-center justify-between gap-3">
-                        <h3 className="font-semibold text-foreground">Notifications</h3>
-                        {unreadNotificationCount > 0 && (
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-foreground">Notifications</h3>
+                          {!isAgentVerified && (
+                            <span className="rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 text-[10px] font-bold">
+                              Verification Pending
+                            </span>
+                          )}
+                        </div>
+                        {unreadNotificationCount > (!isAgentVerified ? 1 : 0) && (
                           <button
                             type="button"
-                            onClick={async () => {
-                              await markAllNotificationsRead(user.id);
-                              setNotifications((current) => current.map((notification) => ({ ...notification, read: true })));
-                              window.dispatchEvent(new Event("renttrack-notifications-updated"));
-                            }}
-                            className="text-xs text-primary-600 hover:text-primary-700"
+                            onClick={handleMarkAllNotifications}
+                            className="text-xs text-primary-600 hover:text-primary-700 cursor-pointer"
                           >
                             Mark all read
                           </button>
                         )}
                       </div>
                       <div className="max-h-80 overflow-y-auto">
-                        {notifications.length === 0 ? (
+                        {displayNotifications.length === 0 ? (
                           <p className="px-4 py-8 text-center text-sm text-text-secondary">No notifications yet</p>
                         ) : (
-                          notifications.slice(0, 10).map((n) => (
-                            <button
-                              key={n.id}
-                              onClick={() => handleNotificationClick(n)}
-                              className={cn(
-                                "w-full text-left p-4 border-b border-border last:border-0 hover:bg-surface-secondary transition-colors cursor-pointer",
-                                !n.read && "bg-primary-50/50"
-                              )}
-                            >
-                              <p className="text-sm font-medium text-foreground">{n.title}</p>
-                              <p className="text-xs text-text-secondary mt-0.5 line-clamp-2">{n.message}</p>
-                            </button>
-                          ))
+                          displayNotifications.slice(0, 10).map((n) => {
+                            const isVerif = n.id.startsWith("verification-alert-");
+                            return (
+                              <button
+                                key={n.id}
+                                onClick={() => handleNotificationClick(n)}
+                                className={cn(
+                                  "w-full text-left p-4 border-b border-border last:border-0 hover:bg-surface-secondary transition-colors cursor-pointer",
+                                  isVerif
+                                    ? "bg-amber-50/80 dark:bg-amber-950/30 border-l-4 border-l-amber-500"
+                                    : (!n.read && "bg-primary-50/50")
+                                )}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className={cn("text-sm font-medium", isVerif ? "text-amber-950 dark:text-amber-200 font-bold flex items-center gap-1.5" : "text-foreground")}>
+                                    {isVerif && <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />}
+                                    {n.title}
+                                  </p>
+                                  {isVerif && (
+                                    <span className="shrink-0 rounded-full bg-amber-200 dark:bg-amber-900/60 px-2 py-0.5 text-[10px] font-bold text-amber-900 dark:text-amber-200">
+                                      Required
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-text-secondary mt-0.5 line-clamp-2">{n.message}</p>
+                              </button>
+                            );
+                          })
                         )}
                       </div>
                     </motion.div>
@@ -894,9 +892,29 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                 >
                   <div className="relative">
                     <Avatar src={user.avatarUrl} fallback={user.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)} size="sm" />
-                    <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface ${user.idVerificationStatus === "approved" ? "bg-green-500" : user.idVerificationStatus === "rejected" ? "bg-red-500" : user.idVerificationStatus === "pending" ? "bg-yellow-500" : "bg-slate-400"}`} title={user.idVerificationStatus === "approved" ? "Verified" : user.idVerificationStatus === "rejected" ? "Rejected" : user.idVerificationStatus === "pending" ? "Pending" : "Unverified"} />
+                    {!isAgentVerified ? (
+                      <span
+                        className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5"
+                        title={
+                          user.idVerificationStatus === "pending"
+                            ? "Pending Owner Approval"
+                            : user.idVerificationStatus === "rejected"
+                            ? "Verification Rejected"
+                            : "ID Verification Required"
+                        }
+                      >
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-80" />
+                        <span className="relative inline-flex rounded-full h-3.5 w-3.5 border-2 border-surface bg-yellow-500 shadow-xs" />
+                      </span>
+                    ) : (
+                      <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface bg-green-500" title="Verified Agent" />
+                    )}
                   </div>
-                  <span className="text-[10px] font-medium text-text-secondary hidden sm:block">
+                  <span className={cn(
+                    "text-[10px] font-medium hidden sm:flex items-center gap-1",
+                    !isAgentVerified ? "text-amber-600 font-semibold" : "text-text-secondary"
+                  )}>
+                    {!isAgentVerified && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />}
                     {user.idVerificationStatus === "approved" ? "Verified" : user.idVerificationStatus === "rejected" ? "Rejected" : user.idVerificationStatus === "pending" ? "Pending" : "Unverified"}
                   </span>
                   <span className="hidden sm:block text-sm font-medium text-foreground">{user.name.split(' ')[0]}</span>
@@ -917,23 +935,14 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                       <div className="p-1.5">
                         <button
                           onClick={() => {
-                            if (!isAgentVerified) {
-                              toast.error("ID Verification Required: Direct messaging is locked until your ID is approved by the owner.");
-                              return;
-                            }
-                            setShowUserMenu(false);
-                            setShowMessages(true);
-                          }}
-                          className={cn(
-                            "flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer w-full",
-                            !isAgentVerified ? "text-text-secondary/60 opacity-60" : "text-text-secondary hover:bg-surface-secondary hover:text-foreground"
-                          )}
+                        setShowUserMenu(false);
+                        setShowMessages(true);
+                      }}
+                      className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer w-full text-text-secondary hover:bg-surface-secondary hover:text-foreground"
                         >
                           <Send className="h-4 w-4" />
                           <span className="flex-1 text-left">Messages</span>
-                          {!isAgentVerified ? (
-                            <Lock className="h-3.5 w-3.5 text-text-secondary/60" />
-                          ) : unreadMessageCount > 0 ? (
+                          {unreadMessageCount > 0 ? (
                             <span className="min-w-5 h-5 px-1 flex items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">{unreadMessageCount}</span>
                           ) : null}
                         </button>
@@ -955,14 +964,10 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
           {/* Main Content */}
           <main className="flex-1 overflow-y-auto bg-[#f3f7fc]">
             <div className="w-full p-4 sm:p-6">
-              {!isAgentVerified ? (
-                <AgentVerificationGate user={user} refreshUser={refreshUser} />
-              ) : (
-                <>
+              <>
                   {globalSearchNoResults && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">No results found for “{globalSearchNoResults}” in transactions, contracts, inquiries, or units.</p>}
                   {children}
                 </>
-              )}
             </div>
           </main>
         </div>
@@ -970,14 +975,10 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
         {/* Mobile main content */}
         <main className="lg:hidden flex-1 overflow-y-auto bg-[#f3f7fc] min-w-0 max-w-full overflow-x-hidden">
           <div className="w-full max-w-full min-w-0 p-3 sm:p-4">
-            {!isAgentVerified ? (
-              <AgentVerificationGate user={user} refreshUser={refreshUser} />
-            ) : (
-              <>
+            <>
                 {globalSearchNoResults && <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">No results found for “{globalSearchNoResults}” in transactions, contracts, inquiries, or units.</p>}
                 {children}
               </>
-            )}
           </div>
         </main>
 

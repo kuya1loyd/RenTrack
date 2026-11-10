@@ -23,6 +23,7 @@ interface AssignTenantModalProps {
   properties: Property[];
   initialTenant?: TenantRecord | null;
   initialUnit?: Unit | null;
+  initialProperty?: Property | null;
   onSuccess: () => Promise<void>;
   onRequestTenantAccount?: () => void;
 }
@@ -35,6 +36,7 @@ export default function AssignTenantModal({
   properties,
   initialTenant = null,
   initialUnit = null,
+  initialProperty = null,
   onSuccess,
 }: AssignTenantModalProps) {
   const { user } = useAuth();
@@ -65,6 +67,19 @@ export default function AssignTenantModal({
         const prop = properties.find((p) => p.id === initialUnit.propertyId);
         setSelectedProperty(prop || null);
         setStep2Tab("units");
+      } else if (initialProperty) {
+        setSelectedProperty(initialProperty);
+        setStep2Tab("properties");
+        const estimatedRent =
+          initialProperty.monthlyRevenue && initialProperty.units
+            ? Math.round(initialProperty.monthlyRevenue / initialProperty.units)
+            : initialProperty.monthlyRevenue || 0;
+        setAssignForm({
+          propertyName: initialProperty.name,
+          unitNumber: "",
+          rentAmount: estimatedRent,
+          contractStart: new Date().toISOString().slice(0, 10),
+        });
       } else {
         setSelectedProperty(null);
         setStep2Tab("properties");
@@ -73,7 +88,7 @@ export default function AssignTenantModal({
       setSearchStep2("");
       setAssignmentPropertyFilter("all");
     }
-  }, [isOpen, initialTenant, initialUnit, properties]);
+  }, [isOpen, initialTenant, initialUnit, initialProperty, properties]);
 
   // Update assign form when unit changes
   useEffect(() => {
