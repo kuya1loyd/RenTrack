@@ -15,6 +15,7 @@ import {
   Home,
   MapPin,
   Search,
+  Sparkles,
   ShieldCheck,
   Clock,
   Wallet,
@@ -149,7 +150,12 @@ export default function TenantDashboard() {
 
         <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between w-full">
           <div className="min-w-0 max-w-2xl">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white drop-shadow-sm">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-[10px] font-bold uppercase tracking-widest text-blue-200 shadow-xs">
+              <Sparkles className="h-3 w-3 text-blue-300 animate-pulse" />
+              <span>Tenant Hub</span>
+            </div>
+
+            <h1 className="mt-2.5 text-2xl sm:text-3xl font-extrabold tracking-tight text-white drop-shadow-sm">
               {greeting}, {user?.name?.split(" ")[0] || "Junrich"}.
             </h1>
 

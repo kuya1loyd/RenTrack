@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -107,6 +108,11 @@ export default function LandingPage() {
   const [openDropdown, setOpenDropdown] = useState<"type" | "price" | null>(null);
   const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
   const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -146,13 +152,28 @@ export default function LandingPage() {
   }, []);
 
   useEffect(() => {
-    if (!showAgentApplication) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setShowAgentApplication(false);
+      if (event.key === "Escape") {
+        setShowAgentApplication(false);
+        setIsMoreFiltersOpen(false);
+        setIsLocationDropdownOpen(false);
+        setOpenDropdown(null);
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [showAgentApplication]);
+  }, []);
+
+  useEffect(() => {
+    if (isMoreFiltersOpen && typeof window !== "undefined" && window.innerWidth < 768) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isMoreFiltersOpen]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -987,7 +1008,7 @@ export default function LandingPage() {
               <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
                 <span className="inline-flex h-12 shrink-0 items-center gap-2 rounded-full border border-slate-300 px-4 text-sm font-medium text-slate-800"><Home className="h-4 w-4 text-blue-600" />For Rent</span>
                 {/* ─── Property Type Custom Dropdown ─── */}
-                <div className="relative" data-filter-dropdown="type">
+                <div className={cn("relative", openDropdown === "type" ? "z-50" : "z-20")} data-filter-dropdown="type">
                   <motion.button
                     type="button"
                     whileTap={{ scale: 0.98 }}
@@ -1039,7 +1060,7 @@ export default function LandingPage() {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 6, scale: 0.96 }}
                         transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                        className="absolute left-0 top-[calc(100%+8px)] min-w-54 rounded-2xl border border-slate-200/90 bg-white/95 p-1.5 shadow-[0_16px_36px_rgba(15,23,42,0.14)] backdrop-blur-md z-50"
+                        className="absolute left-0 top-[calc(100%+8px)] min-w-54 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white p-1.5 shadow-[0_16px_36px_rgba(15,23,42,0.14)] backdrop-blur-md z-50"
                       >
                         {[
                           { label: "Any Type", value: "" },
@@ -1074,7 +1095,7 @@ export default function LandingPage() {
                 </div>
 
                 {/* ─── Price Range Custom Dropdown ─── */}
-                <div className="relative" data-filter-dropdown="price">
+                <div className={cn("relative", openDropdown === "price" ? "z-50" : "z-20")} data-filter-dropdown="price">
                   <motion.button
                     type="button"
                     whileTap={{ scale: 0.98 }}
@@ -1119,7 +1140,7 @@ export default function LandingPage() {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 6, scale: 0.96 }}
                         transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                        className="absolute left-0 top-[calc(100%+8px)] min-w-56 rounded-2xl border border-slate-200/90 bg-white/95 p-1.5 shadow-[0_16px_36px_rgba(15,23,42,0.14)] backdrop-blur-md z-50"
+                        className="absolute left-0 top-[calc(100%+8px)] min-w-56 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white p-1.5 shadow-[0_16px_36px_rgba(15,23,42,0.14)] backdrop-blur-md z-50"
                       >
                         {[
                           { label: "Price Range (Any)", min: "", max: "" },
@@ -1156,7 +1177,7 @@ export default function LandingPage() {
                 </div>
 
                 {/* ─── More Filters Custom Popover ─── */}
-                <div className="relative z-50" data-more-filters-container>
+                <div className={cn("relative", isMoreFiltersOpen ? "z-50" : "z-20")} data-more-filters-container>
                   <motion.button
                     type="button"
                     whileTap={{ scale: 0.98 }}
@@ -1187,193 +1208,388 @@ export default function LandingPage() {
                     />
                   </motion.button>
 
-                  <AnimatePresence>
-                    {isMoreFiltersOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 10, scale: 0.96 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                        className="more-filter-panel absolute right-0 top-[calc(100%+8px)] w-[min(680px,calc(100vw-2rem))] rounded-3xl border border-slate-200/90 bg-white/98 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.18)] backdrop-blur-xl z-50"
-                      >
-                        <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
-                          <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Filter Preferences</div>
-                          {(bedroomFilter || bathroomFilter || furnishingFilter || locationFilter) && (
+                  {/* Desktop Dropdown Panel */}
+                  <div className="hidden md:block">
+                    <AnimatePresence>
+                      {isMoreFiltersOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10, scale: 0.96 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                          className="more-filter-panel absolute right-0 top-[calc(100%+8px)] w-[min(680px,calc(100vw-2rem))] rounded-3xl border border-slate-200/90 bg-white/98 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.18)] backdrop-blur-xl z-50"
+                        >
+                          <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+                            <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Filter Preferences</div>
+                            {(bedroomFilter || bathroomFilter || furnishingFilter || locationFilter) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBedroomFilter("");
+                                  setBathroomFilter("");
+                                  setFurnishingFilter("");
+                                  setLocationFilter("");
+                                }}
+                                className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition"
+                              >
+                                Reset filters
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                            <div>
+                              <label className="text-xs font-medium text-slate-600">Bedrooms</label>
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {['Any', '1', '2', '3', '4+'].map((option) => (
+                                  <button
+                                    key={option}
+                                    type="button"
+                                    aria-pressed={option === "Any" ? !bedroomFilter : bedroomFilter === option}
+                                    onClick={() => setBedroomFilter(option === "Any" || bedroomFilter === option ? "" : option)}
+                                    className={cn(
+                                      "flex h-9 min-w-9 items-center justify-center rounded-xl border px-2 text-xs font-semibold transition-all duration-150",
+                                      ((option === 'Any' && !bedroomFilter) || bedroomFilter === option)
+                                        ? "border-blue-500 bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                                        : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-700"
+                                    )}
+                                  >
+                                    {option}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-xs font-medium text-slate-600">Bathrooms</label>
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {['Any', '1', '2', '3', '4+'].map((option) => (
+                                  <button
+                                    key={option}
+                                    type="button"
+                                    aria-pressed={option === "Any" ? !bathroomFilter : bathroomFilter === option}
+                                    onClick={() => setBathroomFilter(option === "Any" || bathroomFilter === option ? "" : option)}
+                                    className={cn(
+                                      "flex h-9 min-w-9 items-center justify-center rounded-xl border px-2 text-xs font-semibold transition-all duration-150",
+                                      ((option === 'Any' && !bathroomFilter) || bathroomFilter === option)
+                                        ? "border-blue-500 bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                                        : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-700"
+                                    )}
+                                  >
+                                    {option}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-xs font-medium text-slate-600">Furnishing</label>
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                {['Furnished', 'Unfurnished'].map((option) => (
+                                  <button
+                                    key={option}
+                                    type="button"
+                                    aria-pressed={furnishingFilter === option}
+                                    onClick={() => setFurnishingFilter(furnishingFilter === option ? "" : option)}
+                                    className={cn(
+                                      "rounded-xl border px-3 py-2 text-xs font-medium transition-all duration-150",
+                                      furnishingFilter === option
+                                        ? "border-blue-500 bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                                        : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-700"
+                                    )}
+                                  >
+                                    {option}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-xs font-medium text-slate-600">Location</label>
+                              <div className="relative mt-2">
+                                <motion.button
+                                  type="button"
+                                  whileTap={{ scale: 0.98 }}
+                                  onClick={() => setIsLocationDropdownOpen(!isLocationDropdownOpen)}
+                                  className={cn(
+                                    "flex h-11 w-full items-center justify-between rounded-xl border px-3 text-xs font-medium transition-all duration-200 outline-none select-none",
+                                    isLocationDropdownOpen
+                                      ? "border-blue-500 bg-blue-50/40 text-blue-900 ring-2 ring-blue-500/20"
+                                      : locationFilter
+                                        ? "border-blue-400 bg-blue-50/20 text-blue-900 font-semibold"
+                                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                                  )}
+                                >
+                                  <div className="flex items-center gap-1.5 truncate">
+                                    <span className="truncate">{locationFilter || "Any location"}</span>
+                                  </div>
+                                  <ChevronDown
+                                    className={cn(
+                                      "h-3.5 w-3.5 text-slate-500 transition-transform duration-200 shrink-0",
+                                      isLocationDropdownOpen && "rotate-180 text-blue-600"
+                                    )}
+                                  />
+                                </motion.button>
+
+                                <AnimatePresence>
+                                  {isLocationDropdownOpen && (
+                                    <motion.div
+                                      initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                                      exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                                      transition={{ duration: 0.15, ease: "easeOut" }}
+                                      className="absolute left-0 top-[calc(100%+4px)] max-h-52 w-full overflow-y-auto rounded-xl border border-slate-200/90 bg-white p-1 shadow-xl z-60"
+                                    >
+                                      <motion.button
+                                        type="button"
+                                        whileHover={{ x: 2, backgroundColor: "rgba(241, 245, 249, 0.9)" }}
+                                        onClick={() => {
+                                          setLocationFilter("");
+                                          setIsLocationDropdownOpen(false);
+                                        }}
+                                        className={cn(
+                                          "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition text-left",
+                                          !locationFilter ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-700"
+                                        )}
+                                      >
+                                        <span>Any location</span>
+                                      </motion.button>
+                                      {locations.map((loc) => {
+                                        const isSelected = locationFilter === loc;
+                                        return (
+                                          <motion.button
+                                            key={loc}
+                                            type="button"
+                                            whileHover={{ x: 2, backgroundColor: "rgba(241, 245, 249, 0.9)" }}
+                                            onClick={() => {
+                                              setLocationFilter(loc);
+                                              setIsLocationDropdownOpen(false);
+                                            }}
+                                            className={cn(
+                                              "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition text-left",
+                                              isSelected ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-700"
+                                            )}
+                                          >
+                                            <span className="truncate">{loc}</span>
+                                          </motion.button>
+                                        );
+                                      })}
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-xs text-slate-500">
+                            <span>Showing {filteredProperties.length} {filteredProperties.length === 1 ? "property" : "properties"} and {filteredUnits.length} {filteredUnits.length === 1 ? "unit" : "units"}</span>
                             <button
                               type="button"
                               onClick={() => {
-                                setBedroomFilter("");
-                                setBathroomFilter("");
-                                setFurnishingFilter("");
-                                setLocationFilter("");
+                                setIsMoreFiltersOpen(false);
+                                setIsLocationDropdownOpen(false);
                               }}
-                              className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition"
+                              className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
                             >
-                              Reset filters
+                              Done
                             </button>
-                          )}
-                        </div>
-
-                        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-                          <div>
-                            <label className="text-xs font-medium text-slate-600">Bedrooms</label>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {['Any', '1', '2', '3', '4+'].map((option) => (
-                                <button
-                                  key={option}
-                                  type="button"
-                                  aria-pressed={option === "Any" ? !bedroomFilter : bedroomFilter === option}
-                                  onClick={() => setBedroomFilter(option === "Any" || bedroomFilter === option ? "" : option)}
-                                  className={cn(
-                                    "flex h-9 min-w-9 items-center justify-center rounded-xl border px-2 text-xs font-semibold transition-all duration-150",
-                                    ((option === 'Any' && !bedroomFilter) || bedroomFilter === option)
-                                      ? "border-blue-500 bg-blue-600 text-white shadow-md shadow-blue-600/20"
-                                      : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-700"
-                                  )}
-                                >
-                                  {option}
-                                </button>
-                              ))}
-                            </div>
                           </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
 
-                          <div>
-                            <label className="text-xs font-medium text-slate-600">Bathrooms</label>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {['Any', '1', '2', '3', '4+'].map((option) => (
-                                <button
-                                  key={option}
-                                  type="button"
-                                  aria-pressed={option === "Any" ? !bathroomFilter : bathroomFilter === option}
-                                  onClick={() => setBathroomFilter(option === "Any" || bathroomFilter === option ? "" : option)}
-                                  className={cn(
-                                    "flex h-9 min-w-9 items-center justify-center rounded-xl border px-2 text-xs font-semibold transition-all duration-150",
-                                    ((option === 'Any' && !bathroomFilter) || bathroomFilter === option)
-                                      ? "border-blue-500 bg-blue-600 text-white shadow-md shadow-blue-600/20"
-                                      : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-700"
-                                  )}
-                                >
-                                  {option}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="text-xs font-medium text-slate-600">Furnishing</label>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {['Furnished', 'Unfurnished'].map((option) => (
-                                <button
-                                  key={option}
-                                  type="button"
-                                  aria-pressed={furnishingFilter === option}
-                                  onClick={() => setFurnishingFilter(furnishingFilter === option ? "" : option)}
-                                  className={cn(
-                                    "rounded-xl border px-3 py-2 text-xs font-medium transition-all duration-150",
-                                    furnishingFilter === option
-                                      ? "border-blue-500 bg-blue-600 text-white shadow-md shadow-blue-600/20"
-                                      : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-700"
-                                  )}
-                                >
-                                  {option}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="text-xs font-medium text-slate-600">Location</label>
-                            <div className="relative mt-2">
-                              <motion.button
-                                type="button"
-                                whileTap={{ scale: 0.98 }}
-                                onClick={() => setIsLocationDropdownOpen(!isLocationDropdownOpen)}
-                                className={cn(
-                                  "flex h-11 w-full items-center justify-between rounded-xl border px-3 text-xs font-medium transition-all duration-200 outline-none select-none",
-                                  isLocationDropdownOpen
-                                    ? "border-blue-500 bg-blue-50/40 text-blue-900 ring-2 ring-blue-500/20"
-                                    : locationFilter
-                                      ? "border-blue-400 bg-blue-50/20 text-blue-900 font-semibold"
-                                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                                )}
-                              >
-                                <div className="flex items-center gap-1.5 truncate">
-                                  <span className="truncate">{locationFilter || "Any location"}</span>
-                                </div>
-                                <ChevronDown
-                                  className={cn(
-                                    "h-3.5 w-3.5 text-slate-500 transition-transform duration-200 shrink-0",
-                                    isLocationDropdownOpen && "rotate-180 text-blue-600"
-                                  )}
-                                />
-                              </motion.button>
-
-                              <AnimatePresence>
-                                {isLocationDropdownOpen && (
-                                  <motion.div
-                                    initial={{ opacity: 0, y: 4, scale: 0.96 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: 4, scale: 0.96 }}
-                                    transition={{ duration: 0.15, ease: "easeOut" }}
-                                    className="absolute left-0 top-[calc(100%+4px)] max-h-52 w-full overflow-y-auto rounded-xl border border-slate-200/90 bg-white p-1 shadow-xl z-60"
-                                  >
-                                    <motion.button
-                                      type="button"
-                                      whileHover={{ x: 2, backgroundColor: "rgba(241, 245, 249, 0.9)" }}
-                                      onClick={() => {
-                                        setLocationFilter("");
-                                        setIsLocationDropdownOpen(false);
-                                      }}
-                                      className={cn(
-                                        "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition text-left",
-                                        !locationFilter ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-700"
-                                      )}
-                                    >
-                                      <span>Any location</span>
-                                    </motion.button>
-                                    {locations.map((loc) => {
-                                      const isSelected = locationFilter === loc;
-                                      return (
-                                        <motion.button
-                                          key={loc}
-                                          type="button"
-                                          whileHover={{ x: 2, backgroundColor: "rgba(241, 245, 249, 0.9)" }}
-                                          onClick={() => {
-                                            setLocationFilter(loc);
-                                            setIsLocationDropdownOpen(false);
-                                          }}
-                                          className={cn(
-                                            "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition text-left",
-                                            isSelected ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-700"
-                                          )}
-                                        >
-                                          <span className="truncate">{loc}</span>
-                                        </motion.button>
-                                      );
-                                    })}
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-xs text-slate-500">
-                          <span>Showing {filteredProperties.length} {filteredProperties.length === 1 ? "property" : "properties"} and {filteredUnits.length} {filteredUnits.length === 1 ? "unit" : "units"}</span>
-                          <button
-                            type="button"
+                  {/* Mobile Bottom Sheet Drawer */}
+                  {isClient && typeof document !== "undefined" && createPortal(
+                    <AnimatePresence>
+                      {isMoreFiltersOpen && (
+                        <div className="fixed inset-0 z-[9999] md:hidden">
+                          {/* Backdrop */}
+                          <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
                             onClick={() => {
                               setIsMoreFiltersOpen(false);
                               setIsLocationDropdownOpen(false);
                             }}
-                            className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition"
+                            className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs"
+                          />
+
+                          {/* Bottom Sheet Drawer */}
+                          <motion.div
+                            initial={{ y: "100%" }}
+                            animate={{ y: 0 }}
+                            exit={{ y: "100%" }}
+                            transition={{ type: "spring", damping: 28, stiffness: 300 }}
+                            data-more-filters-container
+                            className="absolute inset-x-0 bottom-0 max-h-[85vh] flex flex-col rounded-t-[28px] border-t border-slate-200 bg-white shadow-2xl overflow-hidden"
                           >
-                            Done
-                          </button>
+                            {/* Drag pill handle */}
+                            <div className="flex justify-center pt-3 pb-1">
+                              <div className="h-1.5 w-12 rounded-full bg-slate-300" />
+                            </div>
+
+                            {/* Header */}
+                            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+                              <div className="flex items-center gap-2">
+                                <SlidersHorizontal className="h-4 w-4 text-blue-600" />
+                                <span className="text-base font-bold text-slate-900">Filter Preferences</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                {(bedroomFilter || bathroomFilter || furnishingFilter || locationFilter) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setBedroomFilter("");
+                                      setBathroomFilter("");
+                                      setFurnishingFilter("");
+                                      setLocationFilter("");
+                                    }}
+                                    className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition"
+                                  >
+                                    Reset all
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsMoreFiltersOpen(false);
+                                    setIsLocationDropdownOpen(false);
+                                  }}
+                                  className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Scrollable Filters Content */}
+                            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+                              {/* Bedrooms */}
+                              <div>
+                                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">Bedrooms</label>
+                                <div className="mt-2 grid grid-cols-5 gap-2">
+                                  {['Any', '1', '2', '3', '4+'].map((option) => {
+                                    const isSelected = (option === 'Any' && !bedroomFilter) || bedroomFilter === option;
+                                    return (
+                                      <button
+                                        key={option}
+                                        type="button"
+                                        aria-pressed={isSelected}
+                                        onClick={() => setBedroomFilter(option === "Any" || bedroomFilter === option ? "" : option)}
+                                        className={cn(
+                                          "flex h-11 items-center justify-center rounded-xl border text-sm font-semibold transition-all",
+                                          isSelected
+                                            ? "border-blue-600 bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                                            : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
+                                        )}
+                                      >
+                                        {option}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Bathrooms */}
+                              <div>
+                                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">Bathrooms</label>
+                                <div className="mt-2 grid grid-cols-5 gap-2">
+                                  {['Any', '1', '2', '3', '4+'].map((option) => {
+                                    const isSelected = (option === 'Any' && !bathroomFilter) || bathroomFilter === option;
+                                    return (
+                                      <button
+                                        key={option}
+                                        type="button"
+                                        aria-pressed={isSelected}
+                                        onClick={() => setBathroomFilter(option === "Any" || bathroomFilter === option ? "" : option)}
+                                        className={cn(
+                                          "flex h-11 items-center justify-center rounded-xl border text-sm font-semibold transition-all",
+                                          isSelected
+                                            ? "border-blue-600 bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                                            : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
+                                        )}
+                                      >
+                                        {option}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Furnishing */}
+                              <div>
+                                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">Furnishing</label>
+                                <div className="mt-2 grid grid-cols-2 gap-2">
+                                  {['Furnished', 'Unfurnished'].map((option) => {
+                                    const isSelected = furnishingFilter === option;
+                                    return (
+                                      <button
+                                        key={option}
+                                        type="button"
+                                        aria-pressed={isSelected}
+                                        onClick={() => setFurnishingFilter(furnishingFilter === option ? "" : option)}
+                                        className={cn(
+                                          "flex h-11 items-center justify-center rounded-xl border text-sm font-medium transition-all",
+                                          isSelected
+                                            ? "border-blue-600 bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                                            : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
+                                        )}
+                                      >
+                                        {option}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Location */}
+                              <div>
+                                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">Location</label>
+                                <div className="mt-2">
+                                  <select
+                                    value={locationFilter}
+                                    onChange={(e) => setLocationFilter(e.target.value)}
+                                    className="flex h-12 w-full items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                                  >
+                                    <option value="">Any location</option>
+                                    {locations.map((loc) => (
+                                      <option key={loc} value={loc}>
+                                        {loc}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Sticky Footer */}
+                            <div className="border-t border-slate-100 bg-slate-50/80 px-5 py-3.5 backdrop-blur-sm">
+                              <div className="mb-2.5 flex items-center justify-between text-xs text-slate-500">
+                                <span>Found {filteredProperties.length} {filteredProperties.length === 1 ? "property" : "properties"}, {filteredUnits.length} {filteredUnits.length === 1 ? "unit" : "units"}</span>
+                                {(bedroomFilter || bathroomFilter || furnishingFilter || locationFilter) && (
+                                  <span className="font-medium text-blue-600">Filters active</span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsMoreFiltersOpen(false);
+                                  setIsLocationDropdownOpen(false);
+                                }}
+                                className="w-full rounded-2xl bg-blue-600 py-3 text-center text-sm font-bold text-white shadow-lg shadow-blue-600/25 transition active:scale-[0.98] hover:bg-blue-700"
+                              >
+                                Apply Filters
+                              </button>
+                            </div>
+                          </motion.div>
                         </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                      )}
+                    </AnimatePresence>,
+                    document.body
+                  )}
                 </div>
 
                 {/* ─── Clear Filters Button ─── */}
