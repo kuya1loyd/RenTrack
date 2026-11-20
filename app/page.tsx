@@ -457,6 +457,13 @@ export default function LandingPage() {
     if (propertyTypeFilter === "units") return false;
 
     const propUnits = units.filter((u: any) => (u.propertyId || u.property_id) === property?.id);
+    const isCondo = isCondoListing(property?.type, property) || String(property?.type || "").toLowerCase() === "condominium" || String(property?.type || "").toLowerCase() === "building";
+    // If this is a condominium/building with individual units listed, hide the building wrapper
+    // from the general rental listings so we don't display duplicate cards for the same rental
+    if (propertyTypeFilter !== "properties" && (isCondo || propUnits.length > 0) && propUnits.length > 0) {
+      return false;
+    }
+
     const propertyName = property?.name || "";
     const propertyLocation = [property?.location, property?.city, property?.province, property?.address, unit?.location, unit?.propertyLocation].filter(Boolean).join(" ");
     const propertyType = property?.type || unit?.type || "house";
@@ -556,6 +563,9 @@ export default function LandingPage() {
     // Check if there are active rental listings in this destination
     const q = destinationName.toLowerCase();
     const propCount = properties.filter((p) => {
+      const isCondoBuilding = String(p.type || "").toLowerCase() === "condominium" || String(p.type || "").toLowerCase() === "building";
+      const hasUnits = units.some((u: any) => (u.propertyId || u.property_id) === p.id);
+      if (isCondoBuilding || hasUnits) return false;
       const str = `${p.name || ""} ${p.location || ""} ${p.city || ""} ${p.province || ""} ${p.address || ""}`.toLowerCase();
       return str.includes(q);
     }).length;
