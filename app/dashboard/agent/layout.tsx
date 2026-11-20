@@ -295,7 +295,9 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
   const openAgentTab = (tab: string) => {
     const normalizedTab = normalizeAgentTab(tab);
     setActiveTab(normalizedTab as any);
-    window.location.hash = normalizedTab;
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", `#${normalizedTab}`);
+    }
   };
 
   const submitGlobalSearch = (event: React.FormEvent<HTMLFormElement>) => {

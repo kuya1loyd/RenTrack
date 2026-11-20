@@ -458,11 +458,30 @@ html {
   font-size: 12px;
 }
 
-.destination-map-popup a {
-  margin-top: 4px;
+.destination-map-popup a,
+.destination-map-popup button,
+.destination-view-btn {
+  margin-top: 5px;
   color: #2563eb;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  padding: 0;
+  text-align: left;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 150ms ease, transform 150ms ease;
+}
+
+.destination-map-popup a:hover,
+.destination-map-popup button:hover,
+.destination-view-btn:hover {
+  color: #1d4ed8;
+  transform: translateX(2px);
 }
 
 .destinations-map .leaflet-popup-content-wrapper {

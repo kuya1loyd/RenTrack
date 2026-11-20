@@ -631,33 +631,29 @@ export default function AdminDashboard() {
     downloadExcelReport(`admin-occupancy-${new Date().toISOString().slice(0, 10)}.xls`, [{ name: "Occupancy", rows }]);
   };
 
-  const filteredProperties = useMemo(() => {
+  const filteredProperties = properties.filter((p) => {
     const q = propertySearch.trim().toLowerCase();
-    return properties.filter((p) => {
-      if (propertyTypeFilter !== "all") {
-        if (propertyTypeFilter === "house") {
-          if (p.type?.toLowerCase() !== "house" && p.type?.toLowerCase() !== "residential") return false;
-        } else if (propertyTypeFilter === "condominium") {
-          if (p.type?.toLowerCase() !== "condominium" && p.type?.toLowerCase() !== "building") return false;
-        } else if (p.type?.toLowerCase() !== propertyTypeFilter.toLowerCase()) {
-          return false;
-        }
-      }
-      if (propertyStatusFilter !== "all" && p.status !== propertyStatusFilter) return false;
-      if (
-        propertyMaintenanceReasonFilter !== "all" &&
-        p.maintenanceReason !== propertyMaintenanceReasonFilter
-      ) {
+    if (propertyTypeFilter !== "all") {
+      if (propertyTypeFilter === "house") {
+        if (p.type?.toLowerCase() !== "house" && p.type?.toLowerCase() !== "residential") return false;
+      } else if (propertyTypeFilter === "condominium") {
+        if (p.type?.toLowerCase() !== "condominium" && p.type?.toLowerCase() !== "building") return false;
+      } else if (p.type?.toLowerCase() !== propertyTypeFilter.toLowerCase()) {
         return false;
       }
-      if (!q) return true;
-      return `${p.name} ${p.location} ${p.address || ""} ${p.type} ${p.status} ${p.maintenanceReason || ""}`.toLowerCase().includes(q);
-    });
-  }, [properties, propertySearch, propertyTypeFilter, propertyStatusFilter, propertyMaintenanceReasonFilter]);
+    }
+    if (propertyStatusFilter !== "all" && p.status !== propertyStatusFilter) return false;
+    if (
+      propertyMaintenanceReasonFilter !== "all" &&
+      p.maintenanceReason !== propertyMaintenanceReasonFilter
+    ) {
+      return false;
+    }
+    if (!q) return true;
+    return `${p.name} ${p.location} ${p.address || ""} ${p.type} ${p.status} ${p.maintenanceReason || ""}`.toLowerCase().includes(q);
+  });
 
-  const houseProperties = useMemo(() => {
-    return filteredProperties.filter((p) => p.type?.toLowerCase() === "house" || p.type?.toLowerCase() === "residential");
-  }, [filteredProperties]);
+  const houseProperties = filteredProperties.filter((p) => p.type?.toLowerCase() === "house" || p.type?.toLowerCase() === "residential");
 
   const condoProperties = useMemo(() => {
     return filteredProperties.filter((p) => p.type?.toLowerCase() !== "house" && p.type?.toLowerCase() !== "residential");

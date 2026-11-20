@@ -186,7 +186,7 @@ export default function TenantPropertiesPage() {
 
   // Filtering & Sorting
   const filteredAndSortedProperties = useMemo(() => {
-    let list = properties.filter((p) => {
+    const list = properties.filter((p) => {
       const propertyUnits = units.filter((u) => u.propertyId === p.id);
 
       const matchesSearch =

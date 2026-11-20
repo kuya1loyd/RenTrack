@@ -2,14 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import Image from "next/image";
 import Link from "next/link";
 import {
   CreditCard,
   FileText,
-  AlertCircle,
   Clock,
-  Eye,
   Home,
   Building2,
   Calendar,
@@ -25,6 +22,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   Sparkles,
+  UserCheck,
 } from "lucide-react";
 import { formatCurrency, formatDate, parseGcashReference } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -32,12 +30,14 @@ import {
   getPayments,
   addPayment,
   getTenants,
+  getAgents,
   getTenantPaymentSummary,
   safeParseJson,
   addNotification,
   notifyAdmins,
   Payment,
   TenantRecord,
+  UserRecord,
 } from "@/lib/data";
 import { toast } from "sonner";
 import ReceiptModal from "@/components/receipt-modal";
@@ -60,10 +60,10 @@ export default function TenantPaymentsPage() {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [isScanningReceipt, setIsScanningReceipt] = useState(false);
   const [ocrDetected, setOcrDetected] = useState(false);
-  const [desiredStart, setDesiredStart] = useState("");
-  const [desiredEnd, setDesiredEnd] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [agents, setAgents] = useState<UserRecord[]>([]);
+  const [recipientType, setRecipientType] = useState<"agent" | "owner">("agent");
 
   // Modals
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
@@ -105,6 +105,15 @@ export default function TenantPaymentsPage() {
         if (isMounted) setTenant(null);
       });
 
+    getAgents()
+      .then((records) => {
+        if (!isMounted) return;
+        setAgents(records || []);
+      })
+      .catch(() => {
+        if (isMounted) setAgents([]);
+      });
+
     return () => {
       isMounted = false;
     };
@@ -138,6 +147,7 @@ export default function TenantPaymentsPage() {
   const myPayments = payments;
   const latestPayment = myPayments.length > 0 ? myPayments[0] : null;
   const rentAmount = tenant?.rentAmount && tenant.rentAmount > 0 ? tenant.rentAmount : (latestPayment?.amountDue && latestPayment.amountDue > 0 ? latestPayment.amountDue : 0);
+  const assignedAgent = agents.find((a) => a.id === tenant?.assignedAgentId) || (agents.length > 0 ? agents[0] : null);
 
   const openPaymentModal = (type: "regular" | "partial" | "advance" | "outstanding" = "regular") => {
     setPaymentType(type);
@@ -259,13 +269,8 @@ export default function TenantPaymentsPage() {
       return;
     }
 
-    if (desiredStart && desiredEnd && new Date(desiredEnd) <= new Date(desiredStart)) {
-      toast.error("End date must be after start date");
-      return;
-    }
     if (!user) return;
 
-    const isGcash = paymentMethod === "gcash";
     const effectiveRefNumber = gcashRefNumber.trim() || `GC-${Date.now().toString().slice(-8)}`;
 
     setIsUploading(true);
@@ -301,9 +306,16 @@ export default function TenantPaymentsPage() {
           ? "Pay outstanding balance"
           : "Regular rent payment";
 
-      const compiledNotes = paymentNotes
-        ? `${typeLabel}: ${paymentNotes}`
-        : `${typeLabel}${paymentMethod === "gcash" ? ` via GCash (Ref #${effectiveRefNumber})` : " via Cash"}`;
+      const recipientName = recipientType === "agent"
+        ? (assignedAgent?.name ? `Agent ${assignedAgent.name}` : "Assigned Property Agent")
+        : (tenant?.propertyName ? `${tenant.propertyName} Owner` : "Property Owner");
+
+      const compiledNotes = [
+        paymentNotes
+          ? `${typeLabel}: ${paymentNotes}`
+          : `${typeLabel}${paymentMethod === "gcash" ? ` via GCash (Ref #${effectiveRefNumber})` : " via Cash"}`,
+        `[Paid To: ${recipientName}]`,
+      ].filter(Boolean).join(" · ");
 
       // CRITICAL: Rent balance is NOT deducted yet while pending! It will automatically deduct once approved by the owner!
       const currentBalance = paymentType === "regular" ? (rentAmount > 0 ? rentAmount : displayBalance) : displayBalance;
@@ -312,6 +324,7 @@ export default function TenantPaymentsPage() {
         tenantId: user.id,
         tenantName: user.name,
         unitId: tenant?.unitId || "",
+        unitNumber: tenant?.unitNumber || "",
         propertyName: tenant?.propertyName || "",
         amountPaid: amountNum,
         amountDue: paymentType === "regular" ? rentAmount : amountNum,
@@ -322,11 +335,15 @@ export default function TenantPaymentsPage() {
         paymentMethod: paymentMethod === "gcash" ? "gcash" : "cash",
         paymentMethodNote: paymentMethod === "gcash" ? `GCash Ref: ${effectiveRefNumber}` : "Cash Payment",
         gcashNumber: paymentMethod === "gcash" ? effectiveRefNumber : undefined,
-        stayStart: desiredStart || undefined,
-        stayEnd: desiredEnd || undefined,
         notes: compiledNotes,
         receiptUrl: uploadedReceiptUrl,
         createdBy: user.id,
+        paidTo: recipientType,
+        recipientType,
+        recipientName,
+        agentName: recipientType === "agent" ? (assignedAgent?.name || "Assigned Property Agent") : undefined,
+        agentId: recipientType === "agent" ? (assignedAgent?.id || tenant?.assignedAgentId) : undefined,
+        receivedBy: recipientName,
       });
 
       // Automatic notifications: Forward receipt to Owner & Agent for approval
@@ -380,8 +397,6 @@ export default function TenantPaymentsPage() {
         paymentMethod: paymentMethod === "gcash" ? "gcash" : "cash",
         paymentMethodNote: paymentMethod === "gcash" ? `GCash Ref: ${effectiveRefNumber}` : "Cash Payment",
         gcashNumber: paymentMethod === "gcash" ? effectiveRefNumber : undefined,
-        stayStart: desiredStart || undefined,
-        stayEnd: desiredEnd || undefined,
         notes: compiledNotes,
         receiptUrl: uploadedReceiptUrl || created?.receiptUrl || undefined,
         createdBy: user.id,
@@ -892,7 +907,57 @@ export default function TenantPaymentsPage() {
                   </div>
                 </div>
 
-                {/* 3. Payment Method: GCash and Cash */}
+                {/* 3. Send Money To (Agent or Owner) */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Send Money To (Recipient)
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {/* Agent Option */}
+                    <button
+                      type="button"
+                      onClick={() => setRecipientType("agent")}
+                      className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2 cursor-pointer ${
+                        recipientType === "agent"
+                          ? "border-blue-600 bg-blue-50/80 text-blue-900 ring-2 ring-blue-600/20 shadow-xs"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <UserCheck className="h-5 w-5 text-blue-600 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-900 truncate">
+                          Property Agent
+                        </div>
+                        <p className="text-[10px] text-slate-500 truncate">
+                          {assignedAgent?.name || "Assigned Agent"}
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Owner Option */}
+                    <button
+                      type="button"
+                      onClick={() => setRecipientType("owner")}
+                      className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2 cursor-pointer ${
+                        recipientType === "owner"
+                          ? "border-emerald-600 bg-emerald-50/80 text-emerald-900 ring-2 ring-emerald-600/20 shadow-xs"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <Building2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-900 truncate">
+                          Property Owner
+                        </div>
+                        <p className="text-[10px] text-slate-500 truncate">
+                          Direct to Landlord
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4. Payment Method: GCash and Cash */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                     Payment Method

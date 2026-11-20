@@ -129,15 +129,13 @@ const PROPERTY_CONDITIONS = [
 const AVAILABILITY_STATUSES = ["Available", "Occupied", "Reserved", "Under Maintenance"] as const;
 
 const PROPERTY_TYPES = [
-  { value: "house", label: "House / Villa" },
-  { value: "residential", label: "Residential Property" },
-  { value: "building", label: "Commercial / Building" },
   { value: "condominium", label: "Condominium Complex" },
+  { value: "house", label: "House / Villa" },
 ];
 
 const OWNER_ADD_PROPERTY_TYPES = [
+  { value: "condominium", label: "Condominium Complex" },
   { value: "house", label: "House / Villa" },
-  { value: "residential", label: "Residential Property" },
 ];
 
 const UNIT_TYPES = [
@@ -190,7 +188,7 @@ export default function OwnerDashboard() {
   const [showCreateProperty, setShowCreateProperty] = useState(false);
   const [showAddUnit, setShowAddUnit] = useState(false);
   const [newUnitForm, setNewUnitForm] = useState({ propertyId: "", unitNumber: "", address: "", floor: "", type: "condo", condition: "", status: "vacant" as Unit["status"], rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
-  const [propertyForm, setPropertyForm] = useState({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house" as "house" | "residential", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
+  const [propertyForm, setPropertyForm] = useState({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house" as "house" | "residential" | "building" | "condominium" | string, features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
   const [isUploadingPropertyImage, setIsUploadingPropertyImage] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [reviewAssignment, setReviewAssignment] = useState<TenantRecord | null>(null);
@@ -3484,12 +3482,12 @@ export default function OwnerDashboard() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-semibold text-foreground">Add House / Residential Property</h3>
+                    <h3 className="text-lg font-semibold text-foreground">Add Property</h3>
                     <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px]">
-                      House &amp; Residential
+                      Condominium / House
                     </Badge>
                   </div>
-                  <p className="text-xs text-text-secondary">Register a standalone residential house. For Condominiums &amp; Buildings, add units under the Units tab.</p>
+                  <p className="text-xs text-text-secondary">Register a condominium complex or standalone house.</p>
                 </div>
               </div>
               <button onClick={() => setShowCreateProperty(false)} className="h-8 w-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-surface-secondary transition-colors">

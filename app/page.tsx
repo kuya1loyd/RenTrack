@@ -316,18 +316,132 @@ export default function LandingPage() {
 
   const isCondominiumProperty = (p: any) => {
     const t = String(p?.type || "").toLowerCase();
-    return t === "condominium" || t === "condo";
+    const name = String(p?.name || "").toLowerCase();
+    return t === "condominium" || t === "condo" || name.includes("residences") || name.includes("tower");
   };
 
-  const matchesPropertyTypeFilter = (rawType: any, isUnit = false) => {
+  const getPropertyDisplayType = (p: any) => {
+    const raw = String(p?.type || "").toLowerCase();
+    const name = String(p?.name || "").toLowerCase();
+    if (raw === "condominium" || raw === "condo" || name.includes("residences") || name.includes("tower")) {
+      return {
+        badgeUpper: "CONDOMINIUM",
+        label: "Condominium",
+        isCondo: true,
+      };
+    }
+    if (raw === "house" || raw === "villa") {
+      return {
+        badgeUpper: "HOUSE",
+        label: "House",
+        isCondo: false,
+      };
+    }
+    if (raw === "residential") {
+      return {
+        badgeUpper: "RESIDENTIAL",
+        label: "Residential",
+        isCondo: false,
+      };
+    }
+    if (raw === "building" || raw === "commercial") {
+      return {
+        badgeUpper: "BUILDING",
+        label: "Commercial / Building",
+        isCondo: false,
+      };
+    }
+    if (raw === "apartment") {
+      return {
+        badgeUpper: "APARTMENT",
+        label: "Apartment",
+        isCondo: false,
+      };
+    }
+    const clean = p?.type ? (p.type.charAt(0).toUpperCase() + p.type.slice(1)) : "Property";
+    return {
+      badgeUpper: clean.toUpperCase(),
+      label: clean,
+      isCondo: false,
+    };
+  };
+
+  const getUnitDisplayType = (u: any, parentProp?: any) => {
+    const raw = String(u?.type || parentProp?.type || "").toLowerCase();
+    const parentName = String(parentProp?.name || "").toLowerCase();
+    if (raw === "condo" || raw === "condominium" || parentName.includes("residences") || parentName.includes("tower")) {
+      return {
+        badgeUpper: "CONDOMINIUM",
+        label: "Condo Unit",
+        isCondo: true,
+      };
+    }
+    if (raw === "apartment") {
+      return {
+        badgeUpper: "APARTMENT",
+        label: "Apartment Unit",
+        isCondo: false,
+      };
+    }
+    if (raw === "studio") {
+      return {
+        badgeUpper: "STUDIO",
+        label: "Studio Unit",
+        isCondo: false,
+      };
+    }
+    if (raw === "dorm") {
+      return {
+        badgeUpper: "DORMITORY",
+        label: "Dorm Room",
+        isCondo: false,
+      };
+    }
+    if (raw === "hotel") {
+      return {
+        badgeUpper: "HOTEL",
+        label: "Hotel Room",
+        isCondo: false,
+      };
+    }
+    const clean = u?.type ? (u.type.charAt(0).toUpperCase() + u.type.slice(1)) : "Rental Unit";
+    return {
+      badgeUpper: clean.toUpperCase(),
+      label: clean,
+      isCondo: false,
+    };
+  };
+
+  const isCondoListing = (itemType: any, parentProp?: any) => {
+    const t = String(itemType || "").toLowerCase();
+    const pt = String(parentProp?.type || "").toLowerCase();
+    const name = String(parentProp?.name || "").toLowerCase();
+    return (
+      t === "condo" ||
+      t === "condominium" ||
+      pt === "condo" ||
+      pt === "condominium" ||
+      name.includes("residences") ||
+      name.includes("tower") ||
+      name.includes("condo")
+    );
+  };
+
+  const matchesPropertyTypeFilter = (rawType: any, isUnit = false, parentProp?: any) => {
     if (!propertyTypeFilter) return true;
     const filter = propertyTypeFilter.toLowerCase();
     const type = String(rawType || "").toLowerCase();
     if (filter === "house") {
-      return type === "house" || type === "residential" || (!type && !isUnit);
+      return (type === "house" || type === "villa") && !isCondoListing(rawType, parentProp);
     }
     if (filter === "condominium" || filter === "condo") {
-      return type === "condominium" || type === "condo";
+      return isCondoListing(rawType, parentProp);
+    }
+    if (filter === "residential") {
+      return type === "residential" || type === "house";
+    }
+    if (filter === "building" || filter === "commercial") {
+      return type === "building" || type === "commercial";
     }
     if (filter === "properties") {
       return !isUnit;
@@ -339,15 +453,13 @@ export default function LandingPage() {
   };
 
   const matchesPropertyFilters = (property: any, unit?: any) => {
-    // Hide condominium building cards (only display their individual rental units)
-    if (isCondominiumProperty(property)) return false;
-    // If filtering specifically for units or condominiums, hide properties (since only units represent condo rentals)
-    if (propertyTypeFilter === "units" || propertyTypeFilter === "condominium" || propertyTypeFilter === "condo") return false;
+    // If filtering specifically for units, hide properties
+    if (propertyTypeFilter === "units") return false;
 
-    const propertyName = property?.name || "";
-    const propertyLocation = property?.location || property?.city || property?.province || unit?.location || unit?.propertyLocation || "";
-    const propertyType = property?.type || unit?.type || "house";
     const propUnits = units.filter((u: any) => (u.propertyId || u.property_id) === property?.id);
+    const propertyName = property?.name || "";
+    const propertyLocation = [property?.location, property?.city, property?.province, property?.address, unit?.location, unit?.propertyLocation].filter(Boolean).join(" ");
+    const propertyType = property?.type || unit?.type || "house";
     const rents = propUnits.map((u: any) => Number(u.rentAmount ?? u.rent_amount ?? 0)).filter(Boolean);
     const rentAmount = rents.length ? Math.min(...rents) : Number(unit?.rentAmount ?? unit?.rent_amount ?? property?.monthlyRevenue ?? property?.rentAmount ?? property?.monthlyRent ?? 0);
     const unitKeywords = propUnits.map((u: any) => `${u.unitNumber} unit ${u.unitNumber} floor ${u.floor || ""}`).join(" ");
@@ -356,7 +468,7 @@ export default function LandingPage() {
 
     return (!normalizedSearch || haystack.includes(normalizedSearch))
       && (!locationFilter || propertyLocation.toLowerCase().includes(locationFilter.toLowerCase()))
-      && matchesPropertyTypeFilter(propertyType, false)
+      && matchesPropertyTypeFilter(propertyType, false, property)
       && (minPrice === 0 || rentAmount >= minPrice)
       && (maxPrice === Number.POSITIVE_INFINITY || rentAmount <= maxPrice || rentAmount === 0)
       && matchesRoomCount(property, "bedroom", bedroomFilter)
@@ -371,15 +483,16 @@ export default function LandingPage() {
     const parentProperty = properties.find((p) => p.id === (unit.propertyId || unit.property_id));
     const unitNumber = String(unit.unitNumber || unit.unit_number || "");
     const propertyName = parentProperty?.name || "";
-    const unitLocation = unit.address || parentProperty?.location || parentProperty?.city || parentProperty?.province || "";
-    const unitType = parentProperty?.type || unit.type || "condominium";
+    const parentLocation = [parentProperty?.location, parentProperty?.city, parentProperty?.province, parentProperty?.address].filter(Boolean).join(" ");
+    const unitLocation = [unit.address, unit.location, parentLocation].filter(Boolean).join(" ");
+    const unitType = unit.type || parentProperty?.type || "condominium";
     const rentAmount = Number(unit.rentAmount ?? unit.rent_amount ?? parentProperty?.rentAmount ?? parentProperty?.monthlyRent ?? 0);
     const haystack = [unitNumber, `unit ${unitNumber}`, propertyName, unitLocation, unit.address, unitType, unit.status, unit.floor ? `floor ${unit.floor}` : ""]
       .filter(Boolean).join(" ").toLowerCase();
 
     return (!normalizedSearch || haystack.includes(normalizedSearch))
       && (!locationFilter || unitLocation.toLowerCase().includes(locationFilter.toLowerCase()))
-      && matchesPropertyTypeFilter(unitType, true)
+      && matchesPropertyTypeFilter(unitType, true, parentProperty)
       && (minPrice === 0 || rentAmount >= minPrice)
       && rentAmount <= maxPrice
       && matchesRoomCount(parentProperty || unit, "bedroom", bedroomFilter)
@@ -439,6 +552,45 @@ export default function LandingPage() {
     });
   };
 
+  const handleSelectDestination = (destinationName: string, count?: number) => {
+    // Check if there are active rental listings in this destination
+    const q = destinationName.toLowerCase();
+    const propCount = properties.filter((p) => {
+      const str = `${p.name || ""} ${p.location || ""} ${p.city || ""} ${p.province || ""} ${p.address || ""}`.toLowerCase();
+      return str.includes(q);
+    }).length;
+    const unitCount = units.filter((u) => {
+      const parent = properties.find((p) => p.id === (u.propertyId || u.property_id));
+      const str = `${u.unitNumber || ""} ${u.address || ""} ${u.location || ""} ${parent?.name || ""} ${parent?.location || ""} ${parent?.city || ""} ${parent?.province || ""}`.toLowerCase();
+      return str.includes(q);
+    }).length;
+    const totalCount = count !== undefined ? count : (propCount + unitCount);
+
+    if (totalCount === 0) {
+      toast.info(`No rental properties or units are currently available in ${destinationName} yet.`);
+      return;
+    }
+
+    // Filter listings to this destination location
+    setSearchTerm(destinationName);
+    setLocationFilter("");
+    setPropertyTypeFilter("");
+    setMinPriceFilter("");
+    setMaxPriceFilter("");
+    setBedroomFilter("");
+    setBathroomFilter("");
+    setFurnishingFilter("");
+    setActiveCategoryTab("all");
+    setOpenDropdown(null);
+    setIsMoreFiltersOpen(false);
+
+    window.requestAnimationFrame(() => {
+      scrollToSection(undefined, "properties");
+    });
+
+    toast.success(`Showing ${totalCount} ${totalCount === 1 ? "rental" : "rentals"} in ${destinationName}`);
+  };
+
   const submitAgentApplication = async (event: React.FormEvent) => {
     event.preventDefault();
     if (agentApplicationSending) return;
@@ -489,13 +641,13 @@ export default function LandingPage() {
             </Link>
 
             <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-5 xl:flex lg:gap-7">
-              <a
+              <Link
                 href="/"
                 onClick={(e) => scrollToSection(e, "top")}
                 className="nav-link-letter text-sm font-medium text-slate-600 transition-colors duration-200 hover:text-slate-950 cursor-pointer"
               >
                 Home
-              </a>
+              </Link>
               {/* For Rent Dropdown */}
               <div className="relative" data-nav-dropdown>
                 <button
@@ -623,7 +775,7 @@ export default function LandingPage() {
 
         {mobileMenuOpen && (
           <div id="landing-mobile-navigation" className="max-h-[calc(100vh-4rem)] overflow-y-auto border-t border-slate-200 bg-white xl:hidden">
-            <a
+            <Link
               href="/"
               onClick={(e) => {
                 scrollToSection(e, "top");
@@ -633,7 +785,7 @@ export default function LandingPage() {
               className="block border-b border-slate-100 px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700 cursor-pointer"
             >
               Home
-            </a>
+            </Link>
             {/* Mobile For Rent Dropdown */}
             <div className="border-b border-slate-100">
               <button
@@ -1032,9 +1184,9 @@ export default function LandingPage() {
                           : propertyTypeFilter === "condominium"
                             ? "Condominium"
                             : propertyTypeFilter === "properties"
-                              ? "House"
+                              ? "Properties"
                               : propertyTypeFilter === "units"
-                                ? "Condominium"
+                                ? "Units"
                                 : "Any Type"}
                       </span>
                     </div>
@@ -1064,8 +1216,8 @@ export default function LandingPage() {
                       >
                         {[
                           { label: "Any Type", value: "" },
-                          { label: "House", value: "house" },
                           { label: "Condominium", value: "condominium" },
+                          { label: "House", value: "house" },
                         ].map((item) => {
                           const isSelected = propertyTypeFilter === item.value || (!propertyTypeFilter && item.value === "");
                           return (
@@ -1612,29 +1764,59 @@ export default function LandingPage() {
             <p className="text-xs font-medium text-slate-500">
               Showing {Math.min(displayListings.length, combinedListings.length)} of {combinedListings.length} total available listings
             </p>
-            {propertyTypeFilter && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                <span>
-                  {propertyTypeFilter === "house"
-                    ? "House only"
-                    : propertyTypeFilter === "condominium"
-                      ? "Condominium only"
-                      : propertyTypeFilter === "properties"
-                        ? "Properties only"
-                        : propertyTypeFilter === "units"
-                          ? "Units only"
-                          : `${propertyTypeFilter} only`}
+            <div className="flex flex-wrap items-center gap-2">
+              {searchTerm && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 shadow-2xs">
+                  <MapPin className="h-3 w-3 text-blue-600" />
+                  <span>Location: {searchTerm}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="rounded-full p-0.5 hover:bg-blue-200/60 transition"
+                    title="Clear location filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setPropertyTypeFilter("")}
-                  className="rounded-full p-0.5 hover:bg-blue-200/60 transition"
-                  title="Remove filter"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            )}
+              )}
+              {locationFilter && locationFilter !== searchTerm && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 shadow-2xs">
+                  <MapPin className="h-3 w-3 text-blue-600" />
+                  <span>Location: {locationFilter}</span>
+                  <button
+                    type="button"
+                    onClick={() => setLocationFilter("")}
+                    className="rounded-full p-0.5 hover:bg-blue-200/60 transition"
+                    title="Clear location filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+              {propertyTypeFilter && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                  <span>
+                    {propertyTypeFilter === "house"
+                      ? "House only"
+                      : propertyTypeFilter === "condominium"
+                        ? "Condominium only"
+                        : propertyTypeFilter === "properties"
+                          ? "Properties only"
+                          : propertyTypeFilter === "units"
+                            ? "Units only"
+                            : `${propertyTypeFilter} only`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPropertyTypeFilter("")}
+                    className="rounded-full p-0.5 hover:bg-blue-200/60 transition"
+                    title="Remove filter"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+            </div>
           </div>
 
           {combinedListings.length === 0 ? (
@@ -1642,8 +1824,16 @@ export default function LandingPage() {
               <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-600">
                 <Building2 className="h-6 w-6" />
               </div>
-              <h4 className="text-base font-semibold text-slate-900">No properties or units match your current filters</h4>
-              <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">Try resetting the keyword search, price range, or location filter.</p>
+              <h4 className="text-base font-semibold text-slate-900">
+                {searchTerm
+                  ? `No properties or units found in "${searchTerm}"`
+                  : "No properties or units match your current filters"}
+              </h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
+                {searchTerm
+                  ? `There are no active rental listings in this area yet. Try searching for another location or clearing your filters.`
+                  : "Try resetting the keyword search, price range, or location filter."}
+              </p>
               <button
                 type="button"
                 onClick={handleClearAllFilters}
@@ -1684,6 +1874,7 @@ export default function LandingPage() {
                     const isAvailable = propertyUnits.length === 0 || propertyUnits.some((unit: any) => (unit.status || "vacant") === "vacant");
                     const bedrooms = getRoomCountDisplay(property, "bedroom");
                     const bathrooms = getRoomCountDisplay(property, "bathroom");
+                    const propDisplay = getPropertyDisplayType(property);
 
                     return (
                       <motion.div
@@ -1699,16 +1890,8 @@ export default function LandingPage() {
                           <motion.div className="relative h-full w-full" whileHover={{ scale: 1.04 }} transition={{ duration: 0.45, ease: "easeOut" }}>
                             <UnitImageCarousel images={propertyImages} fallbackImage={img} alt={property.name} className="h-full w-full" imageClassName="object-cover" />
                           </motion.div>
-                          <div className="pointer-events-none absolute left-4 top-4 flex max-w-[calc(100%-2rem)] items-center gap-1.5 rounded-[10px] bg-slate-900/85 px-3 py-2 text-xs font-bold uppercase tracking-wide text-white shadow-sm backdrop-blur-sm">
-                            {isCondominiumProperty(property) ? (
-                              <Building2 className="h-4 w-4 text-blue-400 shrink-0" />
-                            ) : (
-                              <Home className="h-4 w-4 text-blue-400 shrink-0" />
-                            )}
-                            <span className="truncate">{isCondominiumProperty(property) ? "CONDOMINIUM" : "HOUSE"}</span>
-                          </div>
                           <div className="pointer-events-none absolute right-4 top-4 rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-bold text-slate-800 shadow-sm backdrop-blur-sm">
-                            {isCondominiumProperty(property) ? "Condominium" : "House"}
+                            {propDisplay.label}
                           </div>
                         </div>
 
@@ -1756,7 +1939,7 @@ export default function LandingPage() {
                               ) : (
                                 <>
                                   <Home className="h-4 w-4 text-blue-600 shrink-0" />
-                                  <span>Residential</span>
+                                  <span>{propDisplay.label}</span>
                                 </>
                               )}
                             </span>
@@ -1808,6 +1991,7 @@ export default function LandingPage() {
                   const unitBathrooms = getRoomCountDisplay(unit, "bathroom") !== "Not specified"
                     ? getRoomCountDisplay(unit, "bathroom")
                     : getRoomCountDisplay(parentProperty, "bathroom");
+                  const unitDisplay = getUnitDisplayType(unit, parentProperty);
 
                   return (
                     <motion.div
@@ -1823,12 +2007,8 @@ export default function LandingPage() {
                         <motion.div className="relative h-full w-full" whileHover={{ scale: 1.04 }} transition={{ duration: 0.45, ease: "easeOut" }}>
                           <UnitImageCarousel images={unitImagesList} fallbackImage={fallbackImg} alt={unitDisplayName} className="h-full w-full" imageClassName="object-cover" />
                         </motion.div>
-                        <div className="pointer-events-none absolute left-4 top-4 flex max-w-[calc(100%-2rem)] items-center gap-1.5 rounded-[10px] bg-slate-900/85 px-3 py-2 text-xs font-bold uppercase tracking-wide text-white shadow-sm backdrop-blur-sm">
-                          <Building2 className="h-4 w-4 text-blue-400 shrink-0" />
-                          <span className="truncate">CONDOMINIUM</span>
-                        </div>
                         <div className="pointer-events-none absolute right-4 top-4 rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-bold text-slate-800 shadow-sm backdrop-blur-sm">
-                          {floorLabel || "Condo Unit"}
+                          {floorLabel || unitDisplay.label}
                         </div>
                       </div>
 
@@ -1917,7 +2097,11 @@ export default function LandingPage() {
             transition={{ duration: 0.65, ease: "easeOut" }}
             className="relative mx-auto h-88 w-full max-w-5xl overflow-hidden rounded-2xl border border-gray-200 bg-slate-100 shadow-xl shadow-blue-950/10 sm:h-112 lg:h-128"
           >
-            <DestinationsMap />
+            <DestinationsMap
+              onSelectDestination={handleSelectDestination}
+              properties={properties}
+              units={units}
+            />
           </motion.div>
         </div>
       </motion.section>
@@ -2211,7 +2395,7 @@ export default function LandingPage() {
               </div>
               <div className="space-y-6 p-6 sm:p-8">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">{selectedProperty.type || "Property"}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">{getPropertyDisplayType(selectedProperty).label}</p>
                   <h3 className="mt-2 text-2xl font-semibold leading-tight text-gray-950">{selectedProperty.name || selectedProperty.unitNumber || "Property Details"}</h3>
                   <p className="mt-2 flex items-center gap-1.5 text-sm text-gray-600"><MapPin className="h-4 w-4 shrink-0" />{selectedProperty.location || selectedProperty.propertyName || "Location not specified"}</p>
                 </div>
@@ -2617,7 +2801,7 @@ export default function LandingPage() {
                         </div>
                         <div className="rounded-xl bg-slate-50 p-2.5">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Type</p>
-                          <p className="mt-1 text-base font-bold text-slate-900 capitalize">{parentProperty?.type || "Condo Unit"}</p>
+                          <p className="mt-1 text-base font-bold text-slate-900 capitalize">{getUnitDisplayType(selectedUnit, parentProperty).label}</p>
                         </div>
                       </div>
 
@@ -3050,11 +3234,10 @@ export default function LandingPage() {
                   </label>
                   <label
                     htmlFor="agent-resume-file"
-                    className={`relative flex flex-col items-center justify-center p-3.5 sm:p-5 rounded-xl border-2 border-dashed transition-all cursor-pointer ${
-                      agentResume
-                        ? "border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50/70"
-                        : "border-slate-300 bg-slate-50/60 hover:bg-blue-50/50 hover:border-blue-400"
-                    }`}
+                    className={`relative flex flex-col items-center justify-center p-3.5 sm:p-5 rounded-xl border-2 border-dashed transition-all cursor-pointer ${agentResume
+                      ? "border-emerald-400 bg-emerald-50/50 hover:bg-emerald-50/70"
+                      : "border-slate-300 bg-slate-50/60 hover:bg-blue-50/50 hover:border-blue-400"
+                      }`}
                   >
                     <input
                       id="agent-resume-file"

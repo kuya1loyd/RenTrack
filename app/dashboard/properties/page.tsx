@@ -461,14 +461,8 @@ export default function PropertiesPage() {
             <label className="block text-sm font-medium text-foreground mb-1.5">Property Type</label>
             <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
               className="w-full h-12 rounded-xl border border-border bg-surface text-foreground px-4">
+              <option value="condominium">Condominium Complex</option>
               <option value="house">House / Villa</option>
-              <option value="residential">Residential Property</option>
-              {user?.role !== "owner" && (
-                <>
-                  <option value="building">Commercial / Building</option>
-                  <option value="condominium">Condominium Complex</option>
-                </>
-              )}
             </select>
           </div>
           <div>
@@ -613,10 +607,8 @@ export default function PropertiesPage() {
             <label className="block text-sm font-medium text-foreground mb-1.5">Property Type</label>
             <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
               className="w-full h-12 rounded-xl border border-border bg-surface text-foreground px-4">
-              <option value="house">House / Villa</option>
-              <option value="residential">Residential Property</option>
-              <option value="building">Commercial / Building</option>
               <option value="condominium">Condominium Complex</option>
+              <option value="house">House / Villa</option>
             </select>
           </div>
           <div>

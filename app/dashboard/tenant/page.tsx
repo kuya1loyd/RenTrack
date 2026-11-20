@@ -38,6 +38,7 @@ import {
 import type { MoveOutTenancy } from "@/lib/move-out-policy";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import ReceiptModal from "@/components/receipt-modal";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -60,7 +61,7 @@ export default function TenantDashboard() {
   const [tenant, setTenant] = useState<MoveOutTenancy["tenant"]>(null);
   const [tenancyLoading, setTenancyLoading] = useState(true);
   const [tenancyError, setTenancyError] = useState(false);
-  const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
+  const [viewingReceipt, setViewingReceipt] = useState<Payment | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -451,7 +452,7 @@ export default function TenantDashboard() {
                     {payment.receiptUrl && (
                       <button
                         type="button"
-                        onClick={() => setViewingReceipt(payment.receiptUrl!)}
+                        onClick={() => setViewingReceipt(payment)}
                         className="text-blue-600 hover:underline flex items-center gap-0.5 cursor-pointer font-medium"
                       >
                         <Eye className="h-3 w-3" /> View receipt
@@ -474,35 +475,13 @@ export default function TenantDashboard() {
         )}
       </motion.section>
 
-      {/* RECEIPT PREVIEW MODAL */}
-      <AnimatePresence>
-        {viewingReceipt && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs cursor-pointer"
-            onClick={() => setViewingReceipt(null)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative max-w-lg w-full bg-white rounded-2xl shadow-2xl p-4 cursor-default overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                type="button"
-                onClick={() => setViewingReceipt(null)}
-                className="absolute top-3 right-3 h-8 w-8 rounded-full bg-black/50 text-white flex items-center justify-center cursor-pointer z-10"
-              >
-                <X className="h-4 w-4" />
-              </button>
-              <h4 className="text-sm font-bold text-slate-900 mb-3">Receipt Document</h4>
-              <div className="relative h-96 w-full rounded-xl overflow-hidden bg-slate-100">
-                <Image src={viewingReceipt} alt="Receipt" fill unoptimized className="object-contain" />
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* OFFICIAL RECEIPT MODAL */}
+      <ReceiptModal
+        isOpen={Boolean(viewingReceipt)}
+        onClose={() => setViewingReceipt(null)}
+        receiptUrl={viewingReceipt?.receiptUrl || null}
+        payment={viewingReceipt || undefined}
+      />
     </motion.div>
   );
 }

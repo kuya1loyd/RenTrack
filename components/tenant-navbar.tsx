@@ -6,14 +6,19 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  ArrowRight,
   Bell,
   Building2,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
   CreditCard,
   DoorOpen,
   HelpCircle,
   Home,
+  Info,
   Layers,
   LogOut,
   Map,
@@ -32,7 +37,7 @@ import {
   markAllNotificationsRead,
   Notification,
 } from "@/lib/data";
-import { getNotificationDashboardHref } from "@/lib/notification-routing";
+import { getNotificationDashboardHref, isMaintenanceNotification } from "@/lib/notification-routing";
 
 export default function TenantNavbar() {
   const pathname = usePathname();
@@ -44,10 +49,12 @@ export default function TenantNavbar() {
   const [propertyOpen, setPropertyOpen] = useState(false);
   const [mobilePropertyOpen, setMobilePropertyOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationTab, setNotificationTab] = useState<"all" | "unread" | "previous">("all");
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
   useEffect(() => {
@@ -131,11 +138,22 @@ export default function TenantNavbar() {
       setNotifications((prev) =>
         prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n))
       );
-      await markNotificationRead(notification.id).catch(() => {});
+      await markNotificationRead(notification.id).catch(() => { });
     }
     setNotificationsOpen(false);
     setMobileOpen(false);
-    router.push(getNotificationDashboardHref(notification, user.role));
+    setSelectedNotification(notification);
+  };
+
+  const getActionLabel = (href: string) => {
+    if (href.includes("/payments")) return "Go to Payments";
+    if (href.includes("/units")) return "View My Unit";
+    if (href.includes("/properties-page") || href.includes("/properties")) return "Browse Properties";
+    if (href.includes("/news")) return "View Announcements";
+    if (href.includes("/messages")) return "Open Messages";
+    if (href.includes("/contact")) return "Contact Support";
+    if (href.includes("/settings")) return "Account Settings";
+    return "View Page";
   };
 
   const handleLogout = async () => {
@@ -329,22 +347,247 @@ export default function TenantNavbar() {
 
         {/* Right: Notification Bell + User Profile */}
         <div className="flex items-center gap-2 sm:gap-2.5">
-          {/* Notifications Button with Badge */}
-          <button
-            type="button"
-            data-tenant-notifications
-            onClick={toggleNotifications}
-            aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
-            aria-expanded={notificationsOpen}
-            className="relative rounded-lg p-2 text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-          >
-            <Bell className="h-5 w-5 text-slate-700" aria-hidden="true" />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-xs ring-2 ring-white">
-                {unreadCount > 99 ? "99+" : unreadCount}
-              </span>
-            )}
-          </button>
+          {/* Notifications Button with Dropdown (anchored like other panels) */}
+          <div className="relative" data-tenant-notifications>
+            <button
+              type="button"
+              onClick={toggleNotifications}
+              aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
+              aria-expanded={notificationsOpen}
+              className={cn(
+                "relative rounded-lg p-2 text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
+                notificationsOpen && "bg-slate-100 text-blue-600"
+              )}
+            >
+              <Bell className="h-5 w-5" aria-hidden="true" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-xs ring-2 ring-white">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* Notifications Dropdown Panel */}
+            <AnimatePresence>
+              {notificationsOpen && user && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  transition={{ duration: 0.16, ease: "easeOut" }}
+                  className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden z-50 text-slate-800"
+                >
+                  <div className="flex items-center justify-between border-b border-slate-100 p-4">
+                    <div>
+                      <h3 className="font-semibold text-slate-900 text-sm">Notifications</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {unreadCount ? `${unreadCount} unread update${unreadCount > 1 ? "s" : ""}` : "You're all caught up"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {unreadCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!user) return;
+                            setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+                            await markAllNotificationsRead(user.id).catch(() => { });
+                          }}
+                          className="text-xs text-blue-600 hover:text-blue-700 font-semibold transition cursor-pointer"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setNotificationsOpen(false)}
+                        aria-label="Close notifications"
+                        className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tabs: All / Unread / Previous Notifications */}
+                  {notifications.length > 0 && (
+                    <div className="flex items-center gap-1.5 px-3 py-2 border-b border-slate-100 bg-slate-50/70 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setNotificationTab("all")}
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg font-medium transition cursor-pointer",
+                          notificationTab === "all"
+                            ? "bg-white text-blue-700 shadow-2xs font-semibold"
+                            : "text-slate-600 hover:text-slate-900"
+                        )}
+                      >
+                        All ({notifications.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNotificationTab("unread")}
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 cursor-pointer",
+                          notificationTab === "unread"
+                            ? "bg-white text-blue-700 shadow-2xs font-semibold"
+                            : "text-slate-600 hover:text-slate-900"
+                        )}
+                      >
+                        <span>Unread</span>
+                        {unreadCount > 0 && (
+                          <span className="rounded-full bg-blue-600 px-1.5 py-0.2 text-[10px] text-white font-bold leading-tight">
+                            {unreadCount}
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNotificationTab("previous")}
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg font-medium transition cursor-pointer",
+                          notificationTab === "previous"
+                            ? "bg-white text-blue-700 shadow-2xs font-semibold"
+                            : "text-slate-600 hover:text-slate-900"
+                        )}
+                      >
+                        Previous ({notifications.filter((n) => n.read).length})
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                    {notifications.length === 0 ? (
+                      <div className="p-8 text-center text-sm text-slate-500">
+                        <Check className="mx-auto mb-2 h-5 w-5 text-emerald-600" aria-hidden="true" />
+                        <p className="font-semibold text-slate-800">No notifications yet</p>
+                        <p className="text-xs text-slate-400 mt-1">Updates and announcements will appear here.</p>
+                      </div>
+                    ) : (() => {
+                      const unreadItems = notifications.filter((n) => !n.read);
+                      const previousItems = notifications.filter((n) => n.read);
+                      const displayItems =
+                        notificationTab === "unread"
+                          ? unreadItems
+                          : notificationTab === "previous"
+                            ? previousItems
+                            : notifications;
+
+                      if (notificationTab === "unread" && unreadItems.length === 0) {
+                        return (
+                          <div className="p-8 text-center text-sm text-slate-500">
+                            <Check className="mx-auto mb-2 h-5 w-5 text-emerald-600" aria-hidden="true" />
+                            <p className="font-semibold text-slate-800">No unread notifications</p>
+                            <p className="text-xs text-slate-400 mt-1">Check the Previous tab to review past notifications.</p>
+                          </div>
+                        );
+                      }
+
+                      if (notificationTab === "previous" && previousItems.length === 0) {
+                        return (
+                          <div className="p-8 text-center text-sm text-slate-500">
+                            <Clock className="mx-auto mb-2 h-5 w-5 text-slate-400" aria-hidden="true" />
+                            <p className="font-semibold text-slate-800">No previous notifications</p>
+                            <p className="text-xs text-slate-400 mt-1">Notifications marked as read will be archived here.</p>
+                          </div>
+                        );
+                      }
+
+                      const renderItem = (n: Notification) => {
+                        const isMaint = isMaintenanceNotification(n);
+                        const type = (n.type || "").toLowerCase();
+                        const cleanText = `${n.title || ""} ${n.message || ""}`.replace(/renttrack/gi, " ");
+                        const isSystem = isMaint || type === "system";
+                        const isPayment = !isSystem && (type === "payment" || /\b(?:payment|payments|receipt|receipts|balance|billing|invoice|paid|due\s+date|monthly\s+rent)\b/i.test(cleanText) || (/\brent\b/i.test(cleanText) && /\b(?:paid|due|amount|balance|fee|deposit|invoice|pay|overdue|receipt)\b/i.test(cleanText)));
+                        const isProperty = !isSystem && !isPayment && (type === "property" || /\b(?:property|properties|rental\s+unit|apartment|condo)\b/i.test(cleanText));
+                        const isTenant = !isSystem && !isPayment && !isProperty && (type === "tenant" || /\b(?:assignment|assigned|assigned\s+unit|lease|tenancy)\b/i.test(cleanText));
+
+                        return (
+                          <button
+                            key={n.id}
+                            type="button"
+                            onClick={() => void openNotification(n)}
+                            className={cn(
+                              "w-full text-left p-3.5 transition-colors hover:bg-slate-50 flex items-start gap-3 cursor-pointer",
+                              !n.read && "bg-blue-50/40"
+                            )}
+                          >
+                            <div
+                              className={cn(
+                                "flex h-8 w-8 items-center justify-center rounded-lg shrink-0 mt-0.5",
+                                isPayment && "bg-emerald-50 text-emerald-600",
+                                isProperty && "bg-amber-50 text-amber-600",
+                                isSystem && "bg-purple-50 text-purple-600",
+                                isTenant && "bg-blue-50 text-blue-600",
+                                !isPayment && !isProperty && !isSystem && !isTenant && "bg-slate-100 text-slate-600"
+                              )}
+                            >
+                              {isPayment && <CreditCard className="h-4 w-4" />}
+                              {isProperty && <Building2 className="h-4 w-4" />}
+                              {isSystem && <Settings className="h-4 w-4" />}
+                              {isTenant && <Home className="h-4 w-4" />}
+                              {!isPayment && !isProperty && !isSystem && !isTenant && <Bell className="h-4 w-4" />}
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-1">
+                                <p className={cn("text-xs font-semibold truncate", !n.read ? "text-slate-900 font-bold" : "text-slate-700")}>
+                                  {n.title}
+                                </p>
+                                {!n.read && <span className="h-2 w-2 rounded-full bg-blue-600 shrink-0" />}
+                              </div>
+                              <p className="text-xs text-slate-500 mt-0.5 line-clamp-2 leading-relaxed">
+                                {n.message}
+                              </p>
+                              <p className="text-[10px] text-slate-400 mt-1">
+                                {formatDate(n.createdAt)}
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      };
+
+                      if (notificationTab === "all" && unreadItems.length > 0 && previousItems.length > 0) {
+                        return (
+                          <div>
+                            <div className="px-3.5 py-1.5 bg-blue-50/60 text-[10px] font-bold text-blue-800 uppercase tracking-wider">
+                              New ({unreadItems.length})
+                            </div>
+                            {unreadItems.map(renderItem)}
+                            <div className="px-3.5 py-1.5 bg-slate-100/70 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-t border-slate-100">
+                              Previous Notifications ({previousItems.length})
+                            </div>
+                            {previousItems.map(renderItem)}
+                          </div>
+                        );
+                      }
+
+                      return displayItems.map(renderItem);
+                    })()}
+                  </div>
+
+                  {notifications.length > 0 && (
+                    <div className="p-3 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between text-xs">
+                      <span className="text-[11px] text-slate-500">Click notification to read closely</span>
+                      {unreadCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!user) return;
+                            setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+                            await markAllNotificationsRead(user.id).catch(() => { });
+                          }}
+                          className="text-xs text-blue-600 hover:text-blue-700 font-semibold transition cursor-pointer"
+                        >
+                          Mark all as read
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
           {/* User Account Pill */}
           {user && (
@@ -626,76 +869,178 @@ export default function TenantNavbar() {
         )}
       </AnimatePresence>
 
-      {/* Notifications Popover */}
+      {/* Notification Detail Modal - Read Closely */}
       <AnimatePresence>
-        {notificationsOpen && user && (
-          <motion.section
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            aria-label="Notifications"
-            data-tenant-notifications
-            className="fixed right-4 top-18 z-50 w-80 sm:w-96 rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden text-slate-800"
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">Notifications</h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {unreadCount ? `${unreadCount} unread` : "You're all caught up"}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {unreadCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!user) return;
-                      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-                      await markAllNotificationsRead(user.id).catch(() => {});
-                    }}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    Mark all read
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setNotificationsOpen(false)}
-                  aria-label="Close notifications"
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
+        {selectedNotification && (() => {
+          const isMaint = isMaintenanceNotification(selectedNotification);
+          const type = (selectedNotification.type || "").toLowerCase();
+          const cleanText = `${selectedNotification.title || ""} ${selectedNotification.message || ""}`.replace(/renttrack/gi, " ");
+          const isSystem = isMaint || type === "system";
+          const isPayment = !isSystem && (type === "payment" || /\b(?:payment|payments|receipt|receipts|balance|billing|invoice|paid|due\s+date|monthly\s+rent)\b/i.test(cleanText) || (/\brent\b/i.test(cleanText) && /\b(?:paid|due|amount|balance|fee|deposit|invoice|pay|overdue|receipt)\b/i.test(cleanText)));
+          const isProperty = !isSystem && !isPayment && (type === "property" || /\b(?:property|properties|rental\s+unit|apartment|condo)\b/i.test(cleanText));
+          const isTenant = !isSystem && !isPayment && !isProperty && (type === "tenant" || /\b(?:assignment|assigned|assigned\s+unit|lease|tenancy)\b/i.test(cleanText));
 
-            {notifications.length === 0 ? (
-              <div className="px-4 py-8 text-center">
-                <Check className="mx-auto mb-2 h-5 w-5 text-emerald-600" aria-hidden="true" />
-                <p className="text-sm font-medium text-slate-800">Nothing new</p>
-                <p className="mt-1 text-xs text-slate-500">New updates will show up here.</p>
-              </div>
-            ) : (
-              <div className="max-h-[min(24rem,65vh)] overflow-y-auto divide-y divide-slate-100">
-                {notifications.slice(0, 8).map((notification) => (
-                  <button
-                    type="button"
-                    key={notification.id}
-                    onClick={() => void openNotification(notification)}
-                    className="flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-                  >
-                    <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", notification.read ? "bg-slate-200" : "bg-blue-600")} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs font-semibold text-slate-900">{notification.title}</span>
-                      <span className="mt-0.5 block line-clamp-2 text-xs leading-4 text-slate-500">{notification.message}</span>
-                      <span className="mt-1 block text-[10px] text-slate-400">{formatDate(notification.createdAt)}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </motion.section>
-        )}
+          let category = "General Notice";
+          let badgeClass = "bg-slate-100 text-slate-700 border-slate-200";
+          let iconBg = "bg-gradient-to-br from-slate-700 to-slate-900 text-white shadow-slate-900/20";
+          let accentGradient = "from-slate-500/10 via-slate-500/5 to-transparent";
+          let IconComponent = Bell;
+
+          if (isSystem) {
+            category = "System Maintenance";
+            badgeClass = "bg-purple-50 text-purple-700 border-purple-200/80";
+            iconBg = "bg-gradient-to-br from-purple-500 to-indigo-600 text-white shadow-purple-500/25";
+            accentGradient = "from-purple-500/10 via-indigo-500/5 to-transparent";
+            IconComponent = Settings;
+          } else if (isPayment) {
+            category = "Payment & Billing";
+            badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200/80";
+            iconBg = "bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-emerald-500/25";
+            accentGradient = "from-emerald-500/10 via-teal-500/5 to-transparent";
+            IconComponent = CreditCard;
+          } else if (isProperty) {
+            category = "Property Update";
+            badgeClass = "bg-amber-50 text-amber-700 border-amber-200/80";
+            iconBg = "bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-amber-500/25";
+            accentGradient = "from-amber-500/10 via-orange-500/5 to-transparent";
+            IconComponent = Building2;
+          } else if (isTenant) {
+            category = "Unit & Tenancy";
+            badgeClass = "bg-blue-50 text-blue-700 border-blue-200/80";
+            iconBg = "bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-blue-500/25";
+            accentGradient = "from-blue-500/10 via-sky-500/5 to-transparent";
+            IconComponent = Home;
+          }
+
+          const targetHref = getNotificationDashboardHref(selectedNotification, user?.role || "tenant");
+          const actionLabel = getActionLabel(targetHref);
+
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setSelectedNotification(null);
+              }}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.94, y: 14 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.94, y: 14 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="relative w-full max-w-lg rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden text-slate-800"
+              >
+                {/* Decorative subtle ambient tint */}
+                <div className={cn("absolute top-0 inset-x-0 h-28 bg-gradient-to-b pointer-events-none opacity-80", accentGradient)} />
+
+                {/* Header */}
+                <div className="relative p-6 pb-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className={cn("flex h-11 w-11 items-center justify-center rounded-2xl shadow-sm", iconBg)}>
+                        <IconComponent className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className={cn("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border", badgeClass)}>
+                            {category}
+                          </span>
+                          {isSystem && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200/60">
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                              Notice
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-1">
+                          <Clock className="h-3.5 w-3.5 text-slate-400" />
+                          <span>{formatDate(selectedNotification.createdAt)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedNotification(null)}
+                      className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+                      aria-label="Close notification"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+
+                  <h3 className="text-base sm:text-lg font-bold text-slate-950 leading-snug mt-4">
+                    {selectedNotification.title}
+                  </h3>
+                </div>
+
+                {/* Body */}
+                <div className="px-6 py-2 pb-6 space-y-3 max-h-[60vh] overflow-y-auto">
+                  {isSystem && (
+                    <div className="rounded-2xl bg-amber-50/70 border border-amber-200/60 p-3.5 flex items-start gap-3">
+                      <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                        <Info className="h-3.5 w-3.5" />
+                      </div>
+                      <p className="text-xs text-amber-900 leading-relaxed font-medium">
+                        Scheduled maintenance advisory. Core services may temporarily undergo updates. Operations will resume normally as scheduled.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="rounded-2xl bg-slate-50/90 border border-slate-200/80 p-4.5 text-sm text-slate-700 leading-relaxed whitespace-pre-line shadow-2xs">
+                    {selectedNotification.message}
+                  </div>
+                </div>
+
+                {/* Footer with smart contextual actions */}
+                <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50/60 px-6 py-4">
+                  {isSystem ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedNotification(null)}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                      >
+                        Dismiss
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedNotification(null)}
+                        className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-slate-800 transition active:scale-[0.98] cursor-pointer"
+                      >
+                        <Check className="h-4 w-4" />
+                        <span>Got it, Understood</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedNotification(null)}
+                        className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                      >
+                        Dismiss
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedNotification(null);
+                          router.push(targetHref);
+                        }}
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold text-white shadow-sm transition active:scale-[0.98] cursor-pointer",
+                          isPayment ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700"
+                        )}
+                      >
+                        <span>{actionLabel}</span>
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
       </AnimatePresence>
 
       {/* Logout Confirmation Modal */}

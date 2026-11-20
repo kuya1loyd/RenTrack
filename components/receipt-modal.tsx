@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Download, Printer, X, CheckCircle, FileText, Image as ImageIcon, ShieldCheck, Copy, Check } from "lucide-react";
+import { Download, Printer, X } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 interface ReceiptModalProps {
@@ -29,58 +29,56 @@ interface ReceiptModalProps {
     stayStart?: string;
     stayEnd?: string;
     createdAt?: string;
+    verifiedBy?: string;
+    landlordName?: string;
+    paidTo?: "agent" | "owner" | string;
+    recipientType?: "agent" | "owner" | string;
+    recipientName?: string;
+    agentName?: string;
+    agentId?: string;
+    ownerName?: string;
+    receivedBy?: string;
   };
 }
 
-function numberToWordsPHP(num: number): string {
-  if (!num || isNaN(num) || num <= 0) return "Zero Pesos Only";
-
-  const ones = [
-    "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
-    "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen",
+function ThermalBarcode({ code }: { code: string }) {
+  const pattern = [
+    2, 1, 1, 2, 3, 1, 2, 2, 1, 3, 1, 2, 3, 1, 2, 1, 1, 3, 2, 1,
+    3, 2, 1, 2, 2, 1, 3, 1, 2, 1, 1, 3, 2, 1, 3, 2, 1, 2, 1, 3,
+    2, 1, 1, 3, 2, 1, 3, 1, 2, 2, 1, 3, 1, 2, 2, 1, 3, 2, 1, 1,
+    2, 1, 3, 1, 2, 2, 1, 1, 3, 2
   ];
-  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
-
-  function convertGroup(n: number): string {
-    let str = "";
-    if (n >= 100) {
-      str += ones[Math.floor(n / 100)] + " Hundred ";
-      n %= 100;
+  let curX = 0;
+  const rects: { x: number; width: number }[] = [];
+  for (let i = 0; i < pattern.length; i++) {
+    const w = pattern[i];
+    if (i % 2 === 0) {
+      rects.push({ x: curX, width: w });
     }
-    if (n >= 20) {
-      str += tens[Math.floor(n / 10)] + (n % 10 !== 0 ? " " + ones[n % 10] : "");
-    } else if (n > 0) {
-      str += ones[n];
-    }
-    return str.trim();
+    curX += w;
   }
 
-  const intPart = Math.floor(num);
-  const cents = Math.round((num - intPart) * 100);
-
-  let result = "";
-  if (intPart >= 1000000) {
-    const millions = Math.floor(intPart / 1000000);
-    result += convertGroup(millions) + " Million ";
-  }
-  if ((intPart % 1000000) >= 1000) {
-    const thousands = Math.floor((intPart % 1000000) / 1000);
-    result += convertGroup(thousands) + " Thousand ";
-  }
-  const remainder = intPart % 1000;
-  if (remainder > 0) {
-    result += convertGroup(remainder) + " ";
-  }
-  result = result.trim() + " Pesos";
-  if (cents > 0) {
-    result += " and " + convertGroup(cents) + " Cents";
-  }
-  return result + " Only";
+  return (
+    <div className="flex flex-col items-center justify-center pt-2">
+      <svg
+        className="w-48 sm:w-56 h-12"
+        viewBox={`0 0 ${curX} 40`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        {rects.map((r, idx) => (
+          <rect key={idx} x={r.x} y={0} width={r.width} height={40} fill="#000000" />
+        ))}
+      </svg>
+      <span className="font-mono text-[10px] tracking-widest text-slate-700 mt-1 uppercase">
+        {code}
+      </span>
+    </div>
+  );
 }
 
 export default function ReceiptModal({ isOpen, onClose, receiptUrl, payment }: ReceiptModalProps) {
   const [activeView, setActiveView] = useState<"receipt" | "attachment">("receipt");
-  const [copiedRef, setCopiedRef] = useState(false);
 
   if (!isOpen) return null;
   if (!payment && !receiptUrl) return null;
@@ -96,7 +94,7 @@ export default function ReceiptModal({ isOpen, onClose, receiptUrl, payment }: R
   const isPending = (payment?.status || "").toLowerCase() === "pending";
   const orNumber = payment?.id
     ? `RT-OR-${payment.id.replace(/[^a-zA-Z0-9]/g, "").slice(-8).toUpperCase()}`
-    : `RT-OR-${Date.now().toString().slice(-8)}`;
+    : "RT-OR-OFFICIAL";
 
   const paymentDate = payment?.paymentDate
     ? new Date(payment.paymentDate).toLocaleDateString("en-PH", {
@@ -104,11 +102,13 @@ export default function ReceiptModal({ isOpen, onClose, receiptUrl, payment }: R
         month: "long",
         day: "numeric",
       })
-    : new Date().toLocaleDateString("en-PH", {
+    : payment?.createdAt
+    ? new Date(payment.createdAt).toLocaleDateString("en-PH", {
         year: "numeric",
         month: "long",
         day: "numeric",
-      });
+      })
+    : "N/A";
 
   const methodRaw = (payment?.paymentMethod || "").toLowerCase();
   const isGcash =
@@ -136,6 +136,29 @@ export default function ReceiptModal({ isOpen, onClose, receiptUrl, payment }: R
     paymentTypeDescription = "Outstanding Balance Settlement";
   }
 
+  // Check whether payment was sent to Agent or Owner
+  const rawRecipient = String(payment?.recipientType || payment?.paidTo || "").toLowerCase();
+  const explicitAgentName = payment?.agentName || null;
+  const notesAgentMatch = (payment?.notes || "").match(/(?:paid to agent|via agent|recipient agent|agent:)\s*([a-zA-Z\s.-]+?)(?:via|\(|$|,|·|-|\[|\])/i);
+  const parsedAgentName = explicitAgentName || (notesAgentMatch ? notesAgentMatch[1].trim() : null);
+
+  const isSentToAgent =
+    rawRecipient === "agent" ||
+    Boolean(parsedAgentName) ||
+    notesLower.includes("to agent") ||
+    notesLower.includes("via agent") ||
+    Boolean(payment?.verifiedBy?.toLowerCase().includes("agent"));
+
+  const receiverDisplayName = isSentToAgent
+    ? (parsedAgentName
+        ? `Agent ${parsedAgentName.replace(/^agent\s+/i, "")}`
+        : payment?.receivedBy?.toLowerCase().includes("agent")
+          ? payment.receivedBy
+          : "Agent (Assigned Property Agent)")
+    : (payment?.ownerName
+        ? `Owner ${payment.ownerName.replace(/^owner\s+/i, "")}`
+        : payment?.receivedBy || (payment?.propertyName ? `${payment.propertyName} Owner` : "Property Owner"));
+
   const handlePrint = () => {
     window.print();
   };
@@ -154,13 +177,6 @@ export default function ReceiptModal({ isOpen, onClose, receiptUrl, payment }: R
     }
   };
 
-  const handleCopyRef = () => {
-    if (!orNumber) return;
-    navigator.clipboard.writeText(orNumber);
-    setCopiedRef(true);
-    setTimeout(() => setCopiedRef(false), 2000);
-  };
-
   return (
     <>
       {/* Print Specific CSS */}
@@ -175,14 +191,16 @@ export default function ReceiptModal({ isOpen, onClose, receiptUrl, payment }: R
           }
           #official-receipt-print-area {
             position: fixed !important;
-            left: 0 !important;
+            left: 50% !important;
+            transform: translateX(-50%) !important;
             top: 0 !important;
-            width: 100% !important;
+            width: 320px !important;
+            max-width: 320px !important;
             margin: 0 !important;
-            padding: 24px !important;
+            padding: 16px !important;
             background: #ffffff !important;
             box-shadow: none !important;
-            border: 2px solid #334155 !important;
+            border: none !important;
           }
           .no-print {
             display: none !important;
@@ -293,318 +311,179 @@ export default function ReceiptModal({ isOpen, onClose, receiptUrl, payment }: R
                 )}
               </div>
             ) : (
-              /* AUTHENTIC PHILIPPINE OFFICIAL RENTAL RECEIPT DOCUMENT */
+              /* THERMAL PAPER POS RECEIPT (SUPERMARKET STYLE SLIP) */
               <div
                 id="official-receipt-print-area"
-                className="w-full max-w-xl bg-white border-4 border-double border-slate-900 shadow-2xl rounded-2xl p-6 sm:p-7 text-slate-900 relative font-sans print:border-2 print:border-slate-800"
+                className="w-full max-w-[340px] sm:max-w-[360px] bg-white border border-slate-200/90 shadow-xl rounded-md p-6 sm:p-7 text-slate-900 font-sans print:shadow-none print:border-none print:w-[300px] print:p-0 my-2"
+                style={{
+                  fontFamily:
+                    'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                }}
               >
-                {/* Pending Owner Approval Alert Banner (Hidden when printed) */}
+                {/* Pending Notice for Tenant/Owner */}
                 {isPending && (
-                  <div className="no-print bg-amber-50 border-2 border-amber-300 rounded-xl p-3 mb-5 text-xs text-amber-950 flex items-start gap-2.5 shadow-xs">
-                    <ShieldCheck className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold text-amber-900 uppercase tracking-wide text-[11px]">
-                        Payment Submitted • Awaiting Owner Approval
-                      </p>
-                      <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
-                        Your payment receipt has been submitted and forwarded to the property owner and agent. Your rental balance will be automatically deducted upon owner approval.
-                      </p>
-                    </div>
+                  <div className="no-print bg-amber-50 border border-amber-300 rounded p-2 mb-4 text-[11px] text-amber-900 text-center">
+                    <p className="font-bold uppercase tracking-wider">Awaiting Owner Approval</p>
+                    <p className="text-[10px] text-amber-800 mt-0.5">Rent ledger will adjust automatically once confirmed.</p>
                   </div>
                 )}
 
-                {/* Subtle Security Background Watermark */}
-                <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-[0.025] select-none overflow-hidden">
-                  <span className="text-8xl sm:text-9xl font-black text-slate-900 uppercase rotate-[-25deg] tracking-widest">
-                    OFFICIAL
-                  </span>
-                </div>
-
-                {/* Top Header: Business & Document Info */}
-                <div className="border-b-2 border-slate-900 pb-4 mb-4">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    {/* Brand & Business Details */}
-                    <div>
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white font-extrabold text-sm tracking-tight shadow-xs">
-                          RT
-                        </span>
-                        <div>
-                          <h1 className="text-lg sm:text-xl font-black tracking-tight text-slate-950 uppercase leading-none">
-                            RentTrack Management
-                          </h1>
-                          <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mt-0.5">
-                            Real Estate & Tenancy Leasing Administration
-                          </p>
-                        </div>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-1.5 leading-tight">
-                        Authorized Property Leasing & Tenancy Records • Metro Manila, Philippines
-                      </p>
-                      <p className="text-[10px] font-mono text-slate-400 mt-0.5">
-                        TIN: 482-901-382-000-NV • DHSUD Reg. No. NCR-B-2024-8192
-                      </p>
-                    </div>
-
-                    {/* Official Receipt Number & Date Box */}
-                    <div className="w-full sm:w-auto text-left sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-200">
-                      <div className="inline-block bg-slate-50 border-2 border-rose-600 rounded-xl p-2.5 text-left sm:text-right min-w-[210px] shadow-2xs">
-                        <div className="flex items-center justify-between sm:justify-end gap-2">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-rose-700">
-                            Official Receipt No.
-                          </span>
-                          <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full ${
-                            isPaid ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
-                          }`}>
-                            {isPaid ? "PAID" : "PENDING"}
-                          </span>
-                        </div>
-                        <div className="flex items-center sm:justify-end gap-1.5 mt-0.5">
-                          <span className="text-base font-mono font-black text-rose-700 tracking-wider">
-                            {orNumber}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={handleCopyRef}
-                            className="no-print p-0.5 rounded text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-                            title="Copy OR Number"
-                          >
-                            {copiedRef ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
-                          </button>
-                        </div>
-                        <div className="mt-1 pt-1 border-t border-rose-200 text-[10px] text-slate-600 flex justify-between gap-2">
-                          <span className="font-medium text-slate-500">Date Issued:</span>
-                          <span className="font-bold text-slate-900">{paymentDate}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Subheader Title Banner */}
-                <div className="bg-slate-900 text-white py-2 px-4 rounded-lg text-center mb-4 shadow-xs">
-                  <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-widest">
-                    ACKNOWLEDGMENT RECEIPT FOR RENTAL PAYMENT
-                  </h2>
-                  <p className="text-[10px] text-slate-300 font-medium tracking-wide mt-0.5">
-                    KATIBAYAN NG PAGBABAYAD SA UPA • OFFICIAL ELECTRONIC RECEIPT
+                {/* Top Store Header */}
+                <div className="text-center space-y-0.5">
+                  <h3 className="text-lg font-black tracking-widest uppercase text-slate-950">
+                    RENTTRACK
+                  </h3>
+                  <p className="text-[11px] text-slate-700 font-medium leading-tight">
+                    {payment?.propertyName || "Property Management & Rentals"}
+                  </p>
+                  <p className="text-[10px] text-slate-500">
+                    Metro Manila, Philippines
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-mono">
+                    Tel.: +63 920 123 4567
                   </p>
                 </div>
 
-                {/* Payor & Property Information Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border border-slate-300 rounded-xl p-3.5 bg-slate-50/70 mb-4 text-xs">
-                  <div className="space-y-1.5">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      Received From (Payor / Tenant):
-                    </p>
-                    <p className="text-sm font-extrabold text-slate-950">
-                      {payment?.tenantName || "Verified Tenant"}
-                    </p>
-                    <p className="text-slate-600">
-                      <span className="font-medium text-slate-500">Rental Property: </span>
-                      <span className="font-bold text-slate-800">{payment?.propertyName || "Assigned Property"}</span>
-                    </p>
-                    <p className="text-slate-600">
-                      <span className="font-medium text-slate-500">Unit Number: </span>
-                      <span className="font-bold text-slate-800">
-                        {payment?.unitNumber ? `Unit ${payment.unitNumber}` : payment?.unitId || "Assigned Unit"}
+                {/* Dotted Divider 1 */}
+                <div className="border-b-2 border-dotted border-slate-900 my-3.5" />
+
+                {/* Cashier / Tenant / Unit Meta block */}
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-slate-600">Tenant (Sender):</span>
+                    <span className="font-semibold text-slate-900 truncate max-w-[185px] text-right">
+                      {payment?.tenantName || "Tenant"}
+                    </span>
+                  </div>
+                  {payment?.propertyName && (
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-slate-600">Property:</span>
+                      <span className="font-semibold text-slate-900 truncate max-w-[185px] text-right">
+                        {payment.propertyName}
                       </span>
-                    </p>
+                    </div>
+                  )}
+                  {payment?.unitNumber && (
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-slate-600">Unit:</span>
+                      <span className="font-semibold text-slate-900">Unit {payment.unitNumber}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-slate-600">Payment Sent To:</span>
+                    <span className="font-semibold text-slate-900">
+                      {isSentToAgent ? "Property Agent" : "Property Owner"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-slate-600">
+                      {isSentToAgent ? "Received By (Agent):" : "Received By (Owner):"}
+                    </span>
+                    <span className="font-bold text-slate-950 truncate max-w-[185px] text-right">
+                      {receiverDisplayName}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-slate-600">Date:</span>
+                    <span className="font-semibold text-slate-900">{paymentDate}</span>
+                  </div>
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-slate-600">Receipt No:</span>
+                    <span className="font-mono font-semibold text-slate-900">{orNumber}</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-0.5">
+                    <span className="text-slate-600">Status:</span>
+                    <span
+                      className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${
+                        isPaid ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                      }`}
+                    >
+                      {isPaid ? "PAID" : "PENDING"}
+                    </span>
+                  </div>
+                  {payment?.verifiedBy && (
+                    <div className="flex justify-between items-baseline text-[11px] text-slate-500 pt-0.5 border-t border-dotted border-slate-300">
+                      <span>Verified By:</span>
+                      <span className="font-medium text-slate-700 truncate max-w-[185px] text-right">
+                        {payment.verifiedBy}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Dotted Divider 2 */}
+                <div className="border-b-2 border-dotted border-slate-900 my-3.5" />
+
+                {/* Column Headers (Name, Qty, Price) */}
+                <div className="text-xs">
+                  <div className="flex justify-between font-bold text-slate-900 pb-1.5">
+                    <span className="flex-1">Name</span>
+                    <span className="w-10 text-center">Qty</span>
+                    <span className="w-24 text-right">Price</span>
                   </div>
 
-                  <div className="space-y-1.5 sm:border-l sm:border-slate-300 sm:pl-4">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      Payment Details:
-                    </p>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-slate-900">{displayMethod}</span>
-                      {isGcash && (
-                        <span className="bg-blue-600 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded shadow-2xs">
-                          GCASH
-                        </span>
-                      )}
+                  {/* Itemized Rows */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1 pr-2">
+                        <p className="font-medium text-slate-900 leading-snug">{paymentTypeDescription}</p>
+                        {payment?.stayStart && payment?.stayEnd && (
+                          <p className="text-[10px] text-slate-500 font-mono">
+                            {formatDate(payment.stayStart)} - {formatDate(payment.stayEnd)}
+                          </p>
+                        )}
+                        {payment?.notes && (
+                          <p className="text-[10px] text-slate-500 italic line-clamp-2">
+                            {payment.notes}
+                          </p>
+                        )}
+                      </div>
+                      <span className="w-10 text-center text-slate-700 font-mono">1</span>
+                      <span className="w-24 text-right font-bold text-slate-900 font-mono">
+                        {formatCurrency(amountPaid)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dotted Divider 3 */}
+                <div className="border-b-2 border-dotted border-slate-900 my-3.5" />
+
+                {/* Totals Section */}
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between items-center text-base sm:text-lg font-black text-slate-950">
+                    <span>Sub Total</span>
+                    <span className="font-mono">{formatCurrency(amountPaid)}</span>
+                  </div>
+
+                  <div className="space-y-1 pt-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="uppercase text-slate-700">{displayMethod}</span>
+                      <span className="font-bold text-slate-900 font-mono">{formatCurrency(amountPaid)}</span>
                     </div>
                     {referenceNumber && (
-                      <p className="text-slate-600 font-mono text-[11px]">
-                        <span className="font-medium font-sans text-slate-500">Reference No: </span>
-                        <span className="font-bold text-blue-950 bg-white px-1.5 py-0.5 rounded border border-blue-200">
-                          {referenceNumber}
-                        </span>
-                      </p>
+                      <div className="flex justify-between text-[11px] text-slate-500">
+                        <span>REF NO.</span>
+                        <span className="font-mono font-medium text-slate-800">{referenceNumber}</span>
+                      </div>
                     )}
-                    <p className="text-slate-600">
-                      <span className="font-medium text-slate-500">Transaction Status: </span>
-                      <span
-                        className={`font-extrabold uppercase text-[11px] ${
-                          isPaid ? "text-emerald-700" : "text-amber-700"
-                        }`}
-                      >
-                        {isPaid ? "Confirmed & Cleared" : "Pending Owner Approval"}
-                      </span>
-                    </p>
-                  </div>
-                </div>
-
-                {/* Particulars Table */}
-                <div className="border border-slate-300 rounded-xl overflow-hidden mb-4 shadow-2xs">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="bg-slate-900 text-white border-b border-slate-900 text-[10px] uppercase tracking-wider">
-                        <th className="py-2.5 px-3 font-extrabold">Item Description / Particulars</th>
-                        <th className="py-2.5 px-3 font-extrabold hidden sm:table-cell">Billing Period</th>
-                        <th className="py-2.5 px-3 font-extrabold hidden sm:table-cell">Payment Mode</th>
-                        <th className="py-2.5 px-3 font-extrabold text-right">Amount (PHP)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 bg-white">
-                      <tr>
-                        <td className="py-3 px-3">
-                          <p className="font-bold text-slate-900 text-xs sm:text-sm">
-                            {paymentTypeDescription}
-                          </p>
-                          <p className="text-[11px] text-slate-500 mt-0.5">
-                            {payment?.notes || `Rental payment for ${payment?.propertyName || "rental property"}`}
-                          </p>
-                        </td>
-                        <td className="py-3 px-3 hidden sm:table-cell text-slate-700 font-medium">
-                          {payment?.stayStart && payment?.stayEnd
-                            ? `${formatDate(payment.stayStart)} - ${formatDate(payment.stayEnd)}`
-                            : "Current Tenancy Cycle"}
-                        </td>
-                        <td className="py-3 px-3 hidden sm:table-cell text-slate-700 font-medium">
-                          {isGcash ? "GCash E-Wallet" : "Cash"}
-                        </td>
-                        <td className="py-3 px-3 text-right font-black text-slate-950 text-sm font-mono">
-                          {formatCurrency(amountPaid)}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Amount in Words */}
-                <div className="bg-slate-50 border border-slate-300 rounded-xl p-3 mb-4 text-xs">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                    <span className="font-bold text-slate-500 text-[10px] uppercase tracking-wider">
-                      Amount in Words:
-                    </span>
-                    <span className="font-extrabold text-slate-950 italic text-xs sm:text-sm uppercase">
-                      *** {numberToWordsPHP(amountPaid)} ***
-                    </span>
-                  </div>
-                </div>
-
-                {/* Financial Summary & Breakdown */}
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 mb-5">
-                  {/* Left: Notes & Terms */}
-                  <div className="sm:col-span-7 space-y-1.5 text-[11px] text-slate-600 border border-slate-200 rounded-xl p-3 bg-white">
-                    <p className="font-bold text-slate-800 uppercase tracking-wide text-[10px]">
-                      Acknowledgment Terms:
-                    </p>
-                    <ul className="list-disc list-inside space-y-1 text-[10px] leading-relaxed text-slate-600">
-                      <li>Official acknowledgment of rental payment submitted via the RentTrack tenant system.</li>
-                      <li>Valid record for tenancy ledger settlement and rental verification.</li>
-                      <li>Unpaid balances remain subject to standard lease agreement terms.</li>
-                    </ul>
-                  </div>
-
-                  {/* Right: Balance Calculations */}
-                  <div className="sm:col-span-5 bg-slate-50 rounded-xl border border-slate-300 p-3 space-y-1.5 text-xs">
-                    <div className="flex justify-between text-slate-600 text-[11px]">
-                      <span>Monthly Rent Due:</span>
-                      <span className="font-bold text-slate-900 font-mono">{formatCurrency(amountDue)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-900 font-bold border-t border-slate-200 pt-1.5">
-                      <span className="text-slate-800">Amount Paid:</span>
-                      <span className="text-emerald-700 text-sm font-mono">{formatCurrency(amountPaid)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600 border-t border-slate-200 pt-1.5 text-[11px]">
-                      <span>Remaining Balance:</span>
+                    <div className="flex justify-between text-slate-700 pt-0.5">
+                      <span className="uppercase">CHANGE / BALANCE</span>
                       <span className="font-bold text-slate-900 font-mono">{formatCurrency(balance)}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Footer Section: Official Seal & Authorized Signature */}
-                <div className="pt-4 border-t-2 border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-6 relative">
-                  {/* Official Circular Rubber Stamp */}
-                  <div className="flex items-center gap-3">
-                    <div className="relative flex items-center justify-center -rotate-6 transition-transform">
-                      <div className={`h-24 w-24 rounded-full border-4 border-dashed flex flex-col items-center justify-center p-1 text-center shadow-xs ${
-                        isPaid ? "border-emerald-700 bg-emerald-50/50" : "border-amber-700 bg-amber-50/50"
-                      }`}>
-                        <div className={`h-20 w-20 rounded-full border flex flex-col items-center justify-center p-1 ${
-                          isPaid ? "border-emerald-700" : "border-amber-700"
-                        }`}>
-                          <p className={`text-[6px] font-black uppercase tracking-tighter ${isPaid ? "text-emerald-800" : "text-amber-800"}`}>
-                            RENTTRACK MGMT
-                          </p>
-                          <div className={`my-0.5 border-y w-full py-0.5 ${isPaid ? "border-emerald-700" : "border-amber-700"}`}>
-                            <span className={`text-[11px] font-black tracking-widest uppercase ${isPaid ? "text-emerald-700" : "text-amber-700"}`}>
-                              {isPaid ? "★ PAID ★" : "★ PENDING ★"}
-                            </span>
-                          </div>
-                          <p className={`text-[6px] font-bold uppercase ${isPaid ? "text-emerald-800" : "text-amber-800"}`}>
-                            OFFICIAL SEAL
-                          </p>
-                          <p className={`text-[5px] font-semibold ${isPaid ? "text-emerald-700" : "text-amber-700"}`}>
-                            {isPaid ? "VERIFIED DOCUMENT" : "PENDING APPROVAL"}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className={`flex items-center gap-1 text-xs font-bold ${isPaid ? "text-emerald-700" : "text-amber-700"}`}>
-                        <ShieldCheck className="h-4 w-4" />
-                        <span>{isPaid ? "Verified Official Receipt" : "Awaiting Owner Approval"}</span>
-                      </div>
-                      <p className="text-[10px] text-slate-500 max-w-[200px] mt-0.5 leading-snug">
-                        {isPaid
-                          ? "Official electronic document verified with landlord approval."
-                          : "Submitted for approval. Rent will be automatically deducted once confirmed."}
-                      </p>
-                    </div>
-                  </div>
+                {/* Short Dotted Divider */}
+                <div className="w-3/5 mx-auto border-b-2 border-dotted border-slate-400 my-4" />
 
-                  {/* Authorized Signatory (Clean, Real Official Signatory) */}
-                  <div className="text-center sm:text-right">
-                    <div className="inline-block text-center">
-                      {/* Stylized Digital Signature Graphic */}
-                      <div className="h-10 flex flex-col items-center justify-center">
-                        <span className="font-serif italic font-bold text-base text-slate-900 select-none tracking-wider underline decoration-slate-400">
-                          RentTrack Property Admin
-                        </span>
-                        <span className="text-[8px] font-mono text-slate-400 uppercase tracking-widest mt-0.5">
-                          ✓ DIGITALLY CERTIFIED & RECORDED
-                        </span>
-                      </div>
-                      <div className="w-52 border-t-2 border-slate-900 pt-1">
-                        <p className="text-xs font-bold text-slate-900 uppercase tracking-wide">
-                          Authorized Representative
-                        </p>
-                        <p className="text-[10px] text-slate-500 font-medium">
-                          Property Management & Leasing Office
-                        </p>
-                        <p className="text-[9px] text-slate-400">
-                          RentTrack Real Estate Administration
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                {/* Barcode Section */}
+                <ThermalBarcode code={orNumber} />
 
-                {/* Bottom Barcode / Hash String */}
-                <div className="mt-5 pt-3 border-t border-slate-200 text-center space-y-1">
-                  <div className="inline-block font-mono text-[9px] tracking-[0.25em] text-slate-400 uppercase select-none">
-                    ||||| ||| ||||||| |||| |||||| ||||| ||||||| ||| |||||
-                  </div>
-                  <p className="text-[9px] font-mono text-slate-500">
-                    DIGITAL VERIFICATION: {orNumber} • AUTH-KEY: {payment?.id || "RT-REC-VERIFIED"}
-                  </p>
-                  <p className="text-[8px] text-slate-400 leading-tight">
-                    Issued pursuant to the Electronic Commerce Act of 2000 (R.A. 8792) • RentTrack Cloud Real Estate Systems • All rights reserved.
-                  </p>
-                </div>
+                {/* Tiny Footer Note */}
+                <p className="text-[9px] text-center text-slate-400 mt-2">
+                  Thank you for renting with RentTrack!
+                </p>
               </div>
             )}
           </div>

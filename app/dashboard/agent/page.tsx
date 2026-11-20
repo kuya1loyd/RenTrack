@@ -21,7 +21,7 @@ import AccountRequestModal from "@/components/account-request-modal";
 import ReceiptModal from "@/components/receipt-modal";
 import { useAuth } from "@/lib/auth";
 import {
-  getProperties, getUnits, getTenants, getPayments,
+  getProperties, getUnits, getTenants, getPayments, updatePayment,
   getConversations, notifyAdmins, updateTenantStatus,
   getInquiries, updateInquiryStatus, safeParseJson, markAllMessagesRead,
   updateInquiryProperty, Property, Unit, TenantRecord, Payment, Conversation, ChatInquiry,
@@ -438,6 +438,13 @@ export default function AgentDashboard() {
     }
   }, [isLoading, isAuthenticated]);
 
+  const navigateToTab = (tab: Step) => {
+    setActiveTab(tab);
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", `#${tab}`);
+    }
+  };
+
   
   const vacantUnits = units.filter((u) => u.status === "vacant");
   const pendingTenants = tenants.filter((t) => t.assignmentStatus === "pending");
@@ -692,10 +699,30 @@ export default function AgentDashboard() {
 
   const handleForwardToOwner = async (payment: Payment) => {
     try {
+      const agentDisplayName = user?.name ? `Agent ${user.name}` : "Property Agent";
+      await updatePayment(payment.id, {
+        agentName: user?.name || "Property Agent",
+        agentId: user?.id,
+        receivedBy: agentDisplayName,
+        verifiedBy: `Reviewed & forwarded by ${agentDisplayName}`,
+      });
+      setPayments((current) =>
+        current.map((p) =>
+          p.id === payment.id
+            ? {
+                ...p,
+                agentName: user?.name || "Property Agent",
+                agentId: user?.id,
+                receivedBy: agentDisplayName,
+                verifiedBy: `Reviewed & forwarded by ${agentDisplayName}`,
+              }
+            : p
+        )
+      );
       const stayInfo = payment.stayStart && payment.stayEnd ? `\nDesired stay: ${formatDate(payment.stayStart)} - ${formatDate(payment.stayEnd)}` : "";
       await notifyAdmins({
         title: "Payment Pending Owner Review",
-        message: `${payment.tenantName} submitted a payment of ${formatCurrency(payment.amountPaid)} for property "${payment.propertyName}". Please review the automatic receipt and confirm.${stayInfo}`,
+        message: `${payment.tenantName} submitted a payment of ${formatCurrency(payment.amountPaid)} for property "${payment.propertyName}". Reviewed and forwarded by ${agentDisplayName}.${stayInfo}`,
         type: "payment",
         read: false,
       });
@@ -925,11 +952,11 @@ export default function AgentDashboard() {
     }
     setSelectedTenant(null); setSelectedUnit(null); setSelectedProperty(null); setShowAssignModal(true);
   }, icon: Users, tone: "bg-blue-50 text-blue-600" },
-                          { label: "Payment reviews", value: pendingPayments.length, onClick: () => { setActiveTab("payments"); window.location.hash = "payments"; }, icon: CreditCard, tone: "bg-emerald-50 text-emerald-600" },
-                          { label: "Available units", value: vacantUnits.length, onClick: () => { setActiveTab("units"); window.location.hash = "units"; }, icon: Home, tone: "bg-violet-50 text-violet-600" },
-                          { label: "Payments overdue", value: overduePayments.length, onClick: () => { setActiveTab("payments"); window.location.hash = "payments"; }, icon: Clock, tone: "bg-amber-50 text-amber-600" },
-                          { label: "Tenant inquiries", value: pendingInquiryCount, onClick: () => { setActiveTab("inquiries"); window.location.hash = "inquiries"; }, icon: Mail, tone: "bg-orange-50 text-orange-600" },
-                          { label: "Unread messages", value: unreadConversationCount, onClick: () => { setActiveTab("messages"); window.location.hash = "messages"; }, icon: Send, tone: "bg-cyan-50 text-cyan-700" },
+                          { label: "Payment reviews", value: pendingPayments.length, onClick: () => navigateToTab("payments"), icon: CreditCard, tone: "bg-emerald-50 text-emerald-600" },
+                          { label: "Available units", value: vacantUnits.length, onClick: () => navigateToTab("units"), icon: Home, tone: "bg-violet-50 text-violet-600" },
+                          { label: "Payments overdue", value: overduePayments.length, onClick: () => navigateToTab("payments"), icon: Clock, tone: "bg-amber-50 text-amber-600" },
+                          { label: "Tenant inquiries", value: pendingInquiryCount, onClick: () => navigateToTab("inquiries"), icon: Mail, tone: "bg-orange-50 text-orange-600" },
+                          { label: "Unread messages", value: unreadConversationCount, onClick: () => navigateToTab("messages"), icon: Send, tone: "bg-cyan-50 text-cyan-700" },
                         ].map((item) => (
                           <button
                             key={item.label}

@@ -234,6 +234,13 @@ export interface Payment {
   verifiedBy?: string;
   verifiedAt?: string;
   createdBy: string;
+  paidTo?: "agent" | "owner" | string;
+  recipientType?: "agent" | "owner" | string;
+  recipientName?: string;
+  agentName?: string;
+  agentId?: string;
+  ownerName?: string;
+  receivedBy?: string;
 }
 
 export interface Notification {

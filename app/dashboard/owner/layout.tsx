@@ -333,7 +333,9 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
         if (destination.pathname === "/dashboard/owner" || pathname === "/dashboard/owner") {
           if (targetTab) {
             setActiveTab(targetTab);
-            window.location.hash = targetTab;
+            if (typeof window !== "undefined") {
+              window.history.pushState(null, "", `#${targetTab}`);
+            }
             window.dispatchEvent(new CustomEvent("owner-dashboard-tab-change", { detail: targetTab }));
           }
         }
