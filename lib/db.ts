@@ -216,6 +216,8 @@ export async function initDatabase() {
     statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS province TEXT`);
     statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS created_by TEXT`);
     statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS agent_id TEXT`);
+    statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS amenities JSONB DEFAULT '[]'::jsonb`);
+    statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS features JSONB DEFAULT '[]'::jsonb`);
     statements.push(`ALTER TABLE units ALTER COLUMN property_id DROP NOT NULL`);
 
     statements.push(`CREATE TABLE IF NOT EXISTS tenants (
@@ -1384,6 +1386,13 @@ export async function getUnits() {
     unit.createdBy = row.created_by || "";
     unit.agentId = row.agent_id || "";
     unit.address = row.address || "";
+    const rawAmenities = row.amenities || row.features;
+    unit.amenities = Array.isArray(rawAmenities)
+      ? rawAmenities
+      : typeof rawAmenities === "string"
+      ? (() => { try { return JSON.parse(rawAmenities); } catch { return []; } })()
+      : [];
+    unit.features = unit.amenities;
     unit.imageUrls = Array.isArray(row.image_urls) && row.image_urls.length > 0
       ? Array.from(new Set(row.image_urls.filter((url: unknown): url is string => typeof url === "string")))
       : row.image_url ? [row.image_url] : [];
@@ -1410,9 +1419,11 @@ export async function createUnit(data: any) {
     agent_id: data.agentId || null,
     image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
     image_urls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [],
+    amenities: Array.isArray(data.amenities) ? data.amenities : Array.isArray(data.features) ? data.features : [],
+    features: Array.isArray(data.features) ? data.features : Array.isArray(data.amenities) ? data.amenities : [],
   });
 
-  if (error && (error.message?.includes("units_type_check") || error.code === "23514" || error.message?.includes("type") || error.message?.includes("condition") || error.code === "PGRST204" || error.message?.includes("name") || error.message?.includes("city") || error.message?.includes("province"))) {
+  if (error && (error.message?.includes("units_type_check") || error.code === "23514" || error.message?.includes("type") || error.message?.includes("condition") || error.code === "PGRST204" || error.message?.includes("name") || error.message?.includes("city") || error.message?.includes("province") || error.message?.includes("amenities") || error.message?.includes("features"))) {
     try {
       const fixSql = `
         ALTER TABLE units ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'condo';
@@ -1422,6 +1433,8 @@ export async function createUnit(data: any) {
         ALTER TABLE units ADD COLUMN IF NOT EXISTS province TEXT;
         ALTER TABLE units ADD COLUMN IF NOT EXISTS created_by TEXT;
         ALTER TABLE units ADD COLUMN IF NOT EXISTS agent_id TEXT;
+        ALTER TABLE units ADD COLUMN IF NOT EXISTS amenities JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE units ADD COLUMN IF NOT EXISTS features JSONB DEFAULT '[]'::jsonb;
         ALTER TABLE units ALTER COLUMN property_id DROP NOT NULL;
         DO $$
         DECLARE r RECORD;

@@ -49,6 +49,13 @@ export async function POST(request: NextRequest) {
       sanitized.imageUrls = Array.from(new Set(body.imageUrls.filter((url: unknown): url is string => typeof url === "string")).values()).slice(0, 20);
       sanitized.imageUrl = sanitized.imageUrls[0] || sanitized.imageUrl;
     }
+    if (Array.isArray(body.amenities)) {
+      sanitized.amenities = Array.from(new Set(body.amenities.filter((item: unknown): item is string => typeof item === "string"))).slice(0, 50);
+      sanitized.features = sanitized.amenities;
+    } else if (Array.isArray(body.features)) {
+      sanitized.amenities = Array.from(new Set(body.features.filter((item: unknown): item is string => typeof item === "string"))).slice(0, 50);
+      sanitized.features = sanitized.amenities;
+    }
 
     sanitized.createdBy = auth.userId;
     if (auth.user.role === "agent") {

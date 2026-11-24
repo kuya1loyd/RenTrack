@@ -9,7 +9,7 @@ import { logAudit, getAdminSupabase } from "@/lib/db";
 const ALLOWED_UNIT_FIELDS = [
   "propertyId", "unitNumber", "floor", "status", "rentAmount",
   "tenantName", "tenantId", "imageUrl", "imageUrls", "address", "type", "condition",
-  "name", "city", "province", "createdBy", "agentId"
+  "name", "city", "province", "createdBy", "agentId", "amenities", "features"
 ];
 
 export async function PATCH(request: NextRequest) {
@@ -40,6 +40,11 @@ export async function PATCH(request: NextRequest) {
         if (!Array.isArray(val) || val.some((url) => typeof url !== "string")) continue;
         updates[dbKey] = Array.from(new Set(val)).slice(0, 20);
         updates.image_url = updates[dbKey][0] || null;
+      } else if (dbKey === "amenities" || dbKey === "features") {
+        if (!Array.isArray(val) || val.some((item) => typeof item !== "string")) continue;
+        const cleaned = Array.from(new Set(val)).slice(0, 50);
+        updates.amenities = cleaned;
+        updates.features = cleaned;
       } else {
         updates[dbKey] = val;
       }

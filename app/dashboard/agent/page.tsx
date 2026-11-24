@@ -34,6 +34,7 @@ import MessagingModal from "@/components/messaging-modal";
 import ProfilePanel from "@/components/profile-panel";
 import ContractsPanel from "@/components/contracts-panel";
 import UnitImageCarousel from "@/components/unit-image-carousel";
+import { UnitAmenitiesPicker } from "@/components/unit-amenities-picker";
 import { ManagementBanner, UnitMetrics, PropertyMetrics, UnitStatus, ManagementPagination } from "@/components/management-panel";
 import management from "@/components/management-panel.module.css";
 import { AnimatedFilterDropdown } from "@/components/ui/animated-filter-dropdown";
@@ -133,6 +134,7 @@ export default function AgentDashboard() {
     floor: "",
     type: "condo",
     condition: "",
+    amenities: [] as string[],
     status: "vacant" as Unit["status"],
     rentAmount: "",
     imageUrl: "",
@@ -166,11 +168,13 @@ export default function AgentDashboard() {
         rentAmount: Number(newUnitForm.rentAmount),
         imageUrl: newUnitForm.imageUrl || undefined,
         imageUrls: newUnitForm.imageUrls,
+        amenities: newUnitForm.amenities,
+        features: newUnitForm.amenities,
         agentId: user?.id,
       });
       setUnits((current) => [...current, newUnit]);
       setShowAddUnitModal(false);
-      setNewUnitForm({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "condo", condition: "", status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
+      setNewUnitForm({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "condo", condition: "", amenities: [], status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
       toast.success("Condominium unit registered successfully");
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("renttrack-refresh-data"));
@@ -1382,7 +1386,7 @@ export default function AgentDashboard() {
                           value={propertyStatusFilter}
                           onChange={(e) => setPropertyStatusFilter(e.target.value)}
                           options={[
-                            { value: "all", label: "All statuses" },
+                            { value: "all", label: "All Statuses" },
                             { value: "active", label: "Active" },
                             { value: "inactive", label: "Inactive" },
                             { value: "maintenance", label: "Under Maintenance" },
@@ -1611,7 +1615,7 @@ export default function AgentDashboard() {
                       value={unitStatusFilter}
                       onChange={(event) => setUnitStatusFilter(event.target.value)}
                       options={[
-                        { value: "all", label: "All statuses" },
+                        { value: "all", label: "All Statuses" },
                         { value: "vacant", label: "Available" },
                         { value: "occupied", label: "Occupied" },
                         { value: "maintenance", label: "Under Maintenance" },
@@ -2150,7 +2154,7 @@ export default function AgentDashboard() {
                         aria-label="Filter payments by status"
                         className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700"
                       >
-                        <option value="all">All statuses</option>
+                        <option value="all">All Statuses</option>
                         <option value="paid">Paid</option>
                         <option value="pending">Pending</option>
                         <option value="overdue">Overdue</option>
@@ -2382,7 +2386,7 @@ export default function AgentDashboard() {
                         <option value="all">All categories</option><option value="property">Property</option><option value="general">General</option>
                       </select>
                       <select value={inquiryFilter} onChange={(event) => setInquiryFilter(event.target.value)} aria-label="Filter inquiries by status" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700">
-                        <option value="all">All statuses</option><option value="new">New</option><option value="read">In progress</option><option value="replied">Replied</option><option value="closed">Closed</option>
+                        <option value="all">All Statuses</option><option value="new">New</option><option value="read">In progress</option><option value="replied">Replied</option><option value="closed">Closed</option>
                       </select>
                       <label className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2 text-[10px] text-slate-500">From<input type="date" value={inquiryDateFrom} onChange={(event) => setInquiryDateFrom(event.target.value)} aria-label="Inquiries from date" className="min-w-0 flex-1 bg-transparent text-[10px] text-slate-700 outline-none" /></label>
                       <label className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2 text-[10px] text-slate-500">To<input type="date" value={inquiryDateTo} onChange={(event) => setInquiryDateTo(event.target.value)} aria-label="Inquiries to date" className="min-w-0 flex-1 bg-transparent text-[10px] text-slate-700 outline-none" /></label>
@@ -2889,6 +2893,14 @@ export default function AgentDashboard() {
                         </select>
                       </div>
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Unit Amenities &amp; Facilities</label>
+                    <UnitAmenitiesPicker
+                      value={newUnitForm.amenities}
+                      onChange={(amenities) => setNewUnitForm({ ...newUnitForm, amenities })}
+                    />
                   </div>
 
                   <div>

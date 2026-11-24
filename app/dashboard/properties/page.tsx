@@ -447,15 +447,15 @@ export default function PropertiesPage() {
       </div>
 
       {/* Add Property Modal */}
-      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Add Property" description="Add a new rental property to your portfolio">
+      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Add Property" description="Register a residential subdivision development or individual house property.">
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">Property Name *</label>
-            <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Sunrise Apartments" />
+            <label className="block text-sm font-medium text-foreground mb-1.5">Subdivision / Property Name *</label>
+            <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Camella Homes, Lumina Homes, Sunnyvale Subdivision" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">Location *</label>
-            <Input value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} placeholder="e.g. Butuan City" />
+            <label className="block text-sm font-medium text-foreground mb-1.5">Location (Phase, Block, Lot, Street, City, Province) *</label>
+            <Input value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} placeholder="e.g. Phase 2 Block 14 Lot 25, Magnolia St, Dasmariñas, Cavite" />
           </div>
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Property Type</label>

@@ -43,6 +43,7 @@ import TenantsPanel from "@/components/tenants-panel";
 import ReceiptModal from "@/components/receipt-modal";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import UnitImageCarousel from "@/components/unit-image-carousel";
+import { UnitAmenitiesPicker } from "@/components/unit-amenities-picker";
 import ContractsPanel from "@/components/contracts-panel";
 import { ManagementBanner, UnitMetrics, UnitStatus, FinancialMetrics, PaymentStatus, ManagementPagination } from "@/components/management-panel";
 import management from "@/components/management-panel.module.css";
@@ -183,8 +184,8 @@ export default function OwnerDashboard() {
   const [, setIsRefreshing] = useState(false);
   const [showCreateProperty, setShowCreateProperty] = useState(false);
   const [showAddUnit, setShowAddUnit] = useState(false);
-  const [newUnitForm, setNewUnitForm] = useState({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "condo", condition: "", status: "vacant" as Unit["status"], rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
-  const [propertyForm, setPropertyForm] = useState({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house" as "house" | "residential" | "building" | "condominium" | string, features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
+  const [newUnitForm, setNewUnitForm] = useState({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "condo", condition: "", amenities: [] as string[], status: "vacant" as Unit["status"], rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
+  const [propertyForm, setPropertyForm] = useState({ name: "", phase: "", block: "", lot: "", houseNumber: "", address: "", city: "", province: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house" as "house" | "residential" | "building" | "condominium" | string, features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
   const [isUploadingPropertyImage, setIsUploadingPropertyImage] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [reviewAssignment, setReviewAssignment] = useState<TenantRecord | null>(null);
@@ -197,7 +198,7 @@ export default function OwnerDashboard() {
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
   const [editPropertyForm, setEditPropertyForm] = useState({ name: "", location: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house" as "house" | "residential" | "building" | "condominium" | string, status: "active" as "active" | "inactive", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
   const [editUnitPropertyId, setEditUnitPropertyId] = useState<string | null>(null);
-  const [editUnitForm, setEditUnitForm] = useState({ unitNumber: "", address: "", floor: "", type: "condo", condition: "", status: "vacant" as "vacant" | "occupied" | "maintenance", rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
+  const [editUnitForm, setEditUnitForm] = useState({ unitNumber: "", address: "", floor: "", type: "condo", condition: "", amenities: [] as string[], status: "vacant" as "vacant" | "occupied" | "maintenance", rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
   const [isUploadingEditPropertyImage, setIsUploadingEditPropertyImage] = useState(false);
   const [isUploadingEditUnitImage, setIsUploadingEditUnitImage] = useState(false);
   const [createTenantSubmitting, setCreateTenantSubmitting] = useState(false);
@@ -331,9 +332,24 @@ export default function OwnerDashboard() {
         ? (propertyMaintenanceReason ? `Maintenance: ${propertyMaintenanceReason}` : propertyForm.condition || undefined)
         : (propertyForm.condition || undefined);
 
+      const subdivisionParts = [
+        propertyForm.phase.trim() ? (propertyForm.phase.trim().toLowerCase().startsWith("phase") ? propertyForm.phase.trim() : `Phase ${propertyForm.phase.trim()}`) : "",
+        propertyForm.block.trim() ? (propertyForm.block.trim().toLowerCase().startsWith("block") ? propertyForm.block.trim() : `Block ${propertyForm.block.trim()}`) : "",
+        propertyForm.lot.trim() ? (propertyForm.lot.trim().toLowerCase().startsWith("lot") ? propertyForm.lot.trim() : `Lot ${propertyForm.lot.trim()}`) : "",
+        propertyForm.houseNumber.trim() ? (propertyForm.houseNumber.trim().toLowerCase().startsWith("house") ? propertyForm.houseNumber.trim() : `House ${propertyForm.houseNumber.trim()}`) : "",
+      ].filter(Boolean);
+
+      const streetAddress = propertyForm.address.trim();
+      const fullStreetAddress = [
+        subdivisionParts.join(", "),
+        streetAddress,
+      ].filter(Boolean).join(", ");
+
+      const fullLocation = `${fullStreetAddress ? `${fullStreetAddress}, ` : ""}${propertyForm.city.trim()}, ${propertyForm.province.trim()}`;
+
       await addProperty({
-        name: propertyForm.name,
-        location: `${propertyForm.address}, ${propertyForm.city}, ${propertyForm.province}`,
+        name: propertyForm.name.trim(),
+        location: fullLocation,
         type: propertyForm.type,
         units: 0,
         occupiedUnits: 0,
@@ -347,9 +363,28 @@ export default function OwnerDashboard() {
         availabilityStatus: propertyForm.availabilityStatus,
         agentId: propertyForm.agentId || undefined,
       }, user?.id || "");
-      toast.success("Property created successfully! You can now add units to this property.");
+      toast.success("Subdivision / house property registered successfully!");
       setShowCreateProperty(false);
-      setPropertyForm({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house", features: [], condition: "", availabilityStatus: "Available", imageUrl: "", imageUrls: [], agentId: "" });
+      setPropertyForm({
+        name: "",
+        phase: "",
+        block: "",
+        lot: "",
+        houseNumber: "",
+        address: "",
+        city: "",
+        province: "",
+        latitude: "",
+        longitude: "",
+        monthlyRevenue: "",
+        type: "house",
+        features: [],
+        condition: "",
+        availabilityStatus: "Available",
+        imageUrl: "",
+        imageUrls: [],
+        agentId: "",
+      });
       setPropertyMaintenanceReason(PROPERTY_MAINTENANCE_REASONS[0]);
       await loadData();
     } catch (error) {
@@ -598,6 +633,7 @@ export default function OwnerDashboard() {
       floor: unit.floor?.toString() || "",
       type: unit.type || "condo",
       condition: unit.condition || "",
+      amenities: unit.amenities || unit.features || [],
       status: unit.status,
       rentAmount: unit.rentAmount.toString(),
       imageUrl: unit.imageUrl || "",
@@ -726,6 +762,8 @@ export default function OwnerDashboard() {
         rentAmount: Number(editUnitForm.rentAmount),
         imageUrl: editUnitForm.imageUrl || undefined,
         imageUrls: editUnitForm.imageUrls,
+        amenities: editUnitForm.amenities,
+        features: editUnitForm.amenities,
       });
       if (!updatedUnitResult) throw new Error("Failed to update unit");
       const updatedUnit: Unit = {
@@ -740,6 +778,8 @@ export default function OwnerDashboard() {
         rentAmount: Number(editUnitForm.rentAmount),
         imageUrl: editUnitForm.imageUrl || undefined,
         imageUrls: editUnitForm.imageUrls,
+        amenities: editUnitForm.amenities,
+        features: editUnitForm.amenities,
       };
       setUnits((current) => current.map((unit) => unit.id === updatedUnit.id ? updatedUnit : unit));
       toast.success("Unit updated successfully");
@@ -1101,7 +1141,26 @@ export default function OwnerDashboard() {
 
   const openAddProperty = () => {
     setPropertyMaintenanceReason(PROPERTY_MAINTENANCE_REASONS[0]);
-    setPropertyForm((prev) => ({ ...prev, type: "house" }));
+    setPropertyForm({
+      name: "",
+      phase: "",
+      block: "",
+      lot: "",
+      houseNumber: "",
+      address: "",
+      city: "",
+      province: "",
+      latitude: "",
+      longitude: "",
+      monthlyRevenue: "",
+      type: "house",
+      features: [],
+      condition: "",
+      availabilityStatus: "Available",
+      imageUrl: "",
+      imageUrls: [],
+      agentId: "",
+    });
     setShowCreateProperty(true);
   };
 
@@ -1117,6 +1176,7 @@ export default function OwnerDashboard() {
       floor: "",
       type: "condo",
       condition: "",
+      amenities: [],
       status: "vacant",
       rentAmount: "",
       imageUrl: "",
@@ -1157,10 +1217,12 @@ export default function OwnerDashboard() {
         rentAmount: Number(newUnitForm.rentAmount),
         imageUrl: newUnitForm.imageUrl || undefined,
         imageUrls: newUnitForm.imageUrls,
+        amenities: newUnitForm.amenities,
+        features: newUnitForm.amenities,
       });
       setUnits((current) => [...current, newUnit]);
       setShowAddUnit(false);
-      setNewUnitForm({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "condo", condition: "", status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
+      setNewUnitForm({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "condo", condition: "", amenities: [], status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
       setNewUnitMaintenanceReason(UNIT_MAINTENANCE_REASONS[0]);
       toast.success("Condominium unit registered successfully");
       await loadData();
@@ -1311,10 +1373,10 @@ export default function OwnerDashboard() {
                   if (val !== "maintenance") setUnitMaintenanceReasonFilter("all");
                 }}
                 options={[
-                  { value: "all", label: "All statuses" },
+                  { value: "all", label: "All Statuses" },
                   { value: "vacant", label: "Available" },
                   { value: "occupied", label: "Occupied" },
-                  { value: "maintenance", label: "Under Maintenance", badge: "Maintenance" },
+                  { value: "maintenance", label: "Under Maintenance" },
                 ]}
               />
               <AnimatedFilterDropdown
@@ -1567,7 +1629,7 @@ export default function OwnerDashboard() {
                       if (val !== "maintenance") setPropertyMaintenanceReasonFilter("all");
                     }}
                     options={[
-                      { value: "all", label: "All statuses" },
+                      { value: "all", label: "All Statuses" },
                       { value: "active", label: "Active" },
                       { value: "inactive", label: "Inactive" },
                       { value: "maintenance", label: "Under Maintenance" },
@@ -2928,11 +2990,11 @@ export default function OwnerDashboard() {
                 />
 
                 <AnimatedFilterDropdown
-                  label="Payment Method"
+                  label="Payment"
                   value={financialMethodFilter}
                   onChange={(e) => setFinancialMethodFilter(e.target.value)}
                   options={[
-                    { value: "all", label: "All methods" },
+                    { value: "all", label: "All Payments" },
                     { value: "cash", label: "Cash" },
                     { value: "upload_receipt", label: "Receipt upload" },
                   ]}
@@ -2943,7 +3005,7 @@ export default function OwnerDashboard() {
                   value={financialStatusFilter}
                   onChange={(e) => setFinancialStatusFilter(e.target.value)}
                   options={[
-                    { value: "all", label: "All statuses" },
+                    { value: "all", label: "All Statuses" },
                     { value: "paid", label: "Verified / Paid" },
                     { value: "pending", label: "Pending" },
                     { value: "overdue", label: "Overdue" },
@@ -3349,6 +3411,15 @@ export default function OwnerDashboard() {
                   )}
                 </div>
 
+                {/* Unit Amenities & Facilities */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium">Unit Amenities &amp; Facilities</label>
+                  <UnitAmenitiesPicker
+                    value={newUnitForm.amenities}
+                    onChange={(amenities) => setNewUnitForm({ ...newUnitForm, amenities })}
+                  />
+                </div>
+
                 {/* Unit Photos */}
                 <div>
                   <label className="mb-1.5 block text-sm font-medium">
@@ -3460,36 +3531,101 @@ export default function OwnerDashboard() {
                   <div className="flex items-center gap-2">
                     <h3 className="text-lg font-semibold text-foreground">Add Property</h3>
                     <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px]">
-                      Condominium / House
+                      Subdivision / House
                     </Badge>
                   </div>
-                  <p className="text-xs text-text-secondary">Register a condominium complex or standalone house.</p>
+                  <p className="text-xs text-text-secondary">Register a residential subdivision development or individual house property.</p>
                 </div>
               </div>
-              <button onClick={() => setShowCreateProperty(false)} className="h-8 w-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-surface-secondary transition-colors">
+              <button onClick={() => setShowCreateProperty(false)} className="h-8 w-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-surface-secondary transition-colors cursor-pointer">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             <form onSubmit={handleCreateProperty} className="p-6 space-y-5">
-              {/* House Name & Location */}
+              {/* Subdivision Name & Location */}
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1.5">House / Property Name *</label>
-                  <Input value={propertyForm.name} onChange={(e) => setPropertyForm({ ...propertyForm, name: e.target.value })} placeholder="e.g. Sunnyvale House, Casa Bella" required />
+                  <label className="block text-sm font-medium mb-1.5">Subdivision / Property Name *</label>
+                  <Input
+                    value={propertyForm.name}
+                    onChange={(e) => setPropertyForm({ ...propertyForm, name: e.target.value })}
+                    placeholder="e.g. Camella Homes, Lumina Homes, Deca Homes, Sunnyvale Subdivision"
+                    required
+                  />
+                  <p className="mt-1 text-xs text-slate-500">Name of the residential subdivision community or standalone house property.</p>
                 </div>
+
+                {/* Subdivision Phase, Block, Lot & House Number */}
+                <div className="rounded-xl border border-border bg-slate-50/70 p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">Subdivision Specifications</span>
+                    <span className="text-[11px] text-slate-400 font-normal">Optional for standalone houses</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">Phase</label>
+                      <Input
+                        value={propertyForm.phase}
+                        onChange={(e) => setPropertyForm({ ...propertyForm, phase: e.target.value })}
+                        placeholder="e.g. Phase 2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">Block No.</label>
+                      <Input
+                        value={propertyForm.block}
+                        onChange={(e) => setPropertyForm({ ...propertyForm, block: e.target.value })}
+                        placeholder="e.g. Block 14"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">Lot No.</label>
+                      <Input
+                        value={propertyForm.lot}
+                        onChange={(e) => setPropertyForm({ ...propertyForm, lot: e.target.value })}
+                        placeholder="e.g. Lot 25"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">House No.</label>
+                      <Input
+                        value={propertyForm.houseNumber}
+                        onChange={(e) => setPropertyForm({ ...propertyForm, houseNumber: e.target.value })}
+                        placeholder="e.g. House 12"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-sm font-medium mb-1.5">Street Address *</label>
-                  <Input value={propertyForm.address} onChange={(e) => setPropertyForm({ ...propertyForm, address: e.target.value })} placeholder="e.g. A.S. Fortuna St, Mandaue City" required />
+                  <label className="block text-sm font-medium mb-1.5">Street Address / Specific House Address *</label>
+                  <Input
+                    value={propertyForm.address}
+                    onChange={(e) => setPropertyForm({ ...propertyForm, address: e.target.value })}
+                    placeholder="e.g. Magnolia Street, Camella Homes Phase 2"
+                    required
+                  />
                 </div>
+
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-sm font-medium mb-1.5">City *</label>
-                    <Input value={propertyForm.city} onChange={(e) => setPropertyForm({ ...propertyForm, city: e.target.value })} placeholder="e.g. Mandaue City / Cebu City" required />
+                    <Input
+                      value={propertyForm.city}
+                      onChange={(e) => setPropertyForm({ ...propertyForm, city: e.target.value })}
+                      placeholder="e.g. Dasmariñas, Tagaytay, Cebu City"
+                      required
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1.5">Province *</label>
-                    <Input value={propertyForm.province} onChange={(e) => setPropertyForm({ ...propertyForm, province: e.target.value })} placeholder="e.g. Cebu" required />
+                    <Input
+                      value={propertyForm.province}
+                      onChange={(e) => setPropertyForm({ ...propertyForm, province: e.target.value })}
+                      placeholder="e.g. Cavite, Laguna, Cebu, Rizal"
+                      required
+                    />
                   </div>
                 </div>
               </div>
@@ -3596,7 +3732,7 @@ export default function OwnerDashboard() {
                   Cancel
                 </Button>
                 <Button type="submit" disabled={isSubmitting} className="bg-blue-600 text-white hover:bg-blue-700 font-medium">
-                  {isSubmitting ? "Registering..." : "Add House Property"}
+                  {isSubmitting ? "Registering..." : "Add Subdivision / House Property"}
                 </Button>
               </div>
             </form>
@@ -4173,6 +4309,13 @@ export default function OwnerDashboard() {
                     </select>
                   </motion.div>
                 )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Unit Amenities &amp; Facilities</label>
+                <UnitAmenitiesPicker
+                  value={editUnitForm.amenities}
+                  onChange={(amenities) => setEditUnitForm({ ...editUnitForm, amenities })}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5">Unit Image</label>

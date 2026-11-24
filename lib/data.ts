@@ -150,6 +150,8 @@ export interface Unit {
   city?: string;
   province?: string;
   createdBy?: string;
+  amenities?: string[];
+  features?: string[];
 }
 
 export interface TenantRecord {

@@ -2137,7 +2137,7 @@ export default function AdminDashboard() {
                   value={propertyStatusFilter}
                   onChange={(e) => setPropertyStatusFilter(e.target.value)}
                   options={[
-                    { value: "all", label: "All statuses" },
+                    { value: "all", label: "All Statuses" },
                     { value: "active", label: "Active" },
                     { value: "inactive", label: "Inactive" },
                     { value: "maintenance", label: "Under Maintenance" },

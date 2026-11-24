@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/auth";
 import { getUnits, getProperties, addUnit, updateUnit, deleteUnit, safeParseJson, Unit, Property, notifyAdmins, UNIT_MAINTENANCE_REASONS } from "@/lib/data";
 import { toast } from "sonner";
 import UnitImageCarousel from "@/components/unit-image-carousel";
+import { UnitAmenitiesPicker } from "@/components/unit-amenities-picker";
 
 const fadeInUp = { hidden: { opacity: 0, y: 15 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } };
 
@@ -62,6 +63,7 @@ export default function UnitsPage() {
     rentAmount: "",
     type: "condo",
     condition: "",
+    amenities: [] as string[],
     maintenanceReason: UNIT_MAINTENANCE_REASONS[0] as string,
     imageUrl: "",
     imageUrls: [] as string[],
@@ -79,6 +81,7 @@ export default function UnitsPage() {
     rentAmount: 0,
     type: "condo",
     condition: "",
+    amenities: [] as string[],
     status: "vacant" as Unit["status"],
     imageUrl: "",
     imageUrls: [] as string[]
@@ -142,11 +145,13 @@ export default function UnitsPage() {
         rentAmount: Number(formData.rentAmount) || 0,
         imageUrl: formData.imageUrls[0] || formData.imageUrl || undefined,
         imageUrls: formData.imageUrls,
+        amenities: formData.amenities,
+        features: formData.amenities,
       };
       const createdUnit = await addUnit(dataToSend);
       setUnits((current) => [createdUnit, ...current]);
       setShowAddModal(false);
-      setFormData({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: 1, rentAmount: 0, type: "condo", condition: "", status: "vacant", imageUrl: "", imageUrls: [] });
+      setFormData({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: 1, rentAmount: 0, type: "condo", condition: "", amenities: [], status: "vacant", imageUrl: "", imageUrls: [] });
       notifyAdmins({ title: "New Condo Unit Added", message: `Condo Unit ${formData.unitNumber} (${formData.name}) was registered by ${user?.name}`, type: "property", read: false });
       toast.success("Condominium unit registered successfully");
     } catch (err) {
@@ -166,6 +171,7 @@ export default function UnitsPage() {
       rentAmount: unit.rentAmount.toString(),
       type: unit.type || "condo",
       condition: unit.condition || "",
+      amenities: unit.amenities || unit.features || [],
       maintenanceReason: existingReason,
       imageUrl: unit.imageUrl || "",
       imageUrls: unit.imageUrls || (unit.imageUrl ? [unit.imageUrl] : []),
@@ -192,6 +198,8 @@ export default function UnitsPage() {
         rentAmount: Number(editForm.rentAmount),
         imageUrl: editForm.imageUrl.trim() || undefined,
         imageUrls: editForm.imageUrls,
+        amenities: editForm.amenities,
+        features: editForm.amenities,
       });
       if (!savedUnit) throw new Error("Failed to update unit");
       const updatedUnit = {
@@ -202,6 +210,8 @@ export default function UnitsPage() {
         condition: editForm.status === "maintenance" ? `Maintenance: ${activeReason}` : editForm.condition,
         maintenanceReason: editForm.status === "maintenance" ? activeReason : undefined,
         imageUrl: editForm.imageUrl.trim() || undefined,
+        amenities: editForm.amenities,
+        features: editForm.amenities,
       };
       setUnits((current) => current.map((unit) => unit.id === editingUnit.id ? (updatedUnit as Unit) : unit));
       setEditingUnit(null);
@@ -283,7 +293,7 @@ export default function UnitsPage() {
             ) : null;
           })()}
           {canManage && (
-            <Button onClick={() => { setFormData({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: 1, rentAmount: 0, type: "condo", condition: "", status: "vacant", imageUrl: "", imageUrls: [] }); setShowAddModal(true); }}
+            <Button onClick={() => { setFormData({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: 1, rentAmount: 0, type: "condo", condition: "", amenities: [], status: "vacant", imageUrl: "", imageUrls: [] }); setShowAddModal(true); }}
               className="h-9 border border-blue-700 bg-blue-700 text-white hover:bg-blue-800"><Plus className="h-4 w-4 mr-1.5" />Add Condo Unit</Button>
           )}
         </div>
@@ -591,6 +601,14 @@ export default function UnitsPage() {
               </div>
 
               <div>
+                <label className="mb-1.5 block text-sm font-medium text-foreground">Unit Amenities &amp; Facilities</label>
+                <UnitAmenitiesPicker
+                  value={formData.amenities}
+                  onChange={(amenities) => setFormData({ ...formData, amenities })}
+                />
+              </div>
+
+              <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">Unit Images</label>
                 <Input
                   type="file"
@@ -716,6 +734,13 @@ export default function UnitsPage() {
                 </select>
               </div>
             </div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-foreground">Unit Amenities &amp; Facilities</label>
+            <UnitAmenitiesPicker
+              value={editForm.amenities}
+              onChange={(amenities) => setEditForm({ ...editForm, amenities })}
+            />
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-foreground">Unit Images</label>
