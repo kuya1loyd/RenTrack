@@ -211,6 +211,11 @@ export async function initDatabase() {
     statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS address TEXT`);
     statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'condo'`);
     statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS condition TEXT`);
+    statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS name TEXT`);
+    statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS city TEXT`);
+    statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS province TEXT`);
+    statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS created_by TEXT`);
+    statements.push(`ALTER TABLE units ADD COLUMN IF NOT EXISTS agent_id TEXT`);
     statements.push(`ALTER TABLE units ALTER COLUMN property_id DROP NOT NULL`);
 
     statements.push(`CREATE TABLE IF NOT EXISTS tenants (
@@ -1373,6 +1378,11 @@ export async function getUnits() {
       unit.tenantId = null;
       unit.tenantName = null;
     }
+    unit.name = row.name || row.title || "";
+    unit.city = row.city || "";
+    unit.province = row.province || "";
+    unit.createdBy = row.created_by || "";
+    unit.agentId = row.agent_id || "";
     unit.address = row.address || "";
     unit.imageUrls = Array.isArray(row.image_urls) && row.image_urls.length > 0
       ? Array.from(new Set(row.image_urls.filter((url: unknown): url is string => typeof url === "string")))
@@ -1385,23 +1395,34 @@ export async function createUnit(data: any) {
   const id = `unit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   let { error } = await getAdminSupabase().from("units").insert({
     id,
+    name: data.name || data.title || null,
     property_id: data.propertyId || null,
     unit_number: data.unitNumber,
-    floor: data.floor || null,
+    floor: data.floor ? Number(data.floor) : null,
     status: data.status || "vacant",
     rent_amount: data.rentAmount || 0,
     type: data.type || "condo",
     condition: data.condition || null,
     address: data.address || null,
+    city: data.city || null,
+    province: data.province || null,
+    created_by: data.createdBy || null,
+    agent_id: data.agentId || null,
     image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
     image_urls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [],
   });
 
-  if (error && (error.message?.includes("units_type_check") || error.code === "23514" || error.message?.includes("type") || error.message?.includes("condition") || error.code === "PGRST204")) {
+  if (error && (error.message?.includes("units_type_check") || error.code === "23514" || error.message?.includes("type") || error.message?.includes("condition") || error.code === "PGRST204" || error.message?.includes("name") || error.message?.includes("city") || error.message?.includes("province"))) {
     try {
       const fixSql = `
         ALTER TABLE units ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'condo';
         ALTER TABLE units ADD COLUMN IF NOT EXISTS condition TEXT;
+        ALTER TABLE units ADD COLUMN IF NOT EXISTS name TEXT;
+        ALTER TABLE units ADD COLUMN IF NOT EXISTS city TEXT;
+        ALTER TABLE units ADD COLUMN IF NOT EXISTS province TEXT;
+        ALTER TABLE units ADD COLUMN IF NOT EXISTS created_by TEXT;
+        ALTER TABLE units ADD COLUMN IF NOT EXISTS agent_id TEXT;
+        ALTER TABLE units ALTER COLUMN property_id DROP NOT NULL;
         DO $$
         DECLARE r RECORD;
         BEGIN
@@ -1413,20 +1434,25 @@ export async function createUnit(data: any) {
             EXECUTE 'ALTER TABLE units DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname);
           END LOOP;
         END $$;
-        ALTER TABLE units ADD CONSTRAINT units_type_check CHECK (type IN ('condo', 'dorm', 'hotel', 'studio', 'apartment'));
+        ALTER TABLE units ADD CONSTRAINT units_type_check CHECK (type IN ('condo', 'house', 'villa', 'dorm', 'hotel', 'studio', 'apartment'));
         NOTIFY pgrst, 'reload schema';
       `;
       await getAdminSupabase().rpc("exec_sql", { sql: fixSql });
       const retry = await getAdminSupabase().from("units").insert({
         id,
+        name: data.name || data.title || null,
         property_id: data.propertyId || null,
         unit_number: data.unitNumber,
-        floor: data.floor || null,
+        floor: data.floor ? Number(data.floor) : null,
         status: data.status || "vacant",
         rent_amount: data.rentAmount || 0,
         type: data.type || "condo",
         condition: data.condition || null,
         address: data.address || null,
+        city: data.city || null,
+        province: data.province || null,
+        created_by: data.createdBy || null,
+        agent_id: data.agentId || null,
         image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
         image_urls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [],
       });
@@ -1436,7 +1462,18 @@ export async function createUnit(data: any) {
     }
   }
   if (error) throw error;
-  return { id, ...data, type: data.type || "condo", condition: data.condition || null, address: data.address || "", imageUrls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [], status: data.status || "vacant" };
+  return {
+    id,
+    ...data,
+    name: data.name || data.title || "",
+    city: data.city || "",
+    province: data.province || "",
+    type: data.type || "condo",
+    condition: data.condition || null,
+    address: data.address || "",
+    imageUrls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [],
+    status: data.status || "vacant"
+  };
 }
 
 export async function clearTenantUnitAssignment(tenantId: string, tenantName?: string | null, forcedUnitId?: string | null) {
@@ -2096,7 +2133,24 @@ export async function getAgentApplications(status?: string) {
   if (status) request = request.eq("status", status);
   const { data, error } = await request;
   if (error) throw error;
-  return (data || []).map(snakeToCamel);
+  let applications = (data || []).map(snakeToCamel);
+
+  if (status === "approved" || !status) {
+    try {
+      const { data: existingAgents } = await getAdminSupabase().schema("public").from("users").select("email").eq("role", "agent");
+      const existingEmails = new Set((existingAgents || []).map((a: any) => String(a.email || "").trim().toLowerCase()).filter(Boolean));
+      const orphaned = applications.filter((app: any) => app.status === "approved" && !existingEmails.has(String(app.email || "").trim().toLowerCase()));
+      if (orphaned.length > 0) {
+        const orphanedIds = orphaned.map((o: any) => o.id);
+        await getAdminSupabase().from("agent_applications").delete().in("id", orphanedIds);
+        applications = applications.filter((app: any) => !orphanedIds.includes(app.id));
+      }
+    } catch (err) {
+      console.warn("Could not synchronize approved agent applications with users:", err);
+    }
+  }
+
+  return applications;
 }
 
 export async function getAgentApplicationResume(id: string) {
@@ -3037,6 +3091,7 @@ export async function findOrCreateOwner() {
 
 export async function deleteUser(id: string) {
   const admin = getAdminSupabase();
+  const { data: userToDelete } = await admin.schema("public").from("users").select("email").eq("id", id).maybeSingle();
   await Promise.all([
     admin.from("messages").delete().or(`sender_id.eq.${id},receiver_id.eq.${id}`),
     admin.from("notifications").delete().eq("user_id", id),
@@ -3045,6 +3100,7 @@ export async function deleteUser(id: string) {
     admin.from("payments").update({ created_by: null }).eq("created_by", id),
     admin.from("payments").update({ verified_by: null }).eq("verified_by", id),
     admin.from("complaints").update({ assigned_to: null }).eq("assigned_to", id),
+    userToDelete?.email ? admin.from("agent_applications").delete().ilike("email", userToDelete.email.trim()) : Promise.resolve(),
   ]);
   const { error } = await admin.schema("public").from("users").delete().eq("id", id);
   if (error) throw error;

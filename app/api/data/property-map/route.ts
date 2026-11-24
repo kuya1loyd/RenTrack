@@ -144,9 +144,36 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    const independentUnits = allUnits.filter((u: any) => {
+      if (u.propertyId) return false;
+      if (auth.user.role === "owner") return !u.createdBy || u.createdBy === auth.userId;
+      if (auth.user.role === "agent") return u.agentId === auth.userId || u.createdBy === auth.userId;
+      if (auth.user.role === "tenant") return u.id === (allTenants.find((t: any) => t.id === auth.userId)?.unitId);
+      return true;
+    });
+
+    const mappedIndependentUnits = independentUnits.map((unit: any) => {
+      const fullLoc = [unit.address, unit.city, unit.province].filter(Boolean).join(", ");
+      const resolved = resolveFallbackCoordinates(fullLoc || unit.city || unit.address || "Cebu");
+      return {
+        id: unit.id,
+        name: unit.name || `Unit ${unit.unitNumber}`,
+        type: unit.type || "Independent Unit",
+        address: fullLoc || "Philippines",
+        latitude: resolved?.lat ?? 10.3157,
+        longitude: resolved?.lng ?? 123.8854,
+        totalUnits: 1,
+        occupiedUnits: unit.status === "occupied" ? 1 : 0,
+        availableUnits: unit.status === "vacant" ? 1 : 0,
+        occupancy: unit.status === "occupied" ? 100 : 0,
+        outstandingReceivables: 0,
+        status: unit.status,
+      };
+    });
+
     return withSecurityHeaders(NextResponse.json({
       success: true,
-      properties: mappedProperties,
+      properties: [...mappedProperties, ...mappedIndependentUnits],
       unmappedCount: 0,
     }, { headers: { "Cache-Control": "no-store" } }));
   } catch (error) {

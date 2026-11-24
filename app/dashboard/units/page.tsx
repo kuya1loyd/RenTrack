@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
-import { Home, Plus, Search, Edit, Check, Trash2, Image as ImageIcon, X, History as HistoryIcon, Wrench } from "lucide-react";
+import { Home, Plus, Search, Edit, Check, Trash2, Image as ImageIcon, X, History as HistoryIcon, Wrench, DoorOpen } from "lucide-react";
 import { TenancyHistoryModal } from "@/components/tenancy-history-modal";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -68,7 +68,20 @@ export default function UnitsPage() {
   });
   const [isSaving, setIsSaving] = useState(false);
   const [showImageModal, setShowImageModal] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ propertyId: "", unitNumber: "", floor: 0, rentAmount: 0, type: "condo", condition: "", imageUrl: "", imageUrls: [] as string[] });
+  const [formData, setFormData] = useState({
+    name: "",
+    address: "",
+    city: "",
+    province: "",
+    unitNumber: "",
+    floor: 0,
+    rentAmount: 0,
+    type: "house",
+    condition: "",
+    status: "vacant" as Unit["status"],
+    imageUrl: "",
+    imageUrls: [] as string[]
+  });
 
   const canManage = user && (user.role === "admin" || user.role === "owner");
 
@@ -102,28 +115,32 @@ export default function UnitsPage() {
 
   const handleAdd = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!formData.unitNumber || !formData.propertyId) {
-      toast.error("Please fill in all required fields");
+    if (!formData.name?.trim() || !formData.unitNumber?.trim() || !formData.address?.trim()) {
+      toast.error("Please provide unit name, unit number, and address");
       return;
     }
-    const targetProp = properties.find((p) => p.id === formData.propertyId);
-    const isHouse = targetProp ? ["house", "residential", "villa"].includes(targetProp.type?.toLowerCase() || "") : false;
+    const isHouse = formData.type === "house" || formData.type === "villa";
     try {
       const dataToSend = {
-        ...formData,
+        name: formData.name.trim(),
+        unitNumber: formData.unitNumber.trim(),
+        address: formData.address.trim(),
+        city: formData.city?.trim() || undefined,
+        province: formData.province?.trim() || undefined,
         floor: isHouse ? undefined : (formData.floor || undefined),
-        type: isHouse ? "house" : (formData.type || "condo"),
-        status: "vacant" as const,
+        type: formData.type || "house",
+        status: formData.status || ("vacant" as const),
+        condition: formData.condition || undefined,
+        rentAmount: Number(formData.rentAmount) || 0,
         imageUrl: formData.imageUrls[0] || formData.imageUrl || undefined,
         imageUrls: formData.imageUrls,
       };
       const createdUnit = await addUnit(dataToSend);
       setUnits((current) => [createdUnit, ...current]);
-      setProperties((current) => current.map((property) => property.id === formData.propertyId ? { ...property, units: property.units + 1 } : property));
       setShowAddModal(false);
-      setFormData({ propertyId: "", unitNumber: "", floor: 0, rentAmount: 0, type: "condo", condition: "", imageUrl: "", imageUrls: [] });
-      notifyAdmins({ title: "New Unit Added", message: `Unit ${formData.unitNumber} was added by ${user?.name}`, type: "property", read: false });
-      toast.success(isHouse ? "House unit added successfully" : "Unit added successfully");
+      setFormData({ name: "", address: "", city: "", province: "", unitNumber: "", floor: 0, rentAmount: 0, type: "house", condition: "", status: "vacant", imageUrl: "", imageUrls: [] });
+      notifyAdmins({ title: "New Unit Added", message: `Unit ${formData.unitNumber} (${formData.name}) was registered by ${user?.name}`, type: "property", read: false });
+      toast.success(isHouse ? "House unit registered successfully" : "Condominium unit registered successfully");
     } catch (err) {
       console.error(err);
       toast.error("Failed to add unit");
@@ -258,7 +275,7 @@ export default function UnitsPage() {
             ) : null;
           })()}
           {canManage && (
-            <Button onClick={() => { setFormData({ propertyId: properties[0]?.id || "", unitNumber: "", floor: 0, rentAmount: 0, type: "condo", condition: "", imageUrl: "", imageUrls: [] }); setShowAddModal(true); }}
+            <Button onClick={() => { setFormData({ name: "", address: "", city: "", province: "", unitNumber: "", floor: 0, rentAmount: 0, type: "house", condition: "", status: "vacant", imageUrl: "", imageUrls: [] }); setShowAddModal(true); }}
               className="h-9 border border-blue-700 bg-blue-700 text-white hover:bg-blue-800"><Plus className="h-4 w-4 mr-1.5" />Add Unit</Button>
           )}
         </div>
@@ -419,63 +436,114 @@ export default function UnitsPage() {
         )}
       </Modal>
 
-      {/* Dynamic Add Unit Modal */}
+      {/* Independent Add Unit Modal */}
       {(() => {
-        const selectedProperty = properties.find((p) => p.id === formData.propertyId);
-        const isHouse = selectedProperty ? ["house", "residential", "villa"].includes(selectedProperty.type?.toLowerCase() || "") : false;
+        const isHouse = formData.type === "house" || formData.type === "villa";
         return (
           <Modal
             isOpen={showAddModal}
             onClose={() => setShowAddModal(false)}
-            title="Add Unit"
-            description={isHouse ? "Add a house or villa unit with block and lot" : "Add a new rental unit to a property"}
+            title="Register Rental Unit"
+            description="Register an individual rental unit independently with its own address, pricing, and details."
           >
             <form onSubmit={handleAdd} className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">Unit Name / Title *</label>
+                <Input
+                  required
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g. Modern Sunset Villa 12, Tower 2 Studio Suite"
+                  className="h-9"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">Unit Type *</label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, type: "house", floor: 0 })}
+                    className={cn(
+                      "flex items-center gap-2 p-2.5 rounded-lg border text-left transition-all",
+                      isHouse
+                        ? "border-amber-500 bg-amber-50/60 text-amber-950 ring-1 ring-amber-500/30"
+                        : "border-slate-200 hover:border-slate-300 bg-surface text-foreground"
+                    )}
+                  >
+                    <Home className={cn("h-4 w-4", isHouse ? "text-amber-600" : "text-slate-400")} />
+                    <div>
+                      <p className="text-xs font-semibold">House / Villa</p>
+                      <p className="text-[10px] text-muted-foreground">Standalone house</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, type: "condo" })}
+                    className={cn(
+                      "flex items-center gap-2 p-2.5 rounded-lg border text-left transition-all",
+                      !isHouse
+                        ? "border-blue-500 bg-blue-50/60 text-blue-950 ring-1 ring-blue-500/30"
+                        : "border-slate-200 hover:border-slate-300 bg-surface text-foreground"
+                    )}
+                  >
+                    <DoorOpen className={cn("h-4 w-4", !isHouse ? "text-blue-600" : "text-slate-400")} />
+                    <div>
+                      <p className="text-xs font-semibold">Condo Unit</p>
+                      <p className="text-[10px] text-muted-foreground">Tower / building</p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">Complete Unit Address *</label>
+                <Input
+                  required
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  placeholder={isHouse ? "e.g. Block 4 Lot 12, Sunset Drive" : "e.g. Tower 1, West Wing, 5th Avenue"}
+                  className="h-9"
+                />
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">Parent Property *</label>
-                  <select
-                    value={formData.propertyId}
-                    onChange={(e) => {
-                      const pId = e.target.value;
-                      const p = properties.find((item) => item.id === pId);
-                      const isH = p ? ["house", "residential", "villa"].includes(p.type?.toLowerCase() || "") : false;
-                      setFormData({
-                        ...formData,
-                        propertyId: pId,
-                        floor: isH ? 0 : formData.floor,
-                        type: isH ? "house" : "condo",
-                      });
-                    }}
-                    className="w-full h-9 rounded-lg border border-border bg-surface text-foreground px-3 text-sm"
-                  >
-                    <option value="">Select a property</option>
-                    {properties.map((p) => {
-                      const isH = ["house", "residential", "villa"].includes(p.type?.toLowerCase() || "");
-                      return (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({isH ? "House / Villa" : "Condominium"})
-                        </option>
-                      );
-                    })}
-                  </select>
+                  <label className="block text-sm font-medium text-foreground mb-1">City</label>
+                  <Input
+                    value={formData.city}
+                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    placeholder="e.g. Cebu City"
+                    className="h-9"
+                  />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">Province</label>
+                  <Input
+                    value={formData.province}
+                    onChange={(e) => setFormData({ ...formData, province: e.target.value })}
+                    placeholder="e.g. Cebu"
+                    className="h-9"
+                  />
+                </div>
+              </div>
+
+              <div className={cn("grid gap-3", isHouse ? "grid-cols-1" : "grid-cols-2")}>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
                     {isHouse ? "House / Unit Number *" : "Unit Number *"}
                   </label>
                   <Input
+                    required
                     value={formData.unitNumber}
                     onChange={(e) => setFormData({ ...formData, unitNumber: e.target.value })}
                     placeholder={isHouse ? "e.g. House 12" : "e.g. Unit 101"}
                     className="h-9"
                   />
                 </div>
-              </div>
-              <div className={cn("grid gap-3", isHouse ? "grid-cols-1" : "grid-cols-2")}>
                 {!isHouse && (
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">Floor Level</label>
+                    <label className="block text-sm font-medium text-foreground mb-1">Floor Level (Optional)</label>
                     <Input
                       type="number"
                       value={formData.floor || ""}
@@ -485,42 +553,46 @@ export default function UnitsPage() {
                     />
                   </div>
                 )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">Rent Amount (₱)</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">Rent Amount (₱) *</label>
                   <Input
+                    required
                     type="number"
                     value={formData.rentAmount || ""}
                     onChange={(e) => setFormData({ ...formData, rentAmount: parseInt(e.target.value) || 0 })}
-                    placeholder="e.g. 5000"
+                    placeholder="e.g. 15000"
                     className="h-9"
                   />
                 </div>
-              </div>
-              <div className="rounded-xl border border-border bg-surface-secondary/40 p-3.5 space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Classification &amp; Unit Condition</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">Unit Type</label>
-                    <div className="flex h-9 w-full items-center justify-between rounded-lg border border-border bg-surface px-3 text-sm font-medium text-foreground">
-                      <span>{isHouse ? "House / Villa" : "Condominium Unit"}</span>
-                      <span className="rounded bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 px-1.5 py-0.2 text-[10px] font-bold">
-                        Auto
-                      </span>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">Unit Condition</label>
-                    <select
-                      value={formData.condition}
-                      onChange={(e) => setFormData({ ...formData, condition: e.target.value })}
-                      className="w-full h-9 rounded-lg border border-border bg-surface text-foreground px-3 text-sm"
-                    >
-                      <option value="">Select condition...</option>
-                      {UNIT_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">Unit Condition</label>
+                  <select
+                    value={formData.condition}
+                    onChange={(e) => setFormData({ ...formData, condition: e.target.value })}
+                    className="w-full h-9 rounded-lg border border-border bg-surface text-foreground px-3 text-sm"
+                  >
+                    <option value="">Select condition...</option>
+                    {UNIT_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 </div>
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">Unit Status</label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value as Unit["status"] })}
+                  className="w-full h-9 rounded-lg border border-border bg-surface text-foreground px-3 text-sm"
+                >
+                  <option value="vacant">Vacant (Available)</option>
+                  <option value="occupied">Occupied</option>
+                  <option value="maintenance">Under Maintenance</option>
+                </select>
+              </div>
+
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">Unit Images</label>
                 <Input
@@ -571,7 +643,7 @@ export default function UnitsPage() {
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <Button type="button" variant="outline" onClick={() => setShowAddModal(false)} className="h-9">Cancel</Button>
-                <Button type="submit" className="h-9"><Check className="h-4 w-4 mr-1.5" />{isHouse ? "Add House Unit" : "Add Unit"}</Button>
+                <Button type="submit" className="h-9 bg-blue-600 hover:bg-blue-700 text-white"><Check className="h-4 w-4 mr-1.5" />{isHouse ? "Register House Unit" : "Register Unit"}</Button>
               </div>
             </form>
           </Modal>

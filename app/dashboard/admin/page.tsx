@@ -437,12 +437,14 @@ export default function AdminDashboard() {
     window.addEventListener("renttrack-properties-updated", handleDataChange);
     window.addEventListener("renttrack-units-updated", handleDataChange);
     window.addEventListener("renttrack-refresh-data", handleDataChange);
+    window.addEventListener("storage", handleDataChange);
     return () => {
       window.removeEventListener("renttrack-profile-updated", handleDataChange);
       window.removeEventListener("renttrack-tenants-updated", handleDataChange);
       window.removeEventListener("renttrack-properties-updated", handleDataChange);
       window.removeEventListener("renttrack-units-updated", handleDataChange);
       window.removeEventListener("renttrack-refresh-data", handleDataChange);
+      window.removeEventListener("storage", handleDataChange);
     };
   }, [loadData]);
 
@@ -968,7 +970,13 @@ export default function AdminDashboard() {
 
   const occupiedUnits = units.filter((unit) => unit.status === "occupied").length;
   const availableUnits = units.filter((unit) => unit.status === "vacant").length;
-  const rentingTenants = tenants.filter((tenant) => tenant.status === "active" && (tenant.assignmentStatus === "confirmed" || Boolean(tenant.unitId))).length;
+  const rentingTenants = units.length === 0
+    ? 0
+    : tenants.filter((tenant) =>
+        tenant.status === "active" &&
+        (tenant.assignmentStatus === "confirmed" || Boolean(tenant.unitId)) &&
+        units.some((u) => u.id === tenant.unitId && u.status === "occupied")
+      ).length;
   const roleCounts = {
     admin: users.filter((account) => account.role === "admin").length,
     owner: users.filter((account) => account.role === "owner").length,
@@ -1117,7 +1125,7 @@ export default function AdminDashboard() {
                 cardGradient: "bg-gradient-to-br from-white via-emerald-50/25 to-teal-50/30 dark:from-gray-900 dark:via-gray-900 dark:to-emerald-950/25",
                 iconTone: "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/70 dark:text-emerald-400 shadow-xs",
                 badgeTone: "border-emerald-200 bg-emerald-50/90 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300",
-                badgeText: (total: number, percent: number) => `${percent}% Active`,
+                badgeText: (total: number, percent: number) => total === 0 ? "0% Active" : `${percent}% Active`,
                 centerLabel: "Renting",
                 primary: rentingTenants,
                 secondary: availableUnits,

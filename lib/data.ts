@@ -130,6 +130,7 @@ export interface Property {
 
 export interface Unit {
   id: string;
+  name?: string;
   propertyId?: string;
   propertyName?: string;
   agentId?: string;
@@ -146,6 +147,9 @@ export interface Unit {
   imageUrl?: string;
   imageUrls?: string[];
   address?: string;
+  city?: string;
+  province?: string;
+  createdBy?: string;
 }
 
 export interface TenantRecord {

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import Image from "next/image";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   LayoutDashboard, Home, UserPlus, ClipboardCheck, Clock, ArrowUpRight, CalendarDays,
   CreditCard, FileText, Send, Download,
   CheckCircle2, Mail, User,
   Search, Plus, X, Users, ChevronDown, XCircle, Building2, RotateCcw, Phone,
-  Copy, MapPin, MoreHorizontal, Camera,
+  Copy, MapPin, MoreHorizontal, Camera, DoorOpen,
 } from "lucide-react";
 import PropertyLocationMap from "@/components/property-location-map-loader";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,7 @@ import {
   getProperties, getUnits, getTenants, getPayments, updatePayment,
   getConversations, notifyAdmins, updateTenantStatus,
   getInquiries, updateInquiryStatus, safeParseJson, markAllMessagesRead,
-  updateInquiryProperty, Property, Unit, TenantRecord, Payment, Conversation, ChatInquiry,
+  updateInquiryProperty, addUnit, Property, Unit, TenantRecord, Payment, Conversation, ChatInquiry,
 } from "@/lib/data";
 import { formatDisplayId, cn, formatCurrency, formatDate, formatDateTime, getTimeAgo, getInitials } from "@/lib/utils";
 import { downloadExcelReport, downloadPdfReport } from "@/lib/report-downloads";
@@ -120,6 +121,63 @@ export default function AgentDashboard() {
   const [threadSending, setThreadSending] = useState(false);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const lastLocalReplyAt = useRef<string | null>(null);
+
+  const [showAddUnitModal, setShowAddUnitModal] = useState(false);
+  const [newUnitForm, setNewUnitForm] = useState({
+    name: "",
+    address: "",
+    city: "",
+    province: "",
+    unitNumber: "",
+    floor: "",
+    type: "house",
+    condition: "",
+    status: "vacant" as Unit["status"],
+    rentAmount: "",
+    imageUrl: "",
+    imageUrls: [] as string[],
+  });
+  const [isSubmittingUnit, setIsSubmittingUnit] = useState(false);
+
+  const handleAddUnit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!newUnitForm.name.trim() || !newUnitForm.unitNumber.trim() || !newUnitForm.address.trim() || Number(newUnitForm.rentAmount) < 0) {
+      toast.error("Please provide unit name, unit number, address, and rent amount");
+      return;
+    }
+    const isHouse = newUnitForm.type === "house" || newUnitForm.type === "villa";
+
+    setIsSubmittingUnit(true);
+    try {
+      const newUnit = await addUnit({
+        name: newUnitForm.name.trim(),
+        unitNumber: newUnitForm.unitNumber.trim(),
+        address: newUnitForm.address.trim(),
+        city: newUnitForm.city.trim() || undefined,
+        province: newUnitForm.province.trim() || undefined,
+        floor: isHouse ? undefined : (newUnitForm.floor ? Number(newUnitForm.floor) : undefined),
+        type: newUnitForm.type || "house",
+        condition: newUnitForm.condition || undefined,
+        status: newUnitForm.status,
+        rentAmount: Number(newUnitForm.rentAmount),
+        imageUrl: newUnitForm.imageUrl || undefined,
+        imageUrls: newUnitForm.imageUrls,
+        agentId: user?.id,
+      });
+      setUnits((current) => [...current, newUnit]);
+      setShowAddUnitModal(false);
+      setNewUnitForm({ name: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "house", condition: "", status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
+      toast.success(isHouse ? "House / Villa unit registered independently" : "Condominium unit registered independently");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("renttrack-refresh-data"));
+        window.dispatchEvent(new CustomEvent("renttrack-units-updated"));
+      }
+    } catch {
+      toast.error("Failed to add unit");
+    } finally {
+      setIsSubmittingUnit(false);
+    }
+  };
 
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
@@ -1569,6 +1627,19 @@ export default function AgentDashboard() {
                     <Button
                       onClick={() => {
                         if (!isAgentVerified) {
+                          toast.error("ID Verification Required: You must be verified by the owner before you can register units.");
+                          return;
+                        }
+                        setShowAddUnitModal(true);
+                      }}
+                      className="h-9 gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3.5 shadow-2xs cursor-pointer"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add Unit
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        if (!isAgentVerified) {
                           toast.error("ID Verification Required: You must be verified by the owner before you can assign tenants.");
                           return;
                         }
@@ -2645,6 +2716,291 @@ export default function AgentDashboard() {
             agentName={user?.name || "Agent"}
           />
         )}
+
+        {/* Independent Add Unit Modal for Agents */}
+        {showAddUnitModal && (() => {
+          const isHouse = newUnitForm.type === "house" || newUnitForm.type === "villa";
+
+          return (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/50 backdrop-blur-xs" onClick={() => setShowAddUnitModal(false)} />
+              <form onSubmit={handleAddUnit} className="relative w-full max-w-xl rounded-2xl border border-indigo-100 bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+                <div className="mb-5 flex items-start justify-between border-b border-border pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "h-10 w-10 rounded-xl border flex items-center justify-center shrink-0",
+                      isHouse ? "bg-amber-50 border-amber-200 text-amber-600" : "bg-blue-50 border-blue-200 text-blue-600"
+                    )}>
+                      {isHouse ? <Home className="h-5 w-5" /> : <DoorOpen className="h-5 w-5" />}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-semibold text-foreground">Register Rental Unit</h3>
+                        <Badge variant="outline" className={cn(
+                          "text-[10px]",
+                          isHouse ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-blue-50 text-blue-700 border-blue-200"
+                        )}>
+                          {isHouse ? "House / Villa" : "Condominium Unit"}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-text-secondary">
+                        Register an individual rental unit independently with its own address and pricing.
+                      </p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setShowAddUnitModal(false)} className="rounded-lg p-2 text-text-secondary hover:text-foreground hover:bg-surface-secondary cursor-pointer">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Unit Name / Title *</label>
+                    <Input
+                      required
+                      value={newUnitForm.name}
+                      onChange={(event) => setNewUnitForm({ ...newUnitForm, name: event.target.value })}
+                      placeholder="e.g. Modern Sunset Villa 12, Tower 2 Studio Suite"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Unit Type *</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setNewUnitForm({ ...newUnitForm, type: "house", floor: "" })}
+                        className={cn(
+                          "flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all",
+                          isHouse
+                            ? "border-amber-500 bg-amber-50/60 text-amber-950 ring-2 ring-amber-500/20"
+                            : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
+                        )}
+                      >
+                        <Home className={cn("h-4 w-4", isHouse ? "text-amber-600" : "text-slate-400")} />
+                        <div>
+                          <p className="text-xs font-semibold">House / Villa</p>
+                          <p className="text-[10px] text-slate-500">Standalone house, townhome, villa</p>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewUnitForm({ ...newUnitForm, type: "condo" })}
+                        className={cn(
+                          "flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all",
+                          !isHouse
+                            ? "border-blue-500 bg-blue-50/60 text-blue-950 ring-2 ring-blue-500/20"
+                            : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
+                        )}
+                      >
+                        <DoorOpen className={cn("h-4 w-4", !isHouse ? "text-blue-600" : "text-slate-400")} />
+                        <div>
+                          <p className="text-xs font-semibold">Condominium Unit</p>
+                          <p className="text-[10px] text-slate-500">Condo suite, apartment, tower unit</p>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">
+                      {isHouse ? "Complete Unit Address (Block, Lot, Street Address) *" : "Complete Unit Address (Tower, Building, Street) *"}
+                    </label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
+                      <Input
+                        required
+                        value={newUnitForm.address}
+                        onChange={(event) => setNewUnitForm({ ...newUnitForm, address: event.target.value })}
+                        placeholder={
+                          isHouse
+                            ? "e.g. Block 4 Lot 12, Phase 2, Sunset Drive"
+                            : "e.g. Tower 1, West Wing, 5th Avenue"
+                        }
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium">City *</label>
+                      <Input
+                        required
+                        value={newUnitForm.city}
+                        onChange={(event) => setNewUnitForm({ ...newUnitForm, city: event.target.value })}
+                        placeholder="e.g. Cebu City, Davao City"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium">Province *</label>
+                      <Input
+                        required
+                        value={newUnitForm.province}
+                        onChange={(event) => setNewUnitForm({ ...newUnitForm, province: event.target.value })}
+                        placeholder="e.g. Cebu, Metro Manila"
+                      />
+                    </div>
+                  </div>
+
+                  <div className={cn("grid gap-3", isHouse ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2")}>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium">
+                        {isHouse ? "House / Unit Number *" : "Unit Number *"}
+                      </label>
+                      <Input
+                        required
+                        value={newUnitForm.unitNumber}
+                        onChange={(event) => setNewUnitForm({ ...newUnitForm, unitNumber: event.target.value })}
+                        placeholder={isHouse ? "e.g. House 12" : "e.g. Unit 1205"}
+                      />
+                    </div>
+                    {!isHouse && (
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium">Floor Level (Optional)</label>
+                        <Input
+                          type="number"
+                          min="0"
+                          value={newUnitForm.floor}
+                          onChange={(event) => setNewUnitForm({ ...newUnitForm, floor: event.target.value })}
+                          placeholder="e.g. 12"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Monthly Rent (₱) *</label>
+                    <Input
+                      required
+                      type="number"
+                      min="0"
+                      value={newUnitForm.rentAmount}
+                      onChange={(event) => setNewUnitForm({ ...newUnitForm, rentAmount: event.target.value })}
+                      placeholder="e.g. 15000"
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-border bg-surface-secondary/40 p-4">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">Condition &amp; Status</p>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-medium mb-1.5 text-slate-700">Unit Condition</label>
+                        <Input
+                          value={newUnitForm.condition}
+                          onChange={(event) => setNewUnitForm({ ...newUnitForm, condition: event.target.value })}
+                          placeholder="e.g. Brand New, Fully Furnished"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1.5 text-slate-700">Unit Status</label>
+                        <select
+                          value={newUnitForm.status}
+                          onChange={(event) => setNewUnitForm({ ...newUnitForm, status: event.target.value as Unit["status"] })}
+                          className="h-10 w-full rounded-xl border border-border bg-white px-2.5 text-xs text-foreground focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="vacant">Vacant (Available)</option>
+                          <option value="occupied">Occupied</option>
+                          <option value="maintenance">Under Maintenance</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">
+                      {isHouse ? "House Interior & Exterior Photos" : "Unit Interior Photos"}
+                    </label>
+                    <div className="flex flex-col gap-3">
+                      <label className="inline-flex w-fit items-center gap-2 px-4 py-2 rounded-xl border border-blue-200 bg-blue-50/50 text-blue-700 cursor-pointer hover:bg-blue-50 transition-colors">
+                        <Camera className="h-4 w-4" />
+                        <span className="text-sm font-medium">{newUnitForm.imageUrls.length ? "Add More Unit Photos" : "Upload Unit Photos"}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onChange={async (event) => {
+                            const files = Array.from(event.target.files || []);
+                            if (!files.length) return;
+                            try {
+                              const urls = await Promise.all(
+                                files.map(async (file) => {
+                                  const upload = new FormData();
+                                  upload.append("file", file);
+                                  upload.append("type", "unit");
+                                  try {
+                                    const response = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: upload });
+                                    const result = await safeParseJson(response);
+                                    if (result.success && result.url) return result.url as string;
+                                    throw new Error(result.error || "Upload failed");
+                                  } catch {
+                                    return new Promise<string>((resolve) => {
+                                      const reader = new FileReader();
+                                      reader.onload = () => resolve(reader.result as string);
+                                      reader.onerror = () => resolve("");
+                                      reader.readAsDataURL(file);
+                                    });
+                                  }
+                                })
+                              );
+                              const validUrls = urls.filter(Boolean);
+                              setNewUnitForm((current) => ({
+                                ...current,
+                                imageUrl: current.imageUrl || validUrls[0],
+                                imageUrls: [...current.imageUrls, ...validUrls],
+                              }));
+                              event.target.value = "";
+                              toast.success(`${validUrls.length} unit photo${validUrls.length === 1 ? "" : "s"} added`);
+                            } catch (error) {
+                              toast.error(error instanceof Error ? error.message : "Upload failed");
+                            }
+                          }}
+                        />
+                      </label>
+                      {newUnitForm.imageUrls.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {newUnitForm.imageUrls.map((url, index) => (
+                            <div key={`${url}-${index}`} className="relative group">
+                              <Image
+                                src={url}
+                                alt={`Unit preview ${index + 1}`}
+                                width={64}
+                                height={64}
+                                unoptimized
+                                className="h-16 w-16 rounded-lg object-cover border border-border"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = newUnitForm.imageUrls.filter((_, i) => i !== index);
+                                  setNewUnitForm({ ...newUnitForm, imageUrls: updated, imageUrl: updated[0] || "" });
+                                }}
+                                className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow-md hover:bg-red-600 transition-colors"
+                                title="Remove photo"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-border">
+                  <Button type="button" variant="outline" onClick={() => setShowAddUnitModal(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={isSubmittingUnit} className="bg-blue-600 text-white hover:bg-blue-700 font-medium">
+                    {isSubmittingUnit ? "Registering..." : isHouse ? "Register House Unit" : "Register Unit"}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          );
+        })()}
        </div>
   );
 }

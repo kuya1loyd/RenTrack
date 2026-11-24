@@ -625,14 +625,18 @@ export default function SettingsPage({ embedded = false }: { embedded?: boolean 
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur px-4 sm:px-6 lg:px-8 py-3 shadow-xs">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link
-              href={dashboardHref}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-all hover:-translate-x-0.5"
-            >
-              <ArrowLeft className="h-4 w-4 text-slate-500" />
-              <span>Back to {dashboardName}</span>
-            </Link>
-            <span className="text-slate-300">/</span>
+            {user.role !== "admin" && (
+              <>
+                <Link
+                  href={dashboardHref}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-all hover:-translate-x-0.5"
+                >
+                  <ArrowLeft className="h-4 w-4 text-slate-500" />
+                  <span>Back to {dashboardName}</span>
+                </Link>
+                <span className="text-slate-300">/</span>
+              </>
+            )}
             <span className="text-xs font-medium text-slate-500">Account Settings</span>
           </div>
 

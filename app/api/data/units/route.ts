@@ -31,6 +31,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const sanitized = sanitizeObject(body, [
       { key: "propertyId", type: "string", maxLength: 100 },
+      { key: "name", type: "string", maxLength: 200 },
+      { key: "city", type: "string", maxLength: 100 },
+      { key: "province", type: "string", maxLength: 100 },
       { key: "unitNumber", type: "string", maxLength: 50 },
       { key: "address", type: "string", maxLength: 500 },
       { key: "floor", type: "number" },
@@ -45,6 +48,13 @@ export async function POST(request: NextRequest) {
     if (Array.isArray(body.imageUrls)) {
       sanitized.imageUrls = Array.from(new Set(body.imageUrls.filter((url: unknown): url is string => typeof url === "string")).values()).slice(0, 20);
       sanitized.imageUrl = sanitized.imageUrls[0] || sanitized.imageUrl;
+    }
+
+    sanitized.createdBy = auth.userId;
+    if (auth.user.role === "agent") {
+      sanitized.agentId = auth.userId;
+    } else if (body.agentId) {
+      sanitized.agentId = body.agentId;
     }
 
     if (!sanitized.unitNumber) {

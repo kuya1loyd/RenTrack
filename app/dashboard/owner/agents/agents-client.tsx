@@ -366,8 +366,13 @@ export default function OwnerAgentsPage() {
     try {
       await deleteUser(deleteAgent.id);
       setAgents(agents.filter(a => a.id !== deleteAgent.id));
+      setApprovedApplications((current) => current.filter((app) => app.email.toLowerCase() !== deleteAgent.email.toLowerCase()));
       setDeleteAgent(null);
       toast.success("Agent deleted successfully!");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("renttrack-refresh-data"));
+        window.dispatchEvent(new CustomEvent("renttrack-tenants-updated"));
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to delete agent";
       toast.error(message);
@@ -530,6 +535,9 @@ export default function OwnerAgentsPage() {
       }
       setApplicationToDelete(null);
       toast.success("Applicant deleted successfully");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("renttrack-refresh-data"));
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to delete applicant");
     } finally {
