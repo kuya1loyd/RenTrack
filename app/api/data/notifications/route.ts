@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getNotifications, createNotification, markNotificationRead,
-  markAllNotificationsRead, getUnreadCount
+  getNotifications, createNotification, markNotificationRead, markNotificationUnread,
+  markAllNotificationsRead, markAllNotificationsUnread, getUnreadCount
 } from "@/lib/db";
 import {
   requireAuth, validateApiRequest, withSecurityHeaders, withCorsHeaders,
@@ -88,6 +88,10 @@ export async function PATCH(request: NextRequest) {
 
     if (action === "markAllRead" && userId) {
       await markAllNotificationsRead(userId);
+    } else if (action === "markAllUnread" && userId) {
+      await markAllNotificationsUnread(userId);
+    } else if (action === "markUnread" && id) {
+      await markNotificationUnread(id);
     } else if (id) {
       await markNotificationRead(id);
     }

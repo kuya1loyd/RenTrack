@@ -2063,20 +2063,28 @@ export async function reopenAgentApplication(id: string) {
   return snakeToCamel(data);
 }
 
-export async function removeRejectedAgentApplication(id: string): Promise<boolean> {
+export async function deleteAgentApplication(id: string): Promise<boolean> {
   await ensureAgentApplicationsSchema();
   const { data, error } = await getAdminSupabase().from("agent_applications")
     .delete()
     .eq("id", id)
-    .eq("status", "rejected")
     .select("id")
     .maybeSingle();
   if (error) throw error;
   return Boolean(data);
 }
 
+export async function removeRejectedAgentApplication(id: string): Promise<boolean> {
+  return deleteAgentApplication(id);
+}
+
 export async function markNotificationRead(id: string) {
   const { error } = await getAdminSupabase().from("notifications").update({ read: true }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function markNotificationUnread(id: string) {
+  const { error } = await getAdminSupabase().from("notifications").update({ read: false }).eq("id", id);
   if (error) throw error;
 }
 
@@ -2091,6 +2099,28 @@ export async function markAllNotificationsRead(userId: string) {
   let { error } = await query;
   if (error && error.message && error.message.includes("user_type")) {
     query = getAdminSupabase().from("notifications").update({ read: true });
+    if (user && user.role === "admin") {
+      query = query.or(`user_id.eq.${userId},user_id.eq.admin`);
+    } else {
+      query = query.eq("user_id", userId);
+    }
+    const retry = await query;
+    error = retry.error;
+  }
+  if (error) throw error;
+}
+
+export async function markAllNotificationsUnread(userId: string) {
+  const user = await findUserById(userId).catch(() => null);
+  let query = getAdminSupabase().from("notifications").update({ read: false });
+  if (user && user.role === "admin") {
+    query = query.or(`user_id.eq.${userId},user_id.eq.admin,user_type.eq.admin`);
+  } else {
+    query = query.eq("user_id", userId);
+  }
+  let { error } = await query;
+  if (error && error.message && error.message.includes("user_type")) {
+    query = getAdminSupabase().from("notifications").update({ read: false });
     if (user && user.role === "admin") {
       query = query.or(`user_id.eq.${userId},user_id.eq.admin`);
     } else {

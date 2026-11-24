@@ -556,8 +556,23 @@ export async function markNotificationRead(id: string): Promise<boolean> {
   return result.success;
 }
 
+export async function markNotificationUnread(id: string): Promise<boolean> {
+  const result = await apiPatch("/api/data/notifications", { id, action: "markUnread" });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("renttrack-notifications-updated"));
+  }
+  return result.success;
+}
+
 export async function markAllNotificationsRead(userId: string): Promise<void> {
   await apiPatch("/api/data/notifications", { userId, action: "markAllRead" });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("renttrack-notifications-updated"));
+  }
+}
+
+export async function markAllNotificationsUnread(userId: string): Promise<void> {
+  await apiPatch("/api/data/notifications", { userId, action: "markAllUnread" });
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("renttrack-notifications-updated"));
   }
@@ -718,7 +733,8 @@ export async function registerAgent(data: {
 }
 
 export async function getAgentApplications(status?: string): Promise<AgentApplication[]> {
-  const result = await apiGet(`/api/agent-applications${status ? `?status=${encodeURIComponent(status)}` : ""}`);
+  const query = status ? `?status=${encodeURIComponent(status)}&_t=${Date.now()}` : `?_t=${Date.now()}`;
+  const result = await apiGet(`/api/agent-applications${query}`);
   return result.success ? result.applications : [];
 }
 
@@ -734,8 +750,12 @@ export async function markAgentApplicationApproved(id: string) {
   return apiPatch("/api/agent-applications", { id, action: "mark_approved" });
 }
 
-export async function deleteRejectedAgentApplication(id: string) {
+export async function deleteAgentApplication(id: string) {
   return apiDelete("/api/agent-applications", { id });
+}
+
+export async function deleteRejectedAgentApplication(id: string) {
+  return deleteAgentApplication(id);
 }
 
 // ─── Dashboard Data ────────────────────────────────────────────────────────

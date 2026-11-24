@@ -294,19 +294,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   >
                     <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-4 py-3">
                       <h3 className="font-semibold text-gray-900 dark:text-white">Notifications</h3>
-                      {notifications.some((n) => !n.read) && (
-                        <button
-                          onClick={async () => {
-                            if (!user) return;
-                            setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-                            setUnreadNotificationsCount(0);
-                            await markAllNotificationsRead(user.id).catch(() => {});
-                          }}
-                          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                        >
-                          Mark all read
-                        </button>
-                      )}
+                      <button
+                        onClick={async () => {
+                          if (!user) return;
+                          setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+                          setUnreadNotificationsCount(0);
+                          await markAllNotificationsRead(user.id).catch(() => {});
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        Mark all as read
+                      </button>
                     </div>
                     <div className="max-h-80 overflow-y-auto">
                       {notifications.length === 0 ? (

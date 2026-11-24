@@ -385,19 +385,17 @@ export default function TenantNavbar() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {unreadCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!user) return;
-                            setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-                            await markAllNotificationsRead(user.id).catch(() => { });
-                          }}
-                          className="text-xs text-blue-600 hover:text-blue-700 font-semibold transition cursor-pointer"
-                        >
-                          Mark all read
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!user) return;
+                          setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+                          await markAllNotificationsRead(user.id).catch(() => { });
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-700 font-semibold transition cursor-pointer"
+                      >
+                        Mark all as read
+                      </button>
                       <button
                         type="button"
                         onClick={() => setNotificationsOpen(false)}
@@ -567,21 +565,19 @@ export default function TenantNavbar() {
                   </div>
 
                   {notifications.length > 0 && (
-                    <div className="p-3 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between text-xs">
-                      <span className="text-[11px] text-slate-500">Click notification to read closely</span>
-                      {unreadCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!user) return;
-                            setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-                            await markAllNotificationsRead(user.id).catch(() => { });
-                          }}
-                          className="text-xs text-blue-600 hover:text-blue-700 font-semibold transition cursor-pointer"
-                        >
-                          Mark all as read
-                        </button>
-                      )}
+                    <div className="p-3 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between text-xs gap-2">
+                      <span className="text-[11px] text-slate-500">Click notification to view</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!user) return;
+                          setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+                          await markAllNotificationsRead(user.id).catch(() => { });
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-700 font-semibold transition cursor-pointer"
+                      >
+                        Mark all as read
+                      </button>
                     </div>
                   )}
                 </motion.div>

@@ -130,13 +130,11 @@ export function AdminNavbar({
                       <p className="text-sm font-semibold text-white">System notices</p>
                       <p className="text-[11px] text-slate-400">Operational updates only</p>
                     </div>
-                    {unreadCount > 0 && (
-                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                        <button type="button" onClick={onMarkAllRead} className="text-[11px] font-medium text-cyan-300 hover:text-cyan-100">
-                          Mark read
-                        </button>
-                      </motion.div>
-                    )}
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                      <button type="button" onClick={onMarkAllRead} className="text-[11px] font-medium text-cyan-300 hover:text-cyan-100">
+                        Mark all as read
+                      </button>
+                    </motion.div>
                   </div>
                   <div className="max-h-72 overflow-y-auto">
                     {systemNotifications.length === 0 ? (

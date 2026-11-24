@@ -207,6 +207,44 @@ export function AdminDataProvider({ userId, children }: { userId?: string | null
     void refresh();
   }, [userId, refresh]);
 
+  // Auto-refresh when tab gains focus, becomes visible, or receives data change events, plus periodic refresh
+  useEffect(() => {
+    if (!userId) return;
+
+    const handleQuickRefresh = () => {
+      void refresh(["units", "tenants", "properties", "users", "payments"], { force: true });
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        handleQuickRefresh();
+      }
+    };
+
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refresh(["units", "tenants", "properties"], { force: true });
+      }
+    }, 6000);
+
+    window.addEventListener("focus", handleQuickRefresh);
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("renttrack-data-changed", handleQuickRefresh);
+    window.addEventListener("renttrack-units-updated", handleQuickRefresh);
+    window.addEventListener("renttrack-tenants-updated", handleQuickRefresh);
+    window.addEventListener("renttrack-properties-updated", handleQuickRefresh);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener("focus", handleQuickRefresh);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("renttrack-data-changed", handleQuickRefresh);
+      window.removeEventListener("renttrack-units-updated", handleQuickRefresh);
+      window.removeEventListener("renttrack-tenants-updated", handleQuickRefresh);
+      window.removeEventListener("renttrack-properties-updated", handleQuickRefresh);
+    };
+  }, [userId, refresh]);
+
   const value = useMemo<AdminDataContextValue>(() => ({
     data: store.data,
     setDataset,

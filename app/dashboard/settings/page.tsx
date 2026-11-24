@@ -220,13 +220,6 @@ export default function SettingsPage({ embedded = false }: { embedded?: boolean 
             <span>•</span>
             <span>Manage profile, credentials and security</span>
           </div>
-          <Link
-            href={dashboardHref}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 px-2.5 py-1 text-[11px] font-medium text-white transition-colors"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            <span>Return to {dashboardName}</span>
-          </Link>
         </div>
         <div className="relative z-10 flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4">
           <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">

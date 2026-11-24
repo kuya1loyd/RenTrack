@@ -967,7 +967,7 @@ export default function AdminDashboard() {
 
   const occupiedUnits = units.filter((unit) => unit.status === "occupied").length;
   const availableUnits = units.filter((unit) => unit.status === "vacant").length;
-  const rentingTenants = tenants.filter((tenant) => tenant.status === "active" && tenant.assignmentStatus === "confirmed").length;
+  const rentingTenants = tenants.filter((tenant) => tenant.status === "active" && (tenant.assignmentStatus === "confirmed" || Boolean(tenant.unitId))).length;
   const roleCounts = {
     admin: users.filter((account) => account.role === "admin").length,
     owner: users.filter((account) => account.role === "owner").length,
@@ -1164,9 +1164,23 @@ export default function AdminDashboard() {
                             </CardDescription>
                           </div>
                         </div>
-                        <Badge variant="outline" className={cn("text-xs font-semibold shrink-0 shadow-2xs", chart.badgeTone)}>
-                          {chart.badgeText(total, primaryPercent)}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              loadData();
+                              toast.info("Refreshed status");
+                            }}
+                            title="Refresh status"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          </button>
+                          <Badge variant="outline" className={cn("text-xs font-semibold shrink-0 shadow-2xs", chart.badgeTone)}>
+                            {chart.badgeText(total, primaryPercent)}
+                          </Badge>
+                        </div>
                       </div>
                     </CardHeader>
                     <CardContent className="grid grid-cols-1 items-center gap-4 pt-4 sm:grid-cols-[220px_1fr]">

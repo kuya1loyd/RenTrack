@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAgentApplication, getAgentApplications, initDatabase, getAdminSupabase, createNotification, reviewAgentApplication, reopenAgentApplication, removeRejectedAgentApplication, createUser, deleteUser, findUserByEmail } from "@/lib/db";
+import { createAgentApplication, getAgentApplications, initDatabase, getAdminSupabase, createNotification, reviewAgentApplication, reopenAgentApplication, deleteAgentApplication, removeRejectedAgentApplication, createUser, deleteUser, findUserByEmail } from "@/lib/db";
 import { requireRole } from "@/lib/api-security";
 import { createRentTrackEmailTemplate, createAccountCredentialsEmailHtml, getSiteUrl, sendEmail } from "@/lib/mail";
 import { randomBytes } from "crypto";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const LOCATIONS = ["Cebu", "Manila", "Davao", "Butuan"];
 
@@ -235,13 +238,13 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Application ID is required" }, { status: 400 });
     }
 
-    const removed = await removeRejectedAgentApplication(id.trim());
+    const removed = await deleteAgentApplication(id.trim());
     if (!removed) {
-      return NextResponse.json({ success: false, error: "Rejected application not found" }, { status: 404 });
+      return NextResponse.json({ success: false, error: "Application not found" }, { status: 404 });
     }
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Rejected agent application removal failed:", error);
-    return NextResponse.json({ success: false, error: "Unable to remove rejected application" }, { status: 500 });
+    console.error("Agent application removal failed:", error);
+    return NextResponse.json({ success: false, error: "Unable to remove application" }, { status: 500 });
   }
 }

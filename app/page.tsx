@@ -1844,13 +1844,6 @@ export default function LandingPage() {
                   ? `There are no active rental listings in this area yet. Try searching for another location or clearing your filters.`
                   : "Try resetting the keyword search, price range, or location filter."}
               </p>
-              <button
-                type="button"
-                onClick={handleClearAllFilters}
-                className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition"
-              >
-                Clear all filters
-              </button>
             </div>
           ) : (
             <div>

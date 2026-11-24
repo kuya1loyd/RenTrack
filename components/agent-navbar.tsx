@@ -177,19 +177,17 @@ export default function AgentNavbar() {
                   >
                     <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
                       <h3 className="font-semibold text-gray-900 dark:text-white">Notifications</h3>
-                      {unreadCount > 0 && (
-                        <button
-                          onClick={async () => {
-                            if (user) {
-                              await markAllNotificationsRead(user.id).catch(() => {});
-                              getNotifications(user.id).then(setNotifications).catch(() => {});
-                            }
-                          }}
-                          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                        >
-                          Mark all read
-                        </button>
-                      )}
+                      <button
+                        onClick={async () => {
+                          if (user) {
+                            await markAllNotificationsRead(user.id).catch(() => {});
+                            getNotifications(user.id).then(setNotifications).catch(() => {});
+                          }
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        Mark all as read
+                      </button>
                     </div>
                     <div className="max-h-80 overflow-y-auto">
                       {notifications.length === 0 ? (

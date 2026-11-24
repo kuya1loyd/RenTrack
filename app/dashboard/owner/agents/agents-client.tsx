@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { getOwnerAgents, registerAgent, deleteUser, deleteRejectedAgentApplication, updateUser, UserRecord, getAgentApplications, reviewAgentApplication, reopenAgentApplication, markAgentApplicationApproved, AgentApplication, getProperties, getUnits, getTenants, getPayments, Payment, getAgentsAssistedTenants, AssistedTenantInfo } from "@/lib/data";
+import { getOwnerAgents, registerAgent, deleteUser, deleteAgentApplication, deleteRejectedAgentApplication, updateUser, UserRecord, getAgentApplications, reviewAgentApplication, reopenAgentApplication, markAgentApplicationApproved, AgentApplication, getProperties, getUnits, getTenants, getPayments, Payment, getAgentsAssistedTenants, AssistedTenantInfo } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
 import { formatDisplayId, formatCurrency, formatDate, getInitials } from "@/lib/utils";
 import { toast } from "sonner";
@@ -516,18 +516,20 @@ export default function OwnerAgentsPage() {
     }
   };
 
-  const handleRemoveRejectedApplication = async () => {
+  const handleRemoveApplication = async () => {
     if (!applicationToDelete || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const result = await deleteRejectedAgentApplication(applicationToDelete.id);
-      if (!result?.success) throw new Error(result?.error || "Unable to remove rejected application");
+      const result = await deleteAgentApplication(applicationToDelete.id);
+      if (!result?.success) throw new Error(result?.error || "Unable to remove application");
+      setApplications((current) => current.filter((item) => item.id !== applicationToDelete.id));
+      setApprovedApplications((current) => current.filter((item) => item.id !== applicationToDelete.id));
       setRejectedApplications((current) => current.filter((item) => item.id !== applicationToDelete.id));
       setApplicationToDelete(null);
       if (selectedApplication?.id === applicationToDelete.id) setSelectedApplication(null);
-      toast.success("Rejected application removed");
+      toast.success("Application removed");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to remove rejected application");
+      toast.error(error instanceof Error ? error.message : "Unable to remove application");
     } finally {
       setIsSubmitting(false);
     }
@@ -641,10 +643,32 @@ export default function OwnerAgentsPage() {
               {applications.length === 0 ? "No pending applicants." : "No applicants match your search."}
             </div>
           ) : filteredApplications.map((application) => (
-            <button type="button" key={application.id} onClick={() => { setRejectionReason(""); setShowRejectionForm(false); setSelectedApplication(application); }} className="flex w-full items-center justify-between rounded-2xl border border-border bg-surface p-4 text-left hover:bg-surface-secondary">
-              <div><p className="font-semibold text-foreground">{application.name}</p><p className="text-sm text-text-secondary">{application.email} · {application.address}</p></div>
-              <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">New applicant</Badge>
-            </button>
+            <div key={application.id} className="flex items-center gap-2 rounded-2xl border border-border bg-surface p-3 hover:bg-surface-secondary">
+              <button
+                type="button"
+                onClick={() => { setRejectionReason(""); setShowRejectionForm(false); setSelectedApplication(application); }}
+                className="flex min-w-0 flex-1 items-center justify-between gap-4 rounded-xl p-1 text-left"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-foreground">{application.name}</p>
+                  <p className="truncate text-sm text-text-secondary">{application.email} · {application.address}</p>
+                </div>
+                <Badge variant="outline" className="shrink-0 border-amber-200 bg-amber-50 text-amber-700">New applicant</Badge>
+              </button>
+              <button
+                type="button"
+                title="Delete application"
+                aria-label={`Delete application for ${application.name}`}
+                disabled={isSubmitting}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setApplicationToDelete(application);
+                }}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-red-600 transition hover:bg-red-100 disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -661,29 +685,43 @@ export default function OwnerAgentsPage() {
             </div>
           ) : (
             filteredApprovedApplications.map((application) => (
-              <button
-                type="button"
-                key={application.id}
-                onClick={() => {
-                  setRejectionReason("");
-                  setShowRejectionForm(false);
-                  setSelectedApplication(application);
-                }}
-                className="flex w-full items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 text-left transition hover:bg-emerald-50/80"
-              >
-                <div>
-                  <p className="font-semibold text-foreground">{application.name}</p>
-                  <p className="text-sm text-text-secondary">{application.email} · {application.address}</p>
-                  {application.createdAt && (
-                    <p className="text-xs text-text-tertiary mt-1">
-                      Applied: {new Date(application.createdAt).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" })}
-                    </p>
-                  )}
-                </div>
-                <Badge variant="outline" className="border-emerald-300 bg-emerald-100 text-emerald-800">
-                  Approved · Account Created
-                </Badge>
-              </button>
+              <div key={application.id} className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRejectionReason("");
+                    setShowRejectionForm(false);
+                    setSelectedApplication(application);
+                  }}
+                  className="flex min-w-0 flex-1 items-center justify-between gap-4 rounded-xl p-1 text-left transition hover:bg-emerald-50/80"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-foreground">{application.name}</p>
+                    <p className="truncate text-sm text-text-secondary">{application.email} · {application.address}</p>
+                    {application.createdAt && (
+                      <p className="text-xs text-text-tertiary mt-1">
+                        Applied: {new Date(application.createdAt).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" })}
+                      </p>
+                    )}
+                  </div>
+                  <Badge variant="outline" className="shrink-0 border-emerald-300 bg-emerald-100 text-emerald-800">
+                    Approved · Account Created
+                  </Badge>
+                </button>
+                <button
+                  type="button"
+                  title="Delete application"
+                  aria-label={`Delete application for ${application.name}`}
+                  disabled={isSubmitting}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setApplicationToDelete(application);
+                  }}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-red-600 transition hover:bg-red-100 disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             ))
           )}
         </div>
@@ -919,11 +957,31 @@ export default function OwnerAgentsPage() {
                   <Button variant="outline" onClick={() => setSelectedApplication(null)}>
                     Close
                   </Button>
+                  <Button
+                    variant="destructive"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      const app = selectedApplication;
+                      setApplicationToDelete(app);
+                    }}
+                  >
+                    Delete Application
+                  </Button>
                 </div>
               ) : selectedApplication.status === "rejected" ? (
-                <div className="mt-5 flex justify-end">
+                <div className="mt-5 flex justify-end gap-2">
                   <Button disabled={isSubmitting} onClick={() => handleReturnToReview(selectedApplication)}>
                     {isSubmitting ? "Returning..." : "Return to pending applicants"}
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      const app = selectedApplication;
+                      setApplicationToDelete(app);
+                    }}
+                  >
+                    Delete Application
                   </Button>
                 </div>
               ) : showRejectionForm ? (
@@ -959,6 +1017,16 @@ export default function OwnerAgentsPage() {
                   <Button variant="outline" disabled={isSubmitting} onClick={() => setShowRejectionForm(true)}>
                     Reject
                   </Button>
+                  <Button
+                    variant="destructive"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      const app = selectedApplication;
+                      setApplicationToDelete(app);
+                    }}
+                  >
+                    Delete
+                  </Button>
                 </div>
               )}
             </motion.div>
@@ -971,11 +1039,11 @@ export default function OwnerAgentsPage() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="remove-application-title">
             <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
               <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-600"><Trash2 className="h-5 w-5" /></div>
-              <h3 id="remove-application-title" className="text-lg font-semibold text-slate-900">Remove rejected applicant?</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">This permanently deletes {applicationToDelete.name}&apos;s application and resume.</p>
+              <h3 id="remove-application-title" className="text-lg font-semibold text-slate-900">Remove application?</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">This permanently deletes {applicationToDelete.name}&apos;s application record and resume.</p>
               <div className="mt-5 flex justify-end gap-2">
                 <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => setApplicationToDelete(null)}>Cancel</Button>
-                <Button type="button" variant="destructive" disabled={isSubmitting} onClick={handleRemoveRejectedApplication}>{isSubmitting ? "Removing..." : "Remove application"}</Button>
+                <Button type="button" variant="destructive" disabled={isSubmitting} onClick={handleRemoveApplication}>{isSubmitting ? "Removing..." : "Remove application"}</Button>
               </div>
             </motion.div>
           </motion.div>

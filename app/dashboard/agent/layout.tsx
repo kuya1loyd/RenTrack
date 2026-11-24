@@ -480,15 +480,13 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                         </span>
                       )}
                     </div>
-                    {unreadNotificationCount > (!isAgentVerified ? 1 : 0) && (
-                      <button
-                        type="button"
-                        onClick={handleMarkAllNotifications}
-                        className="text-xs text-primary-600 hover:text-primary-700 cursor-pointer"
-                      >
-                        Mark all read
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={handleMarkAllNotifications}
+                      className="text-xs text-primary-600 hover:text-primary-700 cursor-pointer"
+                    >
+                      Mark all as read
+                    </button>
                   </div>
                   <div className="max-h-72 overflow-y-auto">
                     {displayNotifications.length === 0 ? (
@@ -839,15 +837,13 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                             </span>
                           )}
                         </div>
-                        {unreadNotificationCount > (!isAgentVerified ? 1 : 0) && (
-                          <button
-                            type="button"
-                            onClick={handleMarkAllNotifications}
-                            className="text-xs text-primary-600 hover:text-primary-700 cursor-pointer"
-                          >
-                            Mark all read
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={handleMarkAllNotifications}
+                          className="text-xs text-primary-600 hover:text-primary-700 cursor-pointer"
+                        >
+                          Mark all as read
+                        </button>
                       </div>
                       <div className="max-h-80 overflow-y-auto">
                         {displayNotifications.length === 0 ? (
