@@ -39,6 +39,7 @@ import type { MoveOutTenancy } from "@/lib/move-out-policy";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import ReceiptModal from "@/components/receipt-modal";
+import { MyRentalCard, useMyRental } from "@/components/tenant-my-rental";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -62,6 +63,7 @@ export default function TenantDashboard() {
   const [tenancyLoading, setTenancyLoading] = useState(true);
   const [tenancyError, setTenancyError] = useState(false);
   const [viewingReceipt, setViewingReceipt] = useState<Payment | null>(null);
+  const myRental = useMyRental(Boolean(user));
 
   useEffect(() => {
     if (!user) return;
@@ -81,13 +83,24 @@ export default function TenantDashboard() {
     return () => { mounted = false; controller.abort(); };
   }, [user]);
 
-  const tenantPayments = user ? payments.filter((payment) => payment.tenantId === user.id || payment.tenantId === tenant?.id) : [];
+  const tenantPayments = user ? payments.filter((payment) => payment.tenantId === user.id || payment.tenantId === tenant?.id || payment.tenantId === myRental.assignment?.tenantId) : [];
 
   const tenantPaymentSummary = user
     ? getTenantPaymentSummary(tenantPayments.map((payment) => ({ ...payment, tenantId: user.id })), user.id)
     : { totalPaid: 0, outstanding: 0, hasAwaitingConfirmation: false, waitingForConfirmation: null, hasConfirmedPayment: false };
 
-  const monthlyRent = tenant?.rentAmount ?? 0;
+  // Prefer the tenant's assignment read directly from the database; fall back to the move-out tenancy.
+  const assignment = myRental.assignment;
+  const rentalLoading = myRental.loading;
+  const rentalError = myRental.error && tenancyError;
+  const displayPropertyName = assignment?.propertyName || myRental.unit?.name || myRental.property?.name || tenant?.propertyName || null;
+  const displayUnitNumber = assignment?.unitNumber || myRental.unit?.unitNumber || tenant?.unitNumber || null;
+  const displayStatus = assignment?.assignmentStatus || tenant?.assignmentStatus || "";
+  const displayContractStart = assignment?.contractStart || tenant?.contractStart || null;
+  const displayContractEnd = assignment?.contractEnd || tenant?.contractEnd || null;
+  const hasRental = Boolean(displayPropertyName || displayUnitNumber);
+
+  const monthlyRent = assignment?.rentAmount || tenant?.rentAmount || 0;
   const totalPaid = tenantPaymentSummary.totalPaid;
   const outstanding = tenantPaymentSummary.outstanding;
   const nextPayment = tenantPayments.find((payment) => payment.status === "pending" || payment.status === "overdue");
@@ -112,13 +125,13 @@ export default function TenantDashboard() {
   };
 
   const rentalDetails = [
-    { label: "Property Name", value: tenant?.propertyName || "Not assigned", icon: Building2 },
-    { label: "Unit / Room", value: tenant?.unitNumber ? `Unit ${tenant.unitNumber}` : "Not assigned", icon: Home },
+    { label: "Property Name", value: displayPropertyName || "Not assigned", icon: Building2 },
+    { label: "Unit / Room", value: displayUnitNumber ? `Unit ${String(displayUnitNumber).replace(/^unit\s*/i, "")}` : hasRental ? "Entire Property" : "Not assigned", icon: Home },
     { label: "Monthly Rent", value: monthlyRent > 0 ? formatCurrency(monthlyRent) : "Not set", icon: CreditCard },
-    { label: "Lease Start Date", value: tenant?.contractStart ? formatDate(tenant.contractStart) : "Not set", icon: Calendar },
-    { label: "Lease End Date", value: tenant?.contractEnd ? formatDate(tenant.contractEnd) : "Not set", icon: Calendar },
-    { label: "Lease Status", value: tenant?.assignmentStatus === "confirmed" ? "Active" : tenant?.assignmentStatus || "Not assigned", icon: CheckCircle2 },
-  ].map((detail) => ({ ...detail, value: tenancyLoading ? "Loading..." : tenancyError ? "Unavailable" : detail.value }));
+    { label: "Lease Start Date", value: displayContractStart ? formatDate(displayContractStart) : "Not set", icon: Calendar },
+    { label: "Lease End Date", value: displayContractEnd ? formatDate(displayContractEnd) : "Not set", icon: Calendar },
+    { label: "Lease Status", value: displayStatus === "confirmed" ? "Active" : displayStatus === "pending" ? "Awaiting owner approval" : displayStatus || "Not assigned", icon: CheckCircle2 },
+  ].map((detail) => ({ ...detail, value: rentalLoading ? "Loading..." : rentalError ? "Unavailable" : detail.value }));
 
   return (
     <motion.div
@@ -164,18 +177,23 @@ export default function TenantDashboard() {
               Welcome back to your personalized home dashboard. Track your monthly payments, inspect lease records, and manage your tenancy.
             </p>
 
-            {tenant?.propertyName && (
+            {displayPropertyName && (
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/40 bg-[#071326]/80 backdrop-blur-md px-3 py-1 text-xs font-semibold text-blue-200 shadow-sm">
                   <Building2 className="h-3.5 w-3.5 text-blue-300" />
-                  <span>{tenant.propertyName}</span>
-                  {tenant?.unitNumber && <span className="font-bold">• Unit {tenant.unitNumber}</span>}
+                  <span>{displayPropertyName}</span>
+                  {displayUnitNumber && <span className="font-bold">• Unit {String(displayUnitNumber).replace(/^unit\s*/i, "")}</span>}
                 </span>
               </div>
             )}
           </div>
         </div>
       </motion.section>
+
+      {/* MY RENTAL - the unit / property assigned to this tenant */}
+      <motion.div variants={itemVariants}>
+        <MyRentalCard state={myRental} />
+      </motion.div>
 
       {/* Awaiting Payment Confirmation Alert */}
       {tenantPaymentSummary.hasAwaitingConfirmation && tenantPaymentSummary.waitingForConfirmation && (
@@ -209,11 +227,11 @@ export default function TenantDashboard() {
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Monthly Rent</p>
             <p className="mt-1 text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900">
-              {tenancyLoading ? "Loading…" : tenancyError ? "Unavailable" : monthlyRent > 0 ? formatCurrency(monthlyRent) : "Not set"}
+              {rentalLoading ? "Loading…" : rentalError ? "Unavailable" : monthlyRent > 0 ? formatCurrency(monthlyRent) : "Not set"}
             </p>
             <p className="mt-1 truncate text-xs text-slate-500 flex items-center gap-1">
               <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
-              <span>{tenant?.unitNumber ? `Unit ${tenant.unitNumber} assigned` : "No lease assigned"}</span>
+              <span>{displayUnitNumber ? `Unit ${String(displayUnitNumber).replace(/^unit\s*/i, "")} ${displayStatus === "confirmed" ? "assigned" : "pending approval"}` : hasRental ? `${displayPropertyName} ${displayStatus === "confirmed" ? "assigned" : "pending approval"}` : "No lease assigned"}</span>
             </p>
           </div>
         </motion.div>

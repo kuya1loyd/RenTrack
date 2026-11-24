@@ -392,175 +392,112 @@ export default function TenantUnitsPage() {
           </div>
         </div>
       ) : (
-        /* Property & Unit Cards Grid */
+        /* Condominium Unit Cards Grid */
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
         >
-          {filteredAndSortedProperties.map((property) => {
-            const isFav = favoriteIds.includes(property.id);
-            const propertyUnits = units.filter((u) => u.propertyId === property.id);
-            const defaultUnit =
-              propertyUnits.find(isMyUnit) ||
-              propertyUnits.find((u) => u.status === "vacant") ||
-              propertyUnits[0];
-            const selectedUnitId = selectedUnitByProperty[property.id] || defaultUnit?.id;
-            const currentUnit = propertyUnits.find((u) => u.id === selectedUnitId) || defaultUnit;
-            const isCurrentUnitAssigned = currentUnit ? isMyUnit(currentUnit) : isAssignedProperty(property);
-            const displayRent = currentUnit?.rentAmount ?? getPropertyRent(property);
-            const coverImage = currentUnit?.imageUrl || currentUnit?.imageUrls?.[0] || property.imageUrl || property.imageUrls?.[0] || null;
+          {filteredCondoUnits.map((unit) => {
+            const isAssigned = isMyUnit(unit);
+            const parentProperty = unit.propertyId ? properties.find((p) => p.id === unit.propertyId) : undefined;
+            const buildingName = unit.name || parentProperty?.name || "Condominium Unit";
+            const unitLabel = String(unit.unitNumber || "").replace(/^unit\s*/i, "");
+            const address = [unit.address || parentProperty?.location, unit.city, unit.province].filter(Boolean).join(", ");
+            const coverImage = unit.imageUrl || unit.imageUrls?.[0] || parentProperty?.imageUrl || parentProperty?.imageUrls?.[0] || null;
+            const statusLabel = isAssigned
+              ? "Your Home"
+              : unit.status === "vacant"
+                ? "Available"
+                : unit.status === "maintenance"
+                  ? "Under Maintenance"
+                  : "Occupied";
+            const statusClass = isAssigned
+              ? "bg-blue-600 text-white"
+              : unit.status === "vacant"
+                ? "bg-emerald-500 text-white"
+                : unit.status === "maintenance"
+                  ? "bg-amber-500 text-white"
+                  : "bg-slate-700 text-white";
 
             return (
               <div
-                key={property.id}
-                className="group rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden flex flex-col justify-between hover:shadow-md hover:border-slate-300 transition-all duration-200"
+                key={unit.id}
+                className={`group rounded-2xl border bg-white shadow-xs overflow-hidden flex flex-col justify-between hover:shadow-md transition-all duration-200 ${
+                  isAssigned ? "border-blue-300 ring-2 ring-blue-100" : "border-slate-200 hover:border-slate-300"
+                }`}
               >
                 <div>
-                  {/* Property Cover / Image Header */}
                   <div className="relative h-48 w-full bg-slate-100 flex items-center justify-center overflow-hidden">
                     {coverImage ? (
                       <Image
                         src={coverImage}
-                        alt={property.name}
+                        alt={`Unit ${unitLabel} – ${buildingName}`}
                         fill
                         unoptimized
                         className="object-cover group-hover:scale-105 transition-transform duration-300"
-                        onError={(e) => {
-                          const target = e.currentTarget as HTMLImageElement;
-                          target.src = "/images/landing/feature-property.jpg";
-                        }}
                       />
                     ) : (
                       <div className="flex flex-col items-center justify-center text-slate-400">
                         <Building2 className="h-14 w-14 stroke-[1.2]" />
-                        <span className="text-[11px] font-medium text-slate-400 mt-1 uppercase tracking-wider">
-                          RentTrack Property
-                        </span>
+                        <span className="text-[11px] font-medium text-slate-400 mt-1 uppercase tracking-wider">Condominium Unit</span>
                       </div>
                     )}
-
-                    {/* Favorite Button */}
-                    <button
-                      type="button"
-                      aria-label={isFav ? "Remove favorite" : "Add to favorites"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!user) return;
-                        const added = toggleFavoriteProperty(user.id, property.id);
-                        setFavoriteIds((prev) =>
-                          added ? [...prev, property.id] : prev.filter((id) => id !== property.id)
-                        );
-                      }}
-                      className="absolute top-3 left-3 h-8 w-8 rounded-full bg-white/90 backdrop-blur-xs flex items-center justify-center text-rose-500 shadow-sm hover:scale-105 transition-transform cursor-pointer"
-                    >
-                      <Heart className={`h-4 w-4 ${isFav ? "fill-rose-500" : ""}`} />
-                    </button>
-
-                    {/* Status Badge */}
                     <div className="absolute top-3 right-3">
-                      {isCurrentUnitAssigned ? (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-600 text-white flex items-center gap-1 shadow-xs">
-                          <Check className="h-3 w-3" />
-                          Your Home {currentUnit ? `• Unit ${currentUnit.unitNumber}` : ""}
-                        </span>
-                      ) : (
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                            currentUnit?.status === "vacant" || property.status === "active"
-                              ? "bg-emerald-500 text-white"
-                              : "bg-slate-700 text-white"
-                          }`}
-                        >
-                          {currentUnit?.status === "vacant" || property.status === "active" ? "Available" : "Occupied"}
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-xs ${statusClass}`}>
+                        {isAssigned && <Check className="h-3 w-3" />}
+                        {statusLabel}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-5">
+                    <h3 className="text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
+                      {unitLabel ? `Unit ${unitLabel} – ${buildingName}` : buildingName}
+                    </h3>
+                    {address && (
+                      <p className="flex items-center gap-1.5 text-xs text-slate-500 mt-1.5">
+                        <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <span className="truncate">{address}</span>
+                      </p>
+                    )}
+                    <div className="flex items-center gap-4 text-xs text-slate-500 mt-3.5 pt-3.5 border-t border-slate-100">
+                      <span className="font-medium text-slate-700 flex items-center gap-1">
+                        <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                        Condominium Unit
+                      </span>
+                      {unit.floor !== undefined && unit.floor !== null && String(unit.floor) !== "" && (
+                        <span className="flex items-center gap-1 font-medium text-slate-700">
+                          <Square className="h-3.5 w-3.5 text-slate-400" />
+                          Floor {unit.floor}
                         </span>
                       )}
                     </div>
                   </div>
-
-                  {/* Body Content */}
-                  <div className="p-5">
-                    <h3 className="text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
-                      {property.name}
-                    </h3>
-
-                    <p className="flex items-center gap-1.5 text-xs text-slate-500 mt-1.5">
-                      <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">{property.location}</span>
-                    </p>
-
-                    <div className="flex items-center gap-4 text-xs text-slate-500 mt-3.5 pt-3.5 border-t border-slate-100">
-                      <span className="capitalize font-medium text-slate-700 flex items-center gap-1">
-                        <Building2 className="h-3.5 w-3.5 text-slate-400" />
-                        {property.type || "Apartment"}
-                      </span>
-                      <span className="flex items-center gap-1 font-medium text-slate-700">
-                        <Square className="h-3.5 w-3.5 text-slate-400" />
-                        {property.units || 1} units
-                      </span>
-                    </div>
-
-                    {/* Unit Dropdown */}
-                    {propertyUnits.length > 0 && (
-                      <div className="mt-3.5 pt-3.5 border-t border-slate-100">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[11px] font-semibold text-slate-600 flex items-center gap-1">
-                            <Home className="h-3 w-3 text-slate-400" />
-                            Select Unit
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            {propertyUnits.length} {propertyUnits.length === 1 ? "unit" : "units"}
-                          </span>
-                        </div>
-                        <div className="relative">
-                          <select
-                            value={selectedUnitId || ""}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              setSelectedUnitByProperty((prev) => ({
-                                ...prev,
-                                [property.id]: e.target.value,
-                              }));
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-full h-9 pl-3 pr-8 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 text-xs text-slate-800 font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500 cursor-pointer appearance-none transition-colors"
-                          >
-                            {propertyUnits.map((u) => {
-                              const isAssigned = isMyUnit(u);
-                              return (
-                                <option key={u.id} value={u.id}>
-                                  Unit {u.unitNumber} {u.floor ? `(Floor ${u.floor})` : ""} — {formatCurrency(u.rentAmount)}
-                                  {isAssigned ? " • Your Home" : u.status === "vacant" ? " • Available" : u.status === "maintenance" ? ` • Under Maintenance${u.maintenanceReason ? ` (${u.maintenanceReason})` : ""}` : " • Occupied"}
-                                </option>
-                              );
-                            })}
-                          </select>
-                          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-                        </div>
-                      </div>
-                    )}
-                  </div>
                 </div>
 
-                {/* Footer with Price and View Details */}
                 <div className="px-5 pb-5 pt-2 flex items-center justify-between">
                   <div>
-                    <span className="text-lg font-extrabold text-slate-900">
-                      {formatCurrency(displayRent)}
-                    </span>
+                    <span className="text-lg font-extrabold text-slate-900">{formatCurrency(unit.rentAmount || 0)}</span>
                     <span className="text-xs text-slate-400 font-normal"> /mo</span>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (user) recordRecentPropertyView(user.id, property.id);
-                      setSelectedProperty(property);
-                    }}
-                    className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-                  >
-                    View Details
-                  </button>
+                  {parentProperty ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (user) recordRecentPropertyView(user.id, parentProperty.id);
+                        setSelectedUnitByProperty((prev) => ({ ...prev, [parentProperty.id]: unit.id }));
+                        setSelectedProperty(parentProperty);
+                      }}
+                      className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                    >
+                      View Details
+                    </button>
+                  ) : (
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      {isAssigned ? "Assigned to you" : unit.status === "vacant" ? "Open for rent" : ""}
+                    </span>
+                  )}
                 </div>
               </div>
             );
