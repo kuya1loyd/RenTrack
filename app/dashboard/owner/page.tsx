@@ -755,6 +755,20 @@ export default function OwnerDashboard() {
   }, [loadData]);
 
   useEffect(() => {
+    const handleSync = () => {
+      void loadData();
+    };
+    window.addEventListener("renttrack-tenants-updated", handleSync);
+    window.addEventListener("renttrack-units-updated", handleSync);
+    window.addEventListener("renttrack-payment-updated", handleSync);
+    return () => {
+      window.removeEventListener("renttrack-tenants-updated", handleSync);
+      window.removeEventListener("renttrack-units-updated", handleSync);
+      window.removeEventListener("renttrack-payment-updated", handleSync);
+    };
+  }, [loadData]);
+
+  useEffect(() => {
     const readHash = () => {
       const rawHash = window.location.hash.replace("#", "").split("?")[0];
       const normalized = rawHash === "payments" ? "financial" : rawHash === "move-out" ? "move-out-requests" : rawHash;

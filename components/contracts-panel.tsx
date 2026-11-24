@@ -76,16 +76,27 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
     : properties,
     [mode, properties, user?.id]);
   const propertyUnits = useMemo(() => units.filter((unit) => (unit.propertyId || (unit as any).property_id) === propertyId), [units, propertyId]);
+  const eligibleTenants = useMemo(() => {
+    return (tenants || []).filter((tenant) => {
+      if (tenant.status !== "active") return false;
+      if ((tenant as any).isArchived || (tenant as any).deleted) return false;
+      return true;
+    });
+  }, [tenants]);
+
   const propertyTenants = useMemo(() => {
-    const matched = tenants.filter((tenant) => {
+    if (!propertyId) {
+      return eligibleTenants;
+    }
+    const matched = eligibleTenants.filter((tenant) => {
       if (propertyUnits.some((unit) => unit.id === tenant.unitId)) return true;
       const prop = properties.find((p) => p.id === propertyId);
       if (prop && tenant.propertyName && prop.name.toLowerCase() === tenant.propertyName.toLowerCase()) return true;
       if ((tenant as any).propertyId === propertyId || (tenant as any).property_id === propertyId) return true;
       return false;
     });
-    return matched.length > 0 ? matched : tenants;
-  }, [tenants, propertyUnits, propertyId, properties]);
+    return matched;
+  }, [eligibleTenants, propertyUnits, propertyId, properties]);
   const visibleAgents = useMemo(() => {
     const property = properties.find((item) => item.id === propertyId);
     return property?.agentId ? agents.filter((agent) => agent.id === property.agentId) : agents;
@@ -125,6 +136,17 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
 
   useEffect(() => { void load(); }, [user?.id, mode]);
   useEffect(() => {
+    const handleSync = () => {
+      void load();
+    };
+    window.addEventListener("renttrack-tenants-updated", handleSync);
+    window.addEventListener("renttrack-units-updated", handleSync);
+    return () => {
+      window.removeEventListener("renttrack-tenants-updated", handleSync);
+      window.removeEventListener("renttrack-units-updated", handleSync);
+    };
+  }, []);
+  useEffect(() => {
     const applyGlobalSearch = (event: Event) => {
       const query = (event as CustomEvent<{ query: string }>).detail?.query || "";
       setContractSearch(query);
@@ -154,6 +176,10 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
       toast.error(recipientType === "tenant"
         ? "Choose a property, tenant, and contract file"
         : "Choose a property, agent, and contract file");
+      return;
+    }
+    if (recipientType === "tenant" && (!tenantId || !propertyTenants.some((t) => t.id === tenantId))) {
+      toast.error("Please select a valid tenant");
       return;
     }
     const form = new FormData();
@@ -376,9 +402,29 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
               </label>
               <label className="grid gap-1.5 text-sm font-medium text-slate-700">
                 Tenant
-                <select required value={tenantId} onChange={(event) => setTenantId(event.target.value)} className="h-11 rounded-xl border border-border bg-white px-3 text-sm">
-                  <option value="">Select tenant</option>{propertyTenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name} · Unit {tenant.unitNumber || "—"}</option>)}
+                <select
+                  required
+                  disabled={propertyTenants.length === 0}
+                  value={tenantId}
+                  onChange={(event) => setTenantId(event.target.value)}
+                  className="h-11 rounded-xl border border-border bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                >
+                  {propertyTenants.length === 0 ? (
+                    <option value="">No tenants available</option>
+                  ) : (
+                    <>
+                      <option value="">Select tenant</option>
+                      {propertyTenants.map((tenant) => (
+                        <option key={tenant.id} value={tenant.id}>
+                          {tenant.name} · Unit {tenant.unitNumber || "—"}
+                        </option>
+                      ))}
+                    </>
+                  )}
                 </select>
+                {propertyTenants.length === 0 && (
+                  <span className="text-xs text-amber-600">No tenants available for this property</span>
+                )}
               </label>
               <label className="grid gap-1.5 text-sm font-medium text-slate-700">
                 Note to owner <span className="font-normal text-slate-500">(optional)</span>
@@ -429,18 +475,46 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
                 </select>
               </label>
               <label className="grid gap-1.5 text-sm font-medium text-slate-700">Tenant <span className="font-normal text-slate-500">Optional for property-wide contracts</span>
-                <select value={tenantId} onChange={(event) => setTenantId(event.target.value)} className="h-11 rounded-xl border border-border bg-white px-3 text-sm">
-                  <option value="">General property contract</option>
-                  {propertyTenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name} · Unit {tenant.unitNumber || "—"}</option>)}
+                <select
+                  disabled={propertyTenants.length === 0}
+                  value={tenantId}
+                  onChange={(event) => setTenantId(event.target.value)}
+                  className="h-11 rounded-xl border border-border bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  <option value="">{propertyTenants.length === 0 ? "General property contract (No tenants available)" : "General property contract (Property-wide)"}</option>
+                  {propertyTenants.map((tenant) => (
+                    <option key={tenant.id} value={tenant.id}>
+                      {tenant.name} · Unit {tenant.unitNumber || "—"}
+                    </option>
+                  ))}
                 </select>
               </label>
             </>
           ) : (
             <label className="grid gap-1.5 text-sm font-medium text-slate-700 md:col-span-2">Tenant
-              <select required value={tenantId} onChange={(event) => setTenantId(event.target.value)} className="h-11 rounded-xl border border-border bg-white px-3 text-sm">
-                <option value="">Select tenant</option>
-                {propertyTenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name} · Unit {tenant.unitNumber || "—"}</option>)}
+              <select
+                required
+                disabled={propertyTenants.length === 0}
+                value={tenantId}
+                onChange={(event) => setTenantId(event.target.value)}
+                className="h-11 rounded-xl border border-border bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+              >
+                {propertyTenants.length === 0 ? (
+                  <option value="">No tenants available</option>
+                ) : (
+                  <>
+                    <option value="">Select tenant</option>
+                    {propertyTenants.map((tenant) => (
+                      <option key={tenant.id} value={tenant.id}>
+                        {tenant.name} · Unit {tenant.unitNumber || "—"}
+                      </option>
+                    ))}
+                  </>
+                )}
               </select>
+              {propertyTenants.length === 0 && (
+                <span className="text-xs text-amber-600">No tenants available for this property</span>
+              )}
             </label>
           )}
           <label className="grid gap-1.5 text-sm font-medium text-slate-700 md:col-span-2">Contract title
@@ -451,7 +525,15 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
           </label>
           <div className="flex justify-end gap-2 pt-1 md:col-span-2">
             <Button type="button" variant="outline" onClick={() => setShowOwnerSendModal(false)}>Cancel</Button>
-            <Button type="submit" disabled={sending || !visibleProperties.length || (recipientType === "agent" && !visibleAgents.length) || (recipientType === "tenant" && !tenantId)}>
+            <Button
+              type="submit"
+              disabled={
+                sending ||
+                !visibleProperties.length ||
+                (recipientType === "agent" && !visibleAgents.length) ||
+                (recipientType === "tenant" && (!tenantId || propertyTenants.length === 0))
+              }
+            >
               <Send className="mr-2 h-4 w-4" />{sending ? "Sending..." : recipientType === "tenant" ? "Send to tenant" : "Send to agent"}
             </Button>
           </div>

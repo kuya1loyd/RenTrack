@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Users, UserPlus, Mail, Phone, MapPin, X, Eye, EyeOff, Trash2, MessageSquare, Pencil, Clock3, Shield, Search, Receipt, Save, CalendarDays, Building2, UsersRound, MoreHorizontal, Copy, Fingerprint, BriefcaseBusiness, Globe2, Cake, UserRound, Percent, Database, Table, ShieldCheck, ShieldAlert, ExternalLink, CheckCircle2, XCircle, FileText } from "lucide-react";
+import { Users, UserPlus, Mail, Phone, MapPin, X, Eye, EyeOff, Trash2, MessageSquare, Pencil, Clock3, Shield, Search, Receipt, Save, CalendarDays, Building2, UsersRound, MoreHorizontal, Copy, Fingerprint, BriefcaseBusiness, Globe2, Cake, UserRound, Percent, Database, Table, ShieldCheck, ShieldAlert, ExternalLink, CheckCircle2, XCircle, FileText, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
@@ -17,7 +17,6 @@ import { formatDisplayId, formatCurrency, formatDate, getInitials } from "@/lib/
 import { toast } from "sonner";
 import MessagingModal from "@/components/messaging-modal";
 import ReceiptModal from "@/components/receipt-modal";
-import OwnerAgentBadges from "@/components/owner-agent-badges";
 import { ManagementBanner } from "@/components/management-panel";
 import { AgentIdInspectorModal } from "@/components/agent-id-inspector-modal";
 
@@ -520,16 +519,19 @@ export default function OwnerAgentsPage() {
     if (!applicationToDelete || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const result = await deleteAgentApplication(applicationToDelete.id);
-      if (!result?.success) throw new Error(result?.error || "Unable to remove application");
-      setApplications((current) => current.filter((item) => item.id !== applicationToDelete.id));
-      setApprovedApplications((current) => current.filter((item) => item.id !== applicationToDelete.id));
-      setRejectedApplications((current) => current.filter((item) => item.id !== applicationToDelete.id));
+      const targetId = applicationToDelete.id;
+      const result = await deleteAgentApplication(targetId);
+      if (!result?.success) throw new Error(result?.error || "Unable to delete applicant");
+      setApplications((current) => current.filter((item) => item.id !== targetId));
+      setApprovedApplications((current) => current.filter((item) => item.id !== targetId));
+      setRejectedApplications((current) => current.filter((item) => item.id !== targetId));
+      if (selectedApplication?.id === targetId) {
+        setSelectedApplication(null);
+      }
       setApplicationToDelete(null);
-      if (selectedApplication?.id === applicationToDelete.id) setSelectedApplication(null);
-      toast.success("Application removed");
+      toast.success("Applicant deleted successfully");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to remove application");
+      toast.error(error instanceof Error ? error.message : "Unable to delete applicant");
     } finally {
       setIsSubmitting(false);
     }
@@ -1036,17 +1038,61 @@ export default function OwnerAgentsPage() {
 
       <AnimatePresence>
         {applicationToDelete && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="remove-application-title">
-            <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-600"><Trash2 className="h-5 w-5" /></div>
-              <h3 id="remove-application-title" className="text-lg font-semibold text-slate-900">Remove application?</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">This permanently deletes {applicationToDelete.name}&apos;s application record and resume.</p>
-              <div className="mt-5 flex justify-end gap-2">
-                <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => setApplicationToDelete(null)}>Cancel</Button>
-                <Button type="button" variant="destructive" disabled={isSubmitting} onClick={handleRemoveApplication}>{isSubmitting ? "Removing..." : "Remove application"}</Button>
+          <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="delete-applicant-title">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full max-w-md overflow-hidden rounded-2xl border border-red-200 bg-white p-6 shadow-2xl text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <h3 id="delete-applicant-title" className="text-lg font-bold text-slate-900">Delete Applicant</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Are you sure you want to delete this applicant? This action cannot be undone and will permanently remove their application record and resume from the database.
+              </p>
+
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-left text-xs space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Applicant:</span>
+                  <span className="font-semibold text-slate-800">{applicationToDelete.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Email:</span>
+                  <span className="font-medium text-slate-700">{applicationToDelete.email}</span>
+                </div>
+                {applicationToDelete.address && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Location:</span>
+                    <span className="text-slate-700">{applicationToDelete.address}</span>
+                  </div>
+                )}
+                {applicationToDelete.status && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Status:</span>
+                    <span className="capitalize text-slate-700">{applicationToDelete.status}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-5 flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isSubmitting}
+                  onClick={() => setApplicationToDelete(null)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={isSubmitting}
+                  onClick={handleRemoveApplication}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {isSubmitting ? "Deleting..." : "Confirm Delete"}
+                </Button>
               </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
@@ -1875,7 +1921,6 @@ export default function OwnerAgentsPage() {
                       <span className="text-foreground font-medium capitalize">{viewingAgent.role}</span>
                     </div>
                   </div>
-                  <OwnerAgentBadges key={viewingAgent.id} agentId={viewingAgent.id} />
                 </div>
               </div>
               <div className="p-6 border-t border-border">

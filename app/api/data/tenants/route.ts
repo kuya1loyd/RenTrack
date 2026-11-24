@@ -394,13 +394,20 @@ export async function DELETE(request: NextRequest) {
     const auth = await requireRole(request, ["admin", "owner", "agent"]);
     if (auth instanceof NextResponse) return auth;
 
-    const { userId } = await request.json();
+    let userId = request.nextUrl.searchParams.get("id") || request.nextUrl.searchParams.get("userId");
     if (!userId) {
+      try {
+        const body = await request.json();
+        userId = body?.userId || body?.id;
+      } catch {}
+    }
+
+    if (!userId || typeof userId !== "string" || !userId.trim()) {
       return NextResponse.json({ success: false, error: "Tenant ID is required" }, { status: 400 });
     }
 
-    await deleteTenant(userId);
-    await logAudit(auth.userId, "tenant_deleted", { tenantId: userId }, auth.ip, auth.userAgent);
+    await deleteTenant(userId.trim());
+    await logAudit(auth.userId, "tenant_deleted", { tenantId: userId.trim() }, auth.ip, auth.userAgent).catch(() => {});
     return NextResponse.json({ success: true, message: "Tenant deleted successfully" });
   } catch (error) {
     console.error("Delete tenant error:", error);

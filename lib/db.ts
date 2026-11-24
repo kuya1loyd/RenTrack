@@ -1705,10 +1705,100 @@ export async function createTenant(data: any, userId: string) {
 }
 
 export async function deleteTenant(userId: string) {
-  const { error: tenantError } = await getAdminSupabase().from("tenants").delete().eq("id", userId);
-  if (tenantError) throw tenantError;
-  const { error: userError } = await getAdminSupabase().schema("public").from("users").delete().eq("id", userId);
-  if (userError) throw userError;
+  const sb = getAdminSupabase();
+
+  // 1. Fetch tenant and user records to find email, assigned unit, and linked identifiers
+  let tenantRecord: any = null;
+  try {
+    const { data: tr } = await sb.from("tenants").select("*").eq("id", userId).maybeSingle();
+    tenantRecord = tr;
+  } catch {}
+
+  let userRecord: any = null;
+  try {
+    const { data: ur } = await sb.schema("public").from("users").select("*").eq("id", userId).maybeSingle();
+    userRecord = ur;
+  } catch {}
+
+  const tenantEmail = tenantRecord?.email || userRecord?.email;
+  const unitId = tenantRecord?.unit_id;
+
+  // 2. Unassign and vacate any units assigned to this tenant
+  try {
+    await sb.from("units").update({
+      status: "vacant",
+      tenant_id: null,
+      tenant_name: null,
+    }).eq("tenant_id", userId);
+
+    if (unitId) {
+      await sb.from("units").update({
+        status: "vacant",
+        tenant_id: null,
+        tenant_name: null,
+      }).eq("id", unitId);
+    }
+  } catch (unitErr) {
+    console.warn("Could not unassign units for deleted tenant:", unitErr);
+  }
+
+  // 3. Preserve payment records for financial audit integrity, but detach tenant foreign key
+  try {
+    await sb.from("payments").update({ tenant_id: null }).eq("tenant_id", userId);
+  } catch (payErr) {
+    console.warn("Could not detach payments for deleted tenant:", payErr);
+  }
+
+  // 4. Archive/detach contracts
+  try {
+    await sb.from("contracts").update({ tenant_id: null, status: "archived" }).eq("tenant_id", userId);
+  } catch (contractErr) {
+    console.warn("Could not detach contracts for deleted tenant:", contractErr);
+  }
+
+  // 5. Clean up dependent foreign keys and tenant requests
+  const safeDelete = async (table: string, column: string, val: string) => {
+    try {
+      await sb.from(table).delete().eq(column, val);
+    } catch {}
+  };
+
+  await safeDelete("move_out_requests", "tenant_id", userId);
+  await safeDelete("complaints", "tenant_id", userId);
+  await safeDelete("notifications", "user_id", userId);
+  await safeDelete("ratings", "user_id", userId);
+  await safeDelete("ratings", "target_id", userId);
+  await safeDelete("messages", "sender_id", userId);
+  await safeDelete("messages", "receiver_id", userId);
+
+  // 6. Delete from tenants table
+  const { error: tenantError } = await sb.from("tenants").delete().eq("id", userId);
+  if (tenantError) {
+    console.error("Error deleting tenant row:", tenantError);
+    throw tenantError;
+  }
+  if (tenantEmail) {
+    try {
+      await sb.from("tenants").delete().ilike("email", tenantEmail);
+    } catch {}
+  }
+
+  // 7. Delete from public.users table
+  try {
+    await sb.schema("public").from("users").delete().eq("id", userId);
+    if (tenantEmail) {
+      await sb.schema("public").from("users").delete().ilike("email", tenantEmail);
+    }
+  } catch (userErr) {
+    console.warn("Error deleting public.users row:", userErr);
+  }
+
+  // 8. Delete Supabase Auth account securely so the deleted account can no longer access the system
+  try {
+    await sb.auth.admin.deleteUser(userId);
+  } catch (authErr) {
+    console.warn("Could not delete supabase auth user:", authErr);
+  }
 }
 
 export async function resetTenantPayments(tenantId: string) {

@@ -1,28 +1,9 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Award, BadgeCheck, FileText, LoaderCircle, MessageSquare, Star } from "lucide-react";
+import { LoaderCircle, MessageSquare, Star } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { safeParseJson } from "@/lib/data";
-
-type Certificate = {
-  id: string;
-  title: string;
-  issuer?: string | null;
-  issuedOn?: string | null;
-  fileName: string;
-  mimeType: string;
-  createdAt: string;
-  url: string;
-};
-
-type AgentBadge = {
-  key: string;
-  label: string;
-  category: string;
-  description: string;
-  awardedAt: string;
-};
 
 type Review = {
   rating: number;
@@ -54,11 +35,7 @@ async function getPayload<T>(url: string): Promise<T> {
 
 export default function PublicAgentTrustPanels({ agentId }: { agentId: string }) {
   const { user, isAuthenticated } = useAuth();
-  const [certificates, setCertificates] = useState<Certificate[]>([]);
-  const [badges, setBadges] = useState<AgentBadge[]>([]);
   const [reviewData, setReviewData] = useState<ReviewData>({ reviews: [], canReview: false, alreadyReviewed: false });
-  const [certStatus, setCertStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [badgeStatus, setBadgeStatus] = useState<"loading" | "ready" | "error">("loading");
   const [reviewStatus, setReviewStatus] = useState<"loading" | "ready" | "error">("loading");
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
@@ -66,52 +43,44 @@ export default function PublicAgentTrustPanels({ agentId }: { agentId: string })
   const [reviewMessage, setReviewMessage] = useState("");
 
   const loadReviews = useCallback(async () => {
-    const data = await getPayload<{
-      reviews?: Review[];
-      canReview?: boolean;
-      alreadyReviewed?: boolean;
-    }>(`/api/agents/${encodeURIComponent(agentId)}/reviews`);
-    setReviewData({
-      reviews: Array.isArray(data.reviews) ? data.reviews : [],
-      canReview: Boolean(data.canReview),
-      alreadyReviewed: Boolean(data.alreadyReviewed),
-    });
+    try {
+      const data = await getPayload<{
+        reviews?: Review[];
+        canReview?: boolean;
+        alreadyReviewed?: boolean;
+      }>(`/api/agents/${encodeURIComponent(agentId)}/reviews`);
+      setReviewData({
+        reviews: Array.isArray(data.reviews) ? data.reviews : [],
+        canReview: Boolean(data.canReview),
+        alreadyReviewed: Boolean(data.alreadyReviewed),
+      });
+      setReviewStatus("ready");
+    } catch {
+      setReviewStatus("error");
+    }
   }, [agentId]);
 
   useEffect(() => {
     let active = true;
-    const load = async <T,>(url: string, setStatus: (value: "loading" | "ready" | "error") => void, setData: (value: T) => void) => {
+    (async () => {
       try {
-        const data = await getPayload<T>(url);
-        if (active) setData(data);
-        if (active) setStatus("ready");
+        const data = await getPayload<{
+          reviews?: Review[];
+          canReview?: boolean;
+          alreadyReviewed?: boolean;
+        }>(`/api/agents/${encodeURIComponent(agentId)}/reviews`);
+        if (active) {
+          setReviewData({
+            reviews: Array.isArray(data.reviews) ? data.reviews : [],
+            canReview: Boolean(data.canReview),
+            alreadyReviewed: Boolean(data.alreadyReviewed),
+          });
+          setReviewStatus("ready");
+        }
       } catch {
-        if (active) setStatus("error");
+        if (active) setReviewStatus("error");
       }
-    };
-    void load<{ certificates?: Certificate[] }>(
-      `/api/agents/${encodeURIComponent(agentId)}/certificates`,
-      setCertStatus,
-      (data) => setCertificates(Array.isArray(data.certificates) ? data.certificates : []),
-    );
-    void load<{ badges?: AgentBadge[] }>(
-      `/api/agents/${encodeURIComponent(agentId)}/badges`,
-      setBadgeStatus,
-      (data) => setBadges(Array.isArray(data.badges) ? data.badges : []),
-    );
-    void load<{
-      reviews?: Review[];
-      canReview?: boolean;
-      alreadyReviewed?: boolean;
-    }>(
-      `/api/agents/${encodeURIComponent(agentId)}/reviews`,
-      setReviewStatus,
-      (data) => setReviewData({
-        reviews: Array.isArray(data.reviews) ? data.reviews : [],
-        canReview: Boolean(data.canReview),
-        alreadyReviewed: Boolean(data.alreadyReviewed),
-      }),
-    );
+    })();
     return () => { active = false; };
   }, [agentId]);
 
@@ -156,85 +125,13 @@ export default function PublicAgentTrustPanels({ agentId }: { agentId: string })
 
   return (
     <div className="mt-10 space-y-8">
-      <section aria-labelledby="agent-badges-title" className="border-t border-slate-200 pt-7">
-        <div className="mb-4 flex items-start gap-3">
-          <span className="rounded-xl bg-amber-50 p-2.5 text-amber-700"><Award size={19} aria-hidden="true" /></span>
-          <div>
-            <h2 id="agent-badges-title" className="text-xl font-semibold tracking-tight text-slate-900">Achievements &amp; Rewards</h2>
-            <p className="mt-1 text-sm text-slate-600">Recognition awarded by this Rent Manager’s owner.</p>
-          </div>
-        </div>
-        {badgeStatus === "loading" ? (
-          <p className="flex items-center gap-2 py-4 text-sm text-slate-600" role="status"><LoaderCircle className="animate-spin" size={16} /> Loading achievements…</p>
-        ) : badgeStatus === "error" ? (
-          <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" role="status">Achievements are temporarily unavailable.</p>
-        ) : badges.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">No achievements or rewards have been awarded yet.</p>
-        ) : (
-          <ul className="grid gap-3 sm:grid-cols-2">
-            {badges.map((badge) => (
-              <li key={`${badge.key}-${badge.awardedAt}`} className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-2.5">
-                    <BadgeCheck className="mt-0.5 shrink-0 text-amber-700" size={19} aria-hidden="true" />
-                    <div>
-                      <h3 className="font-semibold text-slate-900">{badge.label}</h3>
-                      <p className="mt-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800">{badge.category}</p>
-                    </div>
-                  </div>
-                  <time className="shrink-0 text-xs text-slate-600" dateTime={badge.awardedAt}>{displayDate(badge.awardedAt)}</time>
-                </div>
-                <p className="mt-3 text-sm leading-6 text-slate-700">{badge.description}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section aria-labelledby="agent-certificates-title" className="border-t border-slate-200 pt-7">
-        <div className="mb-4 flex items-start gap-3">
-          <span className="rounded-xl bg-orange-50 p-2.5 text-orange-700"><FileText size={19} aria-hidden="true" /></span>
-          <div>
-            <h2 id="agent-certificates-title" className="text-xl font-semibold tracking-tight text-slate-900">Certificates</h2>
-            <p className="mt-1 text-sm text-slate-600">Credentials shared by this Rent Manager.</p>
-          </div>
-        </div>
-        {certStatus === "loading" ? (
-          <p className="flex items-center gap-2 py-4 text-sm text-slate-600" role="status"><LoaderCircle className="animate-spin" size={16} /> Loading certificates…</p>
-        ) : certStatus === "error" ? (
-          <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" role="status">Certificates are temporarily unavailable.</p>
-        ) : certificates.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">No certificates have been shared yet.</p>
-        ) : (
-          <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
-            {certificates.map((certificate) => (
-              <li key={certificate.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <h3 className="truncate font-semibold text-slate-900">{certificate.title}</h3>
-                  <p className="mt-1 text-sm text-slate-600">
-                    {[certificate.issuer, certificate.issuedOn ? `Issued ${displayDate(certificate.issuedOn)}` : null].filter(Boolean).join(" · ") || certificate.fileName}
-                  </p>
-                </div>
-                {certificate.url ? (
-                  <a href={certificate.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-orange-800 underline decoration-orange-300 underline-offset-4 hover:text-orange-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-600 focus-visible:ring-offset-2">
-                    View certificate <span className="sr-only">: {certificate.title}</span>
-                  </a>
-                ) : (
-                  <span className="text-sm text-slate-500">File link unavailable</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
       <section aria-labelledby="agent-reviews-title" className="border-t border-slate-200 pt-7">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <span className="rounded-xl bg-orange-50 p-2.5 text-orange-700"><MessageSquare size={19} aria-hidden="true" /></span>
             <div>
-              <h2 id="agent-reviews-title" className="text-xl font-semibold tracking-tight text-slate-900">Client Reviews</h2>
-              <p className="mt-1 text-sm text-slate-600">Feedback from tenants who contacted this Rent Manager while signed in.</p>
+              <h2 id="agent-reviews-title" className="text-xl font-semibold tracking-tight text-slate-900">Client Reviews &amp; Feedback</h2>
+              <p className="mt-1 text-sm text-slate-600">Verified tenant ratings and reviews for this Rent Manager.</p>
             </div>
           </div>
           {averageRating !== null && (

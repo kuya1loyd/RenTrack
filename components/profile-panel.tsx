@@ -43,29 +43,18 @@ export default function ProfilePanel() {
   const didSyncRef = useRef(false);
 
   useEffect(() => {
+    void refreshUser();
+  }, [refreshUser]);
+
+  useEffect(() => {
     if (!user) return;
-    if (didSyncRef.current && userIdRef.current === user.id) return;
-    if (didSyncRef.current && userIdRef.current !== user.id) {
-      setName(user.name);
-      setEmail(user.email);
-      setPhone(user.phone || "");
-      setGender(user.gender || "");
-      setBirthdate(user.birthdate || "");
-      setAddress(user.address || "");
-      userIdRef.current = user.id;
-      didSyncRef.current = true;
-      return;
-    }
-    if (!didSyncRef.current) {
-      setName(user.name);
-      setEmail(user.email);
-      setPhone(user.phone || "");
-      setGender(user.gender || "");
-      setBirthdate(user.birthdate || "");
-      setAddress(user.address || "");
-      userIdRef.current = user.id;
-      didSyncRef.current = true;
-    }
+    setName(user.name || "");
+    setEmail(user.email || "");
+    setPhone(user.phone || "");
+    setGender(user.gender || "");
+    setBirthdate(user.birthdate ? user.birthdate.split("T")[0] : "");
+    setAddress(user.address || "");
+    userIdRef.current = user.id;
   }, [user]);
 
   const safeParseResponse = async (res: Response) => {

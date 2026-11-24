@@ -295,7 +295,7 @@ export async function safeParseJson(res: Response) {
 
 async function apiGet(url: string) {
   try {
-    const res = await fetch(url, { credentials: "include", next: { revalidate: 0 } });
+    const res = await fetch(url, { credentials: "include", cache: "no-store", next: { revalidate: 0 } });
     if (!res.ok) {
       return { success: false, error: `Request failed with status ${res.status}` };
     }
@@ -439,6 +439,15 @@ export async function updateTenantVerification(tenantId: string, status: "approv
 export async function updateTenantStatus(tenantId: string, status: "active" | "inactive" | "archived"): Promise<TenantRecord | null> {
   const result = await apiPatch("/api/data/tenants", { tenantId, status });
   return result.tenant || null;
+}
+
+export async function deleteTenant(tenantId: string): Promise<{ success: boolean; error?: string }> {
+  const result = await apiDelete(`/api/data/tenants?id=${encodeURIComponent(tenantId)}`, { userId: tenantId, id: tenantId });
+  if (result.success && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("renttrack-tenants-updated"));
+    window.dispatchEvent(new CustomEvent("renttrack-units-updated"));
+  }
+  return result;
 }
 
 // ─── Payments ──────────────────────────────────────────────────────────────

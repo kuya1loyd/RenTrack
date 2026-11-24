@@ -11,8 +11,8 @@ import { useAuth } from "@/lib/auth";
 import Link from "next/link";
 import { Avatar } from "@/components/ui/avatar";
 import {
-  LayoutDashboard, Home, MapPinned, CreditCard, Send, LogOut, ChevronRight, Menu, X, Award,
-  Loader2, ChevronDown, ChevronLeft, Bell, Mail, User, FileText, ShieldAlert, Building2, DoorOpen,
+  LayoutDashboard, Home, MapPinned, CreditCard, Send, LogOut, ChevronRight, Menu, X,
+  Loader2, ChevronDown, ChevronLeft, Bell, Mail, User, FileText, ShieldAlert, Building2, DoorOpen, Check,
 } from "lucide-react";
 import { getNotifications, getUnreadMessageCount, getUnreadInquiryCount, markNotificationRead, markAllNotificationsRead, markAllMessagesRead, Notification } from "@/lib/data";
 import { getProperties, Property } from "@/lib/data";
@@ -50,8 +50,8 @@ const navItems: AgentNavLink[] = [
   { label: "Property Map", tab: "map", href: "/dashboard/agent#map", icon: MapPinned },
   { label: "Financial Transactions", tab: "payments", href: "/dashboard/agent#payments", icon: CreditCard },
   { label: "Contracts", tab: "contracts", href: "/dashboard/agent#contracts", icon: FileText },
-  { label: "Certificates", tab: "certificates", href: "/dashboard/agent#certificates", icon: Award },
   { label: "Landing Inquiries", tab: "inquiries", href: "/dashboard/agent#inquiries", icon: Mail },
+  { label: "My Profile", tab: "profile", href: "/dashboard/agent#profile", icon: User },
 ];
 
 const agentContentTabs = ["messages", "profile", "tenants"];
@@ -65,7 +65,8 @@ function normalizeAgentTab(tab: string) {
 function getTabFromHash() {
   if (typeof window === "undefined") return "overview";
   const raw = window.location.hash.replace("#", "").split("?")[0];
-  const hash = normalizeAgentTab(raw);
+  const params = new URLSearchParams(window.location.search);
+  const hash = normalizeAgentTab(raw || params.get("tab") || "");
   if (
     hash &&
     (navItems.some((item) => item.tab === hash || item.children?.some((c) => c.tab === hash)) ||
@@ -138,23 +139,17 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
   }, []);
 
   const handleNavigationClick = (tab: string, mobile?: boolean) => {
-    if (mobile) setMobileSidebarOpen(false);
-    setActiveTab(tab as any);
-    if (tab === "properties" || tab === "units") {
-      setRentalManagementOpen(true);
-    }
-    if (typeof window !== "undefined") {
-      const cleanUrl = `${window.location.pathname}#${tab}`;
-      window.history.pushState(null, "", cleanUrl);
-      window.dispatchEvent(new CustomEvent("agent-dashboard-tab-change", { detail: tab }));
-      window.dispatchEvent(new CustomEvent("renttrack-switch-tab", { detail: { tab } }));
-    }
+    openAgentTab(tab, mobile);
   };
 
   useEffect(() => {
-    const readHash = () => {
-      const rawHash = window.location.hash.replace("#", "").split("?")[0];
-      const hash = normalizeAgentTab(rawHash);
+    const readHash = (event?: Event) => {
+      const customDetail = (event as CustomEvent)?.detail;
+      const eventTab = typeof customDetail === "string" ? customDetail : customDetail?.tab;
+      const rawHash = typeof window !== "undefined" ? window.location.hash.replace("#", "").split("?")[0] : "";
+      const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      const target = eventTab || rawHash || params?.get("tab") || "";
+      const hash = normalizeAgentTab(target);
       if (
         hash &&
         (navItems.some((item) => item.tab === hash || item.children?.some((c) => c.tab === hash)) ||
@@ -164,12 +159,20 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
         if (hash === "properties" || hash === "units") {
           setRentalManagementOpen(true);
         }
-        if (rawHash !== hash) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${hash}`);
+        if (typeof window !== "undefined" && rawHash !== hash) {
+          window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${hash}`);
+        }
       }
     };
     readHash();
     window.addEventListener("hashchange", readHash);
-    return () => window.removeEventListener("hashchange", readHash);
+    window.addEventListener("renttrack-switch-tab", readHash);
+    window.addEventListener("agent-dashboard-tab-change", readHash);
+    return () => {
+      window.removeEventListener("hashchange", readHash);
+      window.removeEventListener("renttrack-switch-tab", readHash);
+      window.removeEventListener("agent-dashboard-tab-change", readHash);
+    };
   }, []);
 
   useEffect(() => {
@@ -292,11 +295,25 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
   const unreadCount = unreadNotificationCount + unreadInquiryCount;
   const unreadBadge = unreadCount > 99 ? "99+" : unreadCount;
 
-  const openAgentTab = (tab: string) => {
+  const openAgentTab = (tab: string, mobile?: boolean) => {
+    if (mobile) setMobileSidebarOpen(false);
+    setShowUserMenu(false);
+    setShowNotifications(false);
     const normalizedTab = normalizeAgentTab(tab);
     setActiveTab(normalizedTab as any);
+    if (normalizedTab === "properties" || normalizedTab === "units") {
+      setRentalManagementOpen(true);
+    }
     if (typeof window !== "undefined") {
-      window.history.pushState(null, "", `#${normalizedTab}`);
+      if (!window.location.pathname.startsWith("/dashboard/agent")) {
+        router.push(`/dashboard/agent#${normalizedTab}`);
+        return;
+      }
+      const cleanUrl = `${window.location.pathname}#${normalizedTab}`;
+      window.history.pushState(null, "", cleanUrl);
+      window.location.hash = normalizedTab;
+      window.dispatchEvent(new CustomEvent("agent-dashboard-tab-change", { detail: normalizedTab }));
+      window.dispatchEvent(new CustomEvent("renttrack-switch-tab", { detail: { tab: normalizedTab } }));
     }
   };
 
@@ -312,24 +329,45 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
   const handleOpenNotifications = async () => {
     const nextOpen = !showNotifications;
     setShowNotifications(nextOpen);
+    setShowUserMenu(false);
 
-    if (!nextOpen || !user) return;
+    if (!nextOpen || !user?.id) return;
 
     try {
       await refreshUser();
+      const latest = await getNotifications(user.id);
+      setNotifications(latest);
     } catch (err) {
-      console.error("Failed to refresh user:", err);
+      console.error("Failed to load agent notifications:", err);
     }
   };
 
   const handleMarkAllNotifications = async () => {
-    if (!user) return;
+    if (!user?.id) return;
     try {
       await markAllNotificationsRead(user.id);
       setNotifications((current) => current.map((notification) => ({ ...notification, read: true })));
+      toast.success("All notifications marked as read");
       window.dispatchEvent(new Event("renttrack-notifications-updated"));
     } catch (err) {
       console.error("Failed to mark notifications as read:", err);
+      toast.error("Failed to mark notifications as read");
+    }
+  };
+
+  const handleMarkSingleRead = async (e: React.MouseEvent, n: Notification) => {
+    e.stopPropagation();
+    if (n.id.startsWith("verification-alert-") || n.read) return;
+    try {
+      await markNotificationRead(n.id);
+      setNotifications((current) =>
+        current.map((notification) =>
+          notification.id === n.id ? { ...notification, read: true } : notification
+        )
+      );
+      window.dispatchEvent(new Event("renttrack-notifications-updated"));
+    } catch (err) {
+      console.error("Failed to mark notification read:", err);
     }
   };
 
@@ -446,7 +484,11 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                         <span className="min-w-5 h-5 px-1 flex items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white shadow-xs">{unreadMessageCount}</span>
                       ) : null}
                     </button>
-                    <button onClick={() => { setShowUserMenu(false); openAgentTab("profile"); }} className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-text-secondary hover:bg-surface-secondary hover:text-foreground w-full transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => openAgentTab("profile")}
+                      className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-text-secondary hover:bg-surface-secondary hover:text-foreground w-full transition-colors cursor-pointer"
+                    >
                       <User className="h-4 w-4" /> My Profile
                     </button>
                   </div>
@@ -455,7 +497,12 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
             </AnimatePresence>
           </div>
           <div className="relative">
-            <button onClick={() => setShowNotifications(!showNotifications)} aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`} aria-expanded={showNotifications} className="p-2 rounded-lg hover:bg-surface-secondary relative cursor-pointer">
+            <button
+              onClick={handleOpenNotifications}
+              aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`}
+              aria-expanded={showNotifications}
+              className="p-2 rounded-lg hover:bg-surface-secondary relative cursor-pointer"
+            >
               <Bell className="h-5 w-5" />
               {(unreadCount > 0 || !isAgentVerified) && (
                 <span className="absolute -top-0.5 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-xs">
@@ -465,64 +512,82 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
             </button>
             <AnimatePresence initial={false}>
               {showNotifications && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className="absolute right-0 mt-2 w-72 sm:w-80 rounded-2xl border border-border bg-surface shadow-dropdown overflow-hidden z-50"
-                >
-                  <div className="p-3 border-b border-border flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <h3 className="font-semibold text-foreground text-sm">Notifications</h3>
-                      {!isAgentVerified && (
-                        <span className="rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 px-1.5 py-0.2 text-[9px] font-bold">
-                          Pending ID
-                        </span>
-                      )}
+                <>
+                  <div
+                    className="fixed inset-0 z-[65]"
+                    onClick={() => setShowNotifications(false)}
+                    aria-hidden="true"
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 top-full mt-2 w-72 sm:w-80 rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden z-[70] dark:bg-slate-900 dark:border-slate-800"
+                  >
+                    <div className="p-3 border-b border-border flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="font-semibold text-foreground text-sm">Notifications</h3>
+                        {!isAgentVerified && (
+                          <span className="rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 px-1.5 py-0.2 text-[9px] font-bold">
+                            Pending ID
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleMarkAllNotifications}
+                        className="text-xs text-primary-600 hover:text-primary-700 cursor-pointer font-medium"
+                      >
+                        Mark all as read
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleMarkAllNotifications}
-                      className="text-xs text-primary-600 hover:text-primary-700 cursor-pointer"
-                    >
-                      Mark all as read
-                    </button>
-                  </div>
-                  <div className="max-h-72 overflow-y-auto">
-                    {displayNotifications.length === 0 ? (
-                      <p className="px-4 py-6 text-center text-xs text-text-secondary">No notifications yet</p>
-                    ) : (
-                      displayNotifications.slice(0, 10).map((n) => {
-                        const isVerif = n.id.startsWith("verification-alert-");
-                        return (
-                          <button
-                            key={n.id}
-                            onClick={() => handleNotificationClick(n)}
-                            className={cn(
-                              "w-full text-left p-3 border-b border-border last:border-0 hover:bg-surface-secondary transition-colors cursor-pointer",
-                              isVerif
-                                ? "bg-amber-50/80 dark:bg-amber-950/30 border-l-4 border-l-amber-500"
-                                : (!n.read && "bg-primary-50/50")
-                            )}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <p className={cn("text-xs font-medium", isVerif ? "text-amber-950 dark:text-amber-200 font-bold flex items-center gap-1.5" : "text-foreground")}>
-                                {isVerif && <ShieldAlert className="h-3.5 w-3.5 text-amber-600 shrink-0" />}
-                                {n.title}
-                              </p>
-                              {isVerif && (
-                                <span className="shrink-0 rounded-full bg-amber-200 dark:bg-amber-900/60 px-1.5 py-0.2 text-[9px] font-bold text-amber-900 dark:text-amber-200">
-                                  Required
-                                </span>
+                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                      {displayNotifications.length === 0 ? (
+                        <p className="px-4 py-6 text-center text-xs text-text-secondary">No notifications yet</p>
+                      ) : (
+                        displayNotifications.slice(0, 15).map((n) => {
+                          const isVerif = n.id.startsWith("verification-alert-");
+                          return (
+                            <div
+                              key={n.id}
+                              onClick={() => handleNotificationClick(n)}
+                              className={cn(
+                                "flex items-start justify-between gap-2 p-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer text-left",
+                                isVerif
+                                  ? "bg-amber-50/80 dark:bg-amber-950/30 border-l-4 border-l-amber-500"
+                                  : (!n.read && "bg-blue-50/40 dark:bg-blue-950/20")
+                              )}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5">
+                                  {!n.read && !isVerif && (
+                                    <span className="h-1.5 w-1.5 rounded-full bg-blue-600 shrink-0" />
+                                  )}
+                                  <p className={cn("text-xs font-medium truncate", isVerif ? "text-amber-950 dark:text-amber-200 font-bold flex items-center gap-1.5" : "text-foreground")}>
+                                    {isVerif && <ShieldAlert className="h-3.5 w-3.5 text-amber-600 shrink-0" />}
+                                    {n.title}
+                                  </p>
+                                </div>
+                                <p className="text-[11px] text-text-secondary mt-0.5 line-clamp-2">{n.message}</p>
+                              </div>
+                              {!n.read && !isVerif && (
+                                <button
+                                  type="button"
+                                  title="Mark as read"
+                                  aria-label="Mark notification as read"
+                                  onClick={(e) => handleMarkSingleRead(e, n)}
+                                  className="shrink-0 p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                </button>
                               )}
                             </div>
-                            <p className="text-[11px] text-text-secondary mt-0.5 line-clamp-2">{n.message}</p>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </motion.div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </motion.div>
+                </>
               )}
             </AnimatePresence>
           </div>
@@ -822,64 +887,87 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                 </button>
                 <AnimatePresence initial={false}>
                   {showNotifications && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-surface shadow-dropdown overflow-hidden"
-                    >
-                      <div className="p-4 border-b border-border flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-foreground">Notifications</h3>
-                          {!isAgentVerified && (
-                            <span className="rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 text-[10px] font-bold">
-                              Verification Pending
-                            </span>
-                          )}
+                    <>
+                      <div
+                        className="fixed inset-0 z-[65]"
+                        onClick={() => setShowNotifications(false)}
+                        aria-hidden="true"
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden z-[70] dark:bg-slate-900 dark:border-slate-800"
+                      >
+                        <div className="p-4 border-b border-border flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-foreground">Notifications</h3>
+                            {!isAgentVerified && (
+                              <span className="rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 text-[10px] font-bold">
+                                Verification Pending
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleMarkAllNotifications}
+                            className="text-xs text-primary-600 hover:text-primary-700 cursor-pointer font-medium"
+                          >
+                            Mark all as read
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={handleMarkAllNotifications}
-                          className="text-xs text-primary-600 hover:text-primary-700 cursor-pointer"
-                        >
-                          Mark all as read
-                        </button>
-                      </div>
-                      <div className="max-h-80 overflow-y-auto">
-                        {displayNotifications.length === 0 ? (
-                          <p className="px-4 py-8 text-center text-sm text-text-secondary">No notifications yet</p>
-                        ) : (
-                          displayNotifications.slice(0, 10).map((n) => {
-                            const isVerif = n.id.startsWith("verification-alert-");
-                            return (
-                              <button
-                                key={n.id}
-                                onClick={() => handleNotificationClick(n)}
-                                className={cn(
-                                  "w-full text-left p-4 border-b border-border last:border-0 hover:bg-surface-secondary transition-colors cursor-pointer",
-                                  isVerif
-                                    ? "bg-amber-50/80 dark:bg-amber-950/30 border-l-4 border-l-amber-500"
-                                    : (!n.read && "bg-primary-50/50")
-                                )}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className={cn("text-sm font-medium", isVerif ? "text-amber-950 dark:text-amber-200 font-bold flex items-center gap-1.5" : "text-foreground")}>
-                                    {isVerif && <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />}
-                                    {n.title}
-                                  </p>
-                                  {isVerif && (
-                                    <span className="shrink-0 rounded-full bg-amber-200 dark:bg-amber-900/60 px-2 py-0.5 text-[10px] font-bold text-amber-900 dark:text-amber-200">
-                                      Required
-                                    </span>
+                        <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                          {displayNotifications.length === 0 ? (
+                            <p className="px-4 py-8 text-center text-sm text-text-secondary">No notifications yet</p>
+                          ) : (
+                            displayNotifications.slice(0, 15).map((n) => {
+                              const isVerif = n.id.startsWith("verification-alert-");
+                              return (
+                                <div
+                                  key={n.id}
+                                  onClick={() => handleNotificationClick(n)}
+                                  className={cn(
+                                    "flex items-start justify-between gap-3 p-4 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer text-left",
+                                    isVerif
+                                      ? "bg-amber-50/80 dark:bg-amber-950/30 border-l-4 border-l-amber-500"
+                                      : (!n.read && "bg-blue-50/40 dark:bg-blue-950/20")
+                                  )}
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                      {!n.read && !isVerif && (
+                                        <span className="h-2 w-2 rounded-full bg-blue-600 shrink-0" />
+                                      )}
+                                      <p className={cn("text-sm font-medium truncate", isVerif ? "text-amber-950 dark:text-amber-200 font-bold flex items-center gap-1.5" : "text-foreground")}>
+                                        {isVerif && <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />}
+                                        {n.title}
+                                      </p>
+                                      {isVerif && (
+                                        <span className="shrink-0 rounded-full bg-amber-200 dark:bg-amber-900/60 px-2 py-0.5 text-[10px] font-bold text-amber-900 dark:text-amber-200">
+                                          Required
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-text-secondary mt-1 line-clamp-2">{n.message}</p>
+                                  </div>
+                                  {!n.read && !isVerif && (
+                                    <button
+                                      type="button"
+                                      title="Mark as read"
+                                      aria-label="Mark notification as read"
+                                      onClick={(e) => handleMarkSingleRead(e, n)}
+                                      className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                    >
+                                      <Check className="h-4 w-4" />
+                                    </button>
                                   )}
                                 </div>
-                                <p className="text-xs text-text-secondary mt-0.5 line-clamp-2">{n.message}</p>
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-                    </motion.div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </motion.div>
+                    </>
                   )}
                 </AnimatePresence>
               </div>
@@ -945,8 +1033,9 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                           ) : null}
                         </button>
                         <button
-                          onClick={() => { setShowUserMenu(false); openAgentTab("profile"); }}
-                          className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-text-secondary hover:bg-surface-secondary hover:text-foreground w-full transition-colors"
+                          type="button"
+                          onClick={() => openAgentTab("profile")}
+                          className="flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-text-secondary hover:bg-surface-secondary hover:text-foreground w-full transition-colors cursor-pointer"
                         >
                           <User className="h-4 w-4" />
                           My Profile

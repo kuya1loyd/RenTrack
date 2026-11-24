@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import {
   Users, Search, CheckCircle2, XCircle, Trash2, Shield, Eye, X, MoreHorizontal,
-  Copy, MapPin, Building2, Phone, Mail, Clock
+  Copy, MapPin, Building2, Phone, Mail, Clock, AlertTriangle
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -92,23 +92,28 @@ export default function TenantsPage() {
     if (!deleteTarget) return;
     setIsDeleting(true);
     try {
-      const res = await fetch("/api/data/tenants", {
+      const targetId = deleteTarget.id;
+      const res = await fetch(`/api/data/tenants?id=${encodeURIComponent(targetId)}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ userId: deleteTarget.id }),
+        body: JSON.stringify({ userId: targetId, id: targetId }),
       });
       const result = await safeParseJson(res);
       if (result.success) {
         toast.success("Tenant deleted successfully");
-        setTenants(prev => prev.filter(t => t.id !== deleteTarget.id));
+        setTenants(prev => prev.filter(t => t.id !== targetId));
         setDeleteTarget(null);
-        if (selectedTenant?.id === deleteTarget.id) setSelectedTenant(null);
+        if (selectedTenant?.id === targetId) setSelectedTenant(null);
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("renttrack-tenants-updated"));
+          window.dispatchEvent(new CustomEvent("renttrack-units-updated"));
+        }
       } else {
         toast.error(result.error || "Failed to delete tenant");
       }
     } catch {
-      toast.error("An error occurred");
+      toast.error("An error occurred while deleting tenant");
     } finally {
       setIsDeleting(false);
     }
@@ -577,11 +582,42 @@ export default function TenantsPage() {
 
       <Modal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Tenant">
         <div className="space-y-4">
-          <p className="text-sm text-gray-600">Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This action cannot be undone.</p>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={isDeleting}>Cancel</Button>
-            <Button onClick={handleDelete} disabled={isDeleting} className="bg-red-600 hover:bg-red-700">
-              {isDeleting ? "Deleting..." : "Delete"}
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
+            <AlertTriangle className="h-6 w-6" />
+          </div>
+          <p className="text-center text-xs text-slate-500">
+            Are you sure you want to delete this tenant? This action cannot be undone and will permanently remove their access and unassign any linked units.
+          </p>
+          {deleteTarget && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Tenant:</span>
+                <span className="font-semibold text-slate-800">{deleteTarget.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Email:</span>
+                <span className="font-medium text-slate-700">{deleteTarget.email}</span>
+              </div>
+              {deleteTarget.propertyName && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Property:</span>
+                  <span className="text-slate-700">{deleteTarget.propertyName}</span>
+                </div>
+              )}
+              {deleteTarget.unitNumber && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Unit:</span>
+                  <span className="text-slate-700">Unit {deleteTarget.unitNumber}</span>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={isDeleting} className="flex-1">
+              Cancel
+            </Button>
+            <Button onClick={handleDelete} disabled={isDeleting} className="flex-1 bg-red-600 hover:bg-red-700 text-white">
+              {isDeleting ? "Deleting..." : "Confirm Delete"}
             </Button>
           </div>
         </div>

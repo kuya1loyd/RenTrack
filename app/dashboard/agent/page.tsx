@@ -5,7 +5,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import {
   LayoutDashboard, Home, UserPlus, ClipboardCheck, Clock, ArrowUpRight, CalendarDays,
   CreditCard, FileText, Send, Download,
-  CheckCircle2, Mail, User, Award,
+  CheckCircle2, Mail, User,
   Search, Plus, X, Users, ChevronDown, XCircle, Building2, RotateCcw, Phone,
   Copy, MapPin, MoreHorizontal, Camera,
 } from "lucide-react";
@@ -31,14 +31,13 @@ import { downloadExcelReport, downloadPdfReport } from "@/lib/report-downloads";
 import { toast } from "sonner";
 import MessagingModal from "@/components/messaging-modal";
 import ProfilePanel from "@/components/profile-panel";
-import AgentCertificateManager from "@/components/agent-certificate-manager";
 import ContractsPanel from "@/components/contracts-panel";
 import UnitImageCarousel from "@/components/unit-image-carousel";
 import { ManagementBanner, UnitMetrics, PropertyMetrics, UnitStatus, ManagementPagination } from "@/components/management-panel";
 import management from "@/components/management-panel.module.css";
 import { AnimatedFilterDropdown } from "@/components/ui/animated-filter-dropdown";
 
-type Step = "overview" | "units" | "properties" | "assign" | "tenants" | "payments" | "history" | "messages" | "inquiries" | "contracts" | "profile" | "map" | "certificates";
+type Step = "overview" | "units" | "properties" | "assign" | "tenants" | "payments" | "history" | "messages" | "inquiries" | "contracts" | "profile" | "map";
 
 const LIST_PAGE_SIZE = 10;
 
@@ -83,7 +82,6 @@ const flowSteps: { key: Step; label: string; icon: React.ElementType }[] = [
   { key: "tenants", label: "Tenants", icon: Users },
   { key: "payments", label: "Payments", icon: CreditCard },
   { key: "contracts", label: "Contracts", icon: FileText },
-  { key: "certificates", label: "Certificates", icon: Award },
   { key: "messages", label: "Messages", icon: Send },
   { key: "inquiries", label: "Inquiries", icon: Mail },
   { key: "profile", label: "Profile", icon: User },
@@ -93,7 +91,17 @@ export default function AgentDashboard() {
   const { user, isAuthenticated, isLoading, refreshUser } = useAuth();
   const reduceMotion = useReducedMotion();
   const isAgentVerified = user?.role !== "agent" || user?.idVerificationStatus === "approved" || (user as any)?.idVerified === true;
-  const [activeTab, setActiveTab] = useState<Step>("overview");
+  const [activeTab, setActiveTab] = useState<Step>(() => {
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash.replace("#", "").split("?")[0];
+      const params = new URLSearchParams(window.location.search);
+      const target = hash || params.get("tab") || "";
+      if (["overview", "map", "units", "properties", "tenants", "payments", "contracts", "messages", "inquiries", "profile"].includes(target)) {
+        return target as Step;
+      }
+    }
+    return "overview";
+  });
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [tenants, setTenants] = useState<TenantRecord[]>([]);
@@ -299,7 +307,7 @@ export default function AgentDashboard() {
       } else if (tabParam === "units") {
         setActiveTab("units");
         setAgentUnitsView("units");
-      } else if (tabParam && ["overview", "map", "units", "properties", "tenants", "payments", "contracts", "certificates", "messages", "inquiries", "profile"].includes(tabParam)) {
+      } else if (tabParam && ["overview", "map", "units", "properties", "tenants", "payments", "contracts", "messages", "inquiries", "profile"].includes(tabParam)) {
         setActiveTab(tabParam as Step);
       }
     };
@@ -320,7 +328,13 @@ export default function AgentDashboard() {
       loadData();
     };
     window.addEventListener("renttrack-profile-updated", refreshProfileData);
-    return () => window.removeEventListener("renttrack-profile-updated", refreshProfileData);
+    window.addEventListener("renttrack-tenants-updated", refreshProfileData);
+    window.addEventListener("renttrack-units-updated", refreshProfileData);
+    return () => {
+      window.removeEventListener("renttrack-profile-updated", refreshProfileData);
+      window.removeEventListener("renttrack-tenants-updated", refreshProfileData);
+      window.removeEventListener("renttrack-units-updated", refreshProfileData);
+    };
   }, [loadData]);
 
   useEffect(() => {
@@ -441,7 +455,11 @@ export default function AgentDashboard() {
   const navigateToTab = (tab: Step) => {
     setActiveTab(tab);
     if (typeof window !== "undefined") {
-      window.history.pushState(null, "", `#${tab}`);
+      const cleanUrl = `${window.location.pathname}#${tab}`;
+      window.history.pushState(null, "", cleanUrl);
+      window.location.hash = tab;
+      window.dispatchEvent(new CustomEvent("agent-dashboard-tab-change", { detail: tab }));
+      window.dispatchEvent(new CustomEvent("renttrack-switch-tab", { detail: { tab } }));
     }
   };
 
@@ -801,17 +819,6 @@ export default function AgentDashboard() {
             {activeTab === "contracts" && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 <ContractsPanel mode="agent" />
-              </motion.div>
-            )}
-            {activeTab === "certificates" && user?.role === "agent" && user.id && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                <ManagementBanner
-                  category="CREDENTIALS & COMPLIANCE"
-                  title="Agent Certificates"
-                  description="Upload, manage, and verify your real estate broker and agent accreditations."
-                  icon={Award}
-                />
-                <AgentCertificateManager agentId={user.id} />
               </motion.div>
             )}
             {activeTab === "map" && (

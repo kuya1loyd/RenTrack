@@ -429,21 +429,22 @@ export default function AdminDashboard() {
   }, [user, activeTab]);
 
   useEffect(() => {
-    const refreshAllUsers = async () => {
-      try {
-        const [usersData, tenantsData] = await Promise.all([
-          getUsers(),
-          getTenants(),
-        ]);
-        setUsers(usersData);
-        setTenants(tenantsData);
-      } catch {
-        // ignore
-      }
+    const handleDataChange = () => {
+      loadData();
     };
-    window.addEventListener("renttrack-profile-updated", refreshAllUsers);
-    return () => window.removeEventListener("renttrack-profile-updated", refreshAllUsers);
-  }, []);
+    window.addEventListener("renttrack-profile-updated", handleDataChange);
+    window.addEventListener("renttrack-tenants-updated", handleDataChange);
+    window.addEventListener("renttrack-properties-updated", handleDataChange);
+    window.addEventListener("renttrack-units-updated", handleDataChange);
+    window.addEventListener("renttrack-refresh-data", handleDataChange);
+    return () => {
+      window.removeEventListener("renttrack-profile-updated", handleDataChange);
+      window.removeEventListener("renttrack-tenants-updated", handleDataChange);
+      window.removeEventListener("renttrack-properties-updated", handleDataChange);
+      window.removeEventListener("renttrack-units-updated", handleDataChange);
+      window.removeEventListener("renttrack-refresh-data", handleDataChange);
+    };
+  }, [loadData]);
 
   const isAdvancePayment = (payment: Payment) => /advance/i.test(payment.notes || "") || payment.amountPaid > payment.amountDue;
   const isGcashPayment = (payment: Payment) => {

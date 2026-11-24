@@ -233,7 +233,13 @@ export async function DELETE(request: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const { id } = await request.json();
+    let id = request.nextUrl.searchParams.get("id");
+    if (!id) {
+      try {
+        const body = await request.json();
+        id = body?.id;
+      } catch {}
+    }
     if (typeof id !== "string" || !id.trim()) {
       return NextResponse.json({ success: false, error: "Application ID is required" }, { status: 400 });
     }
@@ -242,7 +248,7 @@ export async function DELETE(request: NextRequest) {
     if (!removed) {
       return NextResponse.json({ success: false, error: "Application not found" }, { status: 404 });
     }
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, message: "Applicant deleted successfully" });
   } catch (error) {
     console.error("Agent application removal failed:", error);
     return NextResponse.json({ success: false, error: "Unable to remove application" }, { status: 500 });

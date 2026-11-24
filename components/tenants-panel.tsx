@@ -155,17 +155,24 @@ export default function TenantsPanel({
     if (!deleteTenantTarget) return;
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/data/tenants?id=${deleteTenantTarget.id}`, {
+      const targetId = deleteTenantTarget.id;
+      const res = await fetch(`/api/data/tenants?id=${encodeURIComponent(targetId)}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: targetId, id: targetId }),
         credentials: "include",
       });
       const data = await safeParseJson(res);
       if (data.success) {
-        toast.success("Tenant removed successfully");
+        toast.success("Tenant deleted successfully");
         setDeleteTenantTarget(null);
         onReload();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("renttrack-tenants-updated"));
+          window.dispatchEvent(new CustomEvent("renttrack-units-updated"));
+        }
       } else {
-        toast.error(data.error || "Failed to remove tenant");
+        toast.error(data.error || "Failed to delete tenant");
       }
     } catch {
       toast.error("An error occurred while deleting tenant");
@@ -832,40 +839,67 @@ export default function TenantsPanel({
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
         {deleteTenantTarget && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="delete-tenant-title">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-sm overflow-hidden rounded-2xl border border-red-200 bg-white p-5 shadow-2xl text-center"
+              className="w-full max-w-md overflow-hidden rounded-2xl border border-red-200 bg-white p-6 shadow-2xl text-center"
             >
-              <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-red-600">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600">
                 <AlertTriangle className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-bold text-slate-900">Delete Tenant</h3>
+              <h3 id="delete-tenant-title" className="text-lg font-bold text-slate-900">Delete Tenant</h3>
               <p className="mt-1 text-xs text-slate-500">
-                Are you sure you want to delete <span className="font-semibold text-slate-800">{deleteTenantTarget.name}</span>? This action cannot be undone.
+                Are you sure you want to delete this tenant? This action cannot be undone and will permanently remove their access and unassign any linked units.
               </p>
+
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-left text-xs space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Tenant:</span>
+                  <span className="font-semibold text-slate-800">{deleteTenantTarget.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Email:</span>
+                  <span className="font-medium text-slate-700">{deleteTenantTarget.email}</span>
+                </div>
+                {deleteTenantTarget.propertyName && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Property:</span>
+                    <span className="text-slate-700">{deleteTenantTarget.propertyName}</span>
+                  </div>
+                )}
+                {deleteTenantTarget.unitNumber && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Unit:</span>
+                    <span className="text-slate-700">Unit {deleteTenantTarget.unitNumber}</span>
+                  </div>
+                )}
+                {deleteTenantTarget.status && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Status:</span>
+                    <span className="capitalize text-slate-700">{deleteTenantTarget.status}</span>
+                  </div>
+                )}
+              </div>
 
               <div className="mt-5 flex gap-2">
                 <Button
                   type="button"
                   variant="outline"
-                  size="sm"
-                  className="flex-1"
                   disabled={isSubmitting}
                   onClick={() => setDeleteTenantTarget(null)}
+                  className="flex-1"
                 >
                   Cancel
                 </Button>
                 <Button
                   type="button"
-                  size="sm"
                   disabled={isSubmitting}
                   onClick={handleDeleteTenant}
                   className="flex-1 bg-red-600 hover:bg-red-700 text-white"
                 >
-                  {isSubmitting ? "Deleting..." : "Delete Tenant"}
+                  {isSubmitting ? "Deleting..." : "Confirm Delete"}
                 </Button>
               </div>
             </motion.div>
