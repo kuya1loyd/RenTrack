@@ -805,16 +805,28 @@ export default function OwnerDashboard() {
   }, [loadData]);
 
   useEffect(() => {
+    if (activeTab === "assignments" || activeTab === "overview" || activeTab === "units" || activeTab === "properties") {
+      void loadData();
+    }
+  }, [activeTab, loadData]);
+
+  useEffect(() => {
     const handleSync = () => {
       void loadData();
     };
     window.addEventListener("renttrack-tenants-updated", handleSync);
     window.addEventListener("renttrack-units-updated", handleSync);
     window.addEventListener("renttrack-payment-updated", handleSync);
+    window.addEventListener("renttrack-refresh-data", handleSync);
+    window.addEventListener("owner-data-changed", handleSync);
+    window.addEventListener("focus", handleSync);
     return () => {
       window.removeEventListener("renttrack-tenants-updated", handleSync);
       window.removeEventListener("renttrack-units-updated", handleSync);
       window.removeEventListener("renttrack-payment-updated", handleSync);
+      window.removeEventListener("renttrack-refresh-data", handleSync);
+      window.removeEventListener("owner-data-changed", handleSync);
+      window.removeEventListener("focus", handleSync);
     };
   }, [loadData]);
 
@@ -857,7 +869,18 @@ export default function OwnerDashboard() {
   const condoUnits = units.filter((u) => !["house", "villa", "residential"].includes((u.type || "").toLowerCase()));
   const availableUnits = condoUnits.filter((u) => u.status === "vacant");
   const occupiedUnits = condoUnits.filter((u) => u.status === "occupied");
-  const pendingAssignments = tenants.filter((t) => t.assignmentStatus === "pending" && (t.unitId || t.propertyName));
+  const pendingAssignments = tenants
+    .filter((t) => t.assignmentStatus === "pending" && Boolean(t.unitId || t.propertyName || t.unitNumber))
+    .map((t) => {
+      if (t.propertyName) return t;
+      const matchedUnit = t.unitId ? units.find((u) => u.id === t.unitId) : undefined;
+      const matchedProp = matchedUnit?.propertyId ? properties.find((p) => p.id === matchedUnit.propertyId) : undefined;
+      return {
+        ...t,
+        propertyName: matchedUnit?.name || matchedProp?.name || (t.unitNumber ? `Condo Unit ${t.unitNumber}` : "Managed Property"),
+        unitNumber: t.unitNumber || matchedUnit?.unitNumber || "",
+      };
+    });
   const filteredPendingAssignments = pendingAssignments.filter((tenant) => {
     if (assignmentPropertyFilter !== "all" && tenant.propertyName !== assignmentPropertyFilter) {
       return false;

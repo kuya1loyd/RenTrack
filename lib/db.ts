@@ -1685,39 +1685,9 @@ export async function getTenants() {
   for (const u of usersList) {
     let tr = tenantsList.find((t: any) => t.id === u.id || (t.email && String(t.email).toLowerCase() === String(u.email || "").toLowerCase()));
 
-    // Junrich Gwapo has moved out; ensure he is unassigned from any unit so other tenants can avail the unit
-    if (u.email && u.email.toLowerCase().includes("junrich.menardo")) {
-      if (tr?.unit_id || tr?.property_name || tr?.unit_number) {
-        try {
-          await getAdminSupabase().from("tenants").update({
-            unit_id: null,
-            property_name: null,
-            unit_number: null,
-            assignment_status: "",
-            status: "archived",
-            rent_amount: 0,
-          }).eq("id", u.id);
-          await getAdminSupabase().from("units").update({
-            status: "vacant",
-            tenant_id: null,
-            tenant_name: null,
-          }).eq("tenant_id", u.id);
-        } catch (cleanupErr) {
-          console.warn("Could not cleanup Junrich Gwapo assignment:", cleanupErr);
-        }
-        if (tr) {
-          tr.unit_id = null;
-          tr.property_name = null;
-          tr.unit_number = null;
-          tr.assignment_status = "";
-          tr.status = "archived";
-          tr.rent_amount = 0;
-        }
-      }
-    }
-
     if (tr) matchedTenantIds.add(tr.id);
-    const assignedAgent = tr?.assigned_agent_id || tr?.agent_id || (tr?.unit_id ? fallbackAgentId : "");
+    const hasAssignmentTarget = Boolean(tr?.unit_id || tr?.property_name || tr?.unit_number);
+    const assignedAgent = tr?.assigned_agent_id || tr?.agent_id || (hasAssignmentTarget ? fallbackAgentId : "");
     results.push({
       id: u.id,
       name: u.name,
@@ -1739,13 +1709,14 @@ export async function getTenants() {
       avatarUrl: u.avatar_url,
       idVerificationUrl: u.id_verification_url,
       idVerificationStatus: u.id_verification_status,
-      assignmentStatus: tr?.assignment_status || (tr?.unit_id ? "pending" : ""),
+      assignmentStatus: tr?.assignment_status || (hasAssignmentTarget ? "pending" : ""),
       assignedAgentId: assignedAgent,
     });
   }
 
   for (const tr of tenantsList) {
     if (!matchedTenantIds.has(tr.id)) {
+      const hasAssignmentTarget = Boolean(tr.unit_id || tr.property_name || tr.unit_number);
       results.push({
         id: tr.id,
         name: tr.name,
@@ -1767,8 +1738,8 @@ export async function getTenants() {
         avatarUrl: null,
         idVerificationUrl: null,
         idVerificationStatus: null,
-        assignmentStatus: tr.assignment_status || (tr.unit_id ? "pending" : ""),
-        assignedAgentId: tr.assigned_agent_id || tr.agent_id || (tr.unit_id ? fallbackAgentId : ""),
+        assignmentStatus: tr.assignment_status || (hasAssignmentTarget ? "pending" : ""),
+        assignedAgentId: tr.assigned_agent_id || tr.agent_id || (hasAssignmentTarget ? fallbackAgentId : ""),
       });
     }
   }

@@ -175,7 +175,7 @@ export default function AssignTenantModal({
     const prop = property || properties.find((p) => p.id === unit.propertyId);
     if (prop) setSelectedProperty(prop);
     setAssignForm({
-      propertyName: prop?.name || unit.propertyName || "",
+      propertyName: prop?.name || unit.propertyName || unit.name || "Condominium Unit",
       unitNumber: unit.unitNumber,
       rentAmount: unit.rentAmount || 0,
       contractStart: assignForm.contractStart || new Date().toISOString().slice(0, 10),
@@ -196,8 +196,13 @@ export default function AssignTenantModal({
     setIsSubmitting(true);
     try {
       const property = selectedProperty || properties.find((p) => p.id === selectedUnit?.propertyId);
-      const propName = assignForm.propertyName || property?.name || "";
-      const unitNum = assignForm.unitNumber.trim();
+      const unitNum = (assignForm.unitNumber || selectedUnit?.unitNumber || "").trim();
+      const propName =
+        assignForm.propertyName.trim() ||
+        property?.name ||
+        selectedUnit?.propertyName ||
+        selectedUnit?.name ||
+        (unitNum ? `Condo Unit ${unitNum}` : "Managed Property");
 
       let targetUnitId = selectedUnit?.id;
       if (!targetUnitId && property && unitNum) {
@@ -241,6 +246,7 @@ export default function AssignTenantModal({
 
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("renttrack-notifications-updated"));
+          window.dispatchEvent(new Event("renttrack-tenants-updated"));
           window.dispatchEvent(new Event("owner-data-changed"));
         }
 
@@ -759,7 +765,7 @@ export default function AssignTenantModal({
                                   </div>
                                   <div>
                                     <p className="text-sm font-bold text-slate-900 leading-snug">
-                                      {property?.name || unit.propertyName || "Managed Property"}
+                                      {property?.name || unit.propertyName || unit.name || "Condominium Unit"}
                                     </p>
                                     <p className="text-xs text-slate-500">Unit #{unit.unitNumber}</p>
                                   </div>
@@ -850,7 +856,7 @@ export default function AssignTenantModal({
                         <div className="flex justify-between items-center">
                           <span className="text-slate-500">Property:</span>
                           <span className="font-bold text-slate-900">
-                            {selectedProperty?.name || properties.find((p) => p.id === selectedUnit?.propertyId)?.name || assignForm.propertyName || "Managed Property"}
+                            {selectedProperty?.name || properties.find((p) => p.id === selectedUnit?.propertyId)?.name || selectedUnit?.name || assignForm.propertyName || "Condominium Unit"}
                           </span>
                         </div>
 
