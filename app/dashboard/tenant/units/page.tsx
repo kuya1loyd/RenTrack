@@ -242,6 +242,17 @@ export default function TenantUnitsPage() {
     return list;
   }, [properties, units, tenant, user, searchTerm, selectedSort, filterType, filterStatus, maxRent]);
 
+  const filteredCondoUnits = useMemo(() => {
+    return filteredAndSortedProperties.flatMap((p) =>
+      units.filter((u) => {
+        if (u.propertyId !== p.id) return false;
+        if (filterStatus === "assigned") return isMyUnit(u);
+        if (filterStatus === "vacant") return u.status === "vacant";
+        return true;
+      })
+    );
+  }, [filteredAndSortedProperties, units, filterStatus]);
+
   const handleResetSearch = () => {
     setSearchTerm("");
     setFilterType("all");
