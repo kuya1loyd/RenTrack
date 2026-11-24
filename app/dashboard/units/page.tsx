@@ -28,6 +28,7 @@ const statusColors: Record<string, string> = {
 
 const UNIT_TYPES = [
   { value: "condo", label: "Condominium Unit" },
+  { value: "house", label: "House / Villa" },
   { value: "dorm", label: "Dormitory Room" },
   { value: "hotel", label: "Hotel Room" },
   { value: "studio", label: "Studio Unit" },
@@ -105,15 +106,24 @@ export default function UnitsPage() {
       toast.error("Please fill in all required fields");
       return;
     }
+    const targetProp = properties.find((p) => p.id === formData.propertyId);
+    const isHouse = targetProp ? ["house", "residential", "villa"].includes(targetProp.type?.toLowerCase() || "") : false;
     try {
-      const dataToSend = { ...formData, status: "vacant" as const, imageUrl: formData.imageUrls[0] || formData.imageUrl || undefined, imageUrls: formData.imageUrls };
+      const dataToSend = {
+        ...formData,
+        floor: isHouse ? undefined : (formData.floor || undefined),
+        type: isHouse ? "house" : (formData.type || "condo"),
+        status: "vacant" as const,
+        imageUrl: formData.imageUrls[0] || formData.imageUrl || undefined,
+        imageUrls: formData.imageUrls,
+      };
       const createdUnit = await addUnit(dataToSend);
       setUnits((current) => [createdUnit, ...current]);
       setProperties((current) => current.map((property) => property.id === formData.propertyId ? { ...property, units: property.units + 1 } : property));
       setShowAddModal(false);
       setFormData({ propertyId: "", unitNumber: "", floor: 0, rentAmount: 0, type: "condo", condition: "", imageUrl: "", imageUrls: [] });
       notifyAdmins({ title: "New Unit Added", message: `Unit ${formData.unitNumber} was added by ${user?.name}`, type: "property", read: false });
-      toast.success("Unit added successfully");
+      toast.success(isHouse ? "House unit added successfully" : "Unit added successfully");
     } catch (err) {
       console.error(err);
       toast.error("Failed to add unit");
@@ -409,74 +419,164 @@ export default function UnitsPage() {
         )}
       </Modal>
 
-      {/* Add Unit Modal */}
-      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Add Unit" description="Add a new rental unit to a property">
-        <form onSubmit={handleAdd} className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Property *</label>
-              <select value={formData.propertyId} onChange={(e) => setFormData({ ...formData, propertyId: e.target.value })} className="w-full h-9 rounded-lg border border-border bg-surface text-foreground px-3 text-sm">
-                <option value="">Select a property</option>
-                {properties
-                  .filter((p) => p.type?.toLowerCase() !== "house")
-                  .map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Unit Number *</label>
-              <Input value={formData.unitNumber} onChange={(e) => setFormData({ ...formData, unitNumber: e.target.value })} placeholder="e.g. Unit 101" className="h-9" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Floor</label>
-              <Input type="number" value={formData.floor || ""} onChange={(e) => setFormData({ ...formData, floor: parseInt(e.target.value) || 0 })} placeholder="e.g. 1" className="h-9" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Rent Amount (₱)</label>
-              <Input type="number" value={formData.rentAmount || ""} onChange={(e) => setFormData({ ...formData, rentAmount: parseInt(e.target.value) || 0 })} placeholder="e.g. 5000" className="h-9" />
-            </div>
-          </div>
-          <div className="rounded-xl border border-border bg-surface-secondary/40 p-3.5 space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Classification &amp; Unit Condition</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Unit Type</label>
-                <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })} className="w-full h-9 rounded-lg border border-border bg-surface text-foreground px-3 text-sm">
-                  {UNIT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
+      {/* Dynamic Add Unit Modal */}
+      {(() => {
+        const selectedProperty = properties.find((p) => p.id === formData.propertyId);
+        const isHouse = selectedProperty ? ["house", "residential", "villa"].includes(selectedProperty.type?.toLowerCase() || "") : false;
+        return (
+          <Modal
+            isOpen={showAddModal}
+            onClose={() => setShowAddModal(false)}
+            title="Add Unit"
+            description={isHouse ? "Add a house or villa unit with block and lot" : "Add a new rental unit to a property"}
+          >
+            <form onSubmit={handleAdd} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">Parent Property *</label>
+                  <select
+                    value={formData.propertyId}
+                    onChange={(e) => {
+                      const pId = e.target.value;
+                      const p = properties.find((item) => item.id === pId);
+                      const isH = p ? ["house", "residential", "villa"].includes(p.type?.toLowerCase() || "") : false;
+                      setFormData({
+                        ...formData,
+                        propertyId: pId,
+                        floor: isH ? 0 : formData.floor,
+                        type: isH ? "house" : "condo",
+                      });
+                    }}
+                    className="w-full h-9 rounded-lg border border-border bg-surface text-foreground px-3 text-sm"
+                  >
+                    <option value="">Select a property</option>
+                    {properties.map((p) => {
+                      const isH = ["house", "residential", "villa"].includes(p.type?.toLowerCase() || "");
+                      return (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({isH ? "House / Villa" : "Condominium"})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    {isHouse ? "House / Unit Number *" : "Unit Number *"}
+                  </label>
+                  <Input
+                    value={formData.unitNumber}
+                    onChange={(e) => setFormData({ ...formData, unitNumber: e.target.value })}
+                    placeholder={isHouse ? "e.g. House 12" : "e.g. Unit 101"}
+                    className="h-9"
+                  />
+                </div>
+              </div>
+              <div className={cn("grid gap-3", isHouse ? "grid-cols-1" : "grid-cols-2")}>
+                {!isHouse && (
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">Floor Level</label>
+                    <Input
+                      type="number"
+                      value={formData.floor || ""}
+                      onChange={(e) => setFormData({ ...formData, floor: parseInt(e.target.value) || 0 })}
+                      placeholder="e.g. 1"
+                      className="h-9"
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">Rent Amount (₱)</label>
+                  <Input
+                    type="number"
+                    value={formData.rentAmount || ""}
+                    onChange={(e) => setFormData({ ...formData, rentAmount: parseInt(e.target.value) || 0 })}
+                    placeholder="e.g. 5000"
+                    className="h-9"
+                  />
+                </div>
+              </div>
+              <div className="rounded-xl border border-border bg-surface-secondary/40 p-3.5 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Classification &amp; Unit Condition</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">Unit Type</label>
+                    <div className="flex h-9 w-full items-center justify-between rounded-lg border border-border bg-surface px-3 text-sm font-medium text-foreground">
+                      <span>{isHouse ? "House / Villa" : "Condominium Unit"}</span>
+                      <span className="rounded bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 px-1.5 py-0.2 text-[10px] font-bold">
+                        Auto
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">Unit Condition</label>
+                    <select
+                      value={formData.condition}
+                      onChange={(e) => setFormData({ ...formData, condition: e.target.value })}
+                      className="w-full h-9 rounded-lg border border-border bg-surface text-foreground px-3 text-sm"
+                    >
+                      <option value="">Select condition...</option>
+                      {UNIT_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Unit Condition</label>
-                <select value={formData.condition} onChange={(e) => setFormData({ ...formData, condition: e.target.value })} className="w-full h-9 rounded-lg border border-border bg-surface text-foreground px-3 text-sm">
-                  <option value="">Select condition...</option>
-                  {UNIT_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <label className="mb-1 block text-sm font-medium text-foreground">Unit Images</label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={async (event) => {
+                    const files = Array.from(event.target.files || []);
+                    if (!files.length) return;
+                    try {
+                      const urls = await uploadUnitImages(files);
+                      setFormData((current) => ({
+                        ...current,
+                        imageUrl: current.imageUrl || urls[0],
+                        imageUrls: Array.from(new Set([...current.imageUrls, ...urls])),
+                      }));
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Failed to upload images");
+                    } finally {
+                      event.target.value = "";
+                    }
+                  }}
+                />
+                {formData.imageUrls.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {formData.imageUrls.map((url, index) => (
+                      <div key={`${url}-${index}`} className="relative">
+                        <Image
+                          src={url}
+                          alt={`Unit preview ${index + 1}`}
+                          width={64}
+                          height={64}
+                          unoptimized
+                          className="h-16 w-16 rounded-lg border object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void removeUnitImage(url, false)}
+                          className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white cursor-pointer"
+                          aria-label={`Remove image ${index + 1}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-foreground">Unit Images</label>
-            <Input type="file" accept="image/*" multiple onChange={async (event) => {
-              const files = Array.from(event.target.files || []);
-              if (!files.length) return;
-              try {
-                const urls = await uploadUnitImages(files);
-                setFormData((current) => ({ ...current, imageUrl: current.imageUrl || urls[0], imageUrls: Array.from(new Set([...current.imageUrls, ...urls])) }));
-              } catch (error) {
-                toast.error(error instanceof Error ? error.message : "Failed to upload images");
-              } finally {
-                event.target.value = "";
-              }
-            }} />
-            {formData.imageUrls.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{formData.imageUrls.map((url, index) => <div key={`${url}-${index}`} className="relative"><Image src={url} alt={`Unit preview ${index + 1}`} width={64} height={64} unoptimized className="h-16 w-16 rounded-lg border object-cover" /><button type="button" onClick={() => void removeUnitImage(url, false)} className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white" aria-label={`Remove image ${index + 1}`}><X className="h-3 w-3" /></button></div>)}</div>}
-          </div>
-          <div className="flex justify-end gap-2 pt-1">
-            <Button type="button" variant="outline" onClick={() => setShowAddModal(false)} className="h-9">Cancel</Button>
-            <Button type="submit" className="h-9"><Check className="h-4 w-4 mr-1.5" />Add Unit</Button>
-          </div>
-        </form>
-      </Modal>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button type="button" variant="outline" onClick={() => setShowAddModal(false)} className="h-9">Cancel</Button>
+                <Button type="submit" className="h-9"><Check className="h-4 w-4 mr-1.5" />{isHouse ? "Add House Unit" : "Add Unit"}</Button>
+              </div>
+            </form>
+          </Modal>
+        );
+      })()}
 
       <Modal isOpen={!!editingUnit} onClose={() => setEditingUnit(null)} title="Edit Unit" description="Update every unit detail">
         <form onSubmit={handleSaveEdit} className="space-y-4">
