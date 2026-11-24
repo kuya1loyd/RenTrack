@@ -95,7 +95,7 @@ type Step = "overview" | "properties" | "units" | "assignments" | "agents" | "ma
 const flowSteps: { key: Step; label: string; icon: LucideIcon }[] = [
   { key: "overview", label: "Dashboard", icon: LayoutDashboard },
   { key: "properties", label: "Properties", icon: Home },
-  { key: "units", label: "Rental Units", icon: ClipboardCheck },
+  { key: "units", label: "Condo Units", icon: DoorOpen },
   { key: "assignments", label: "Pending Approvals", icon: FileText },
   { key: "agents", label: "Agents", icon: Users },
   { key: "map", label: "Property Map", icon: MapPinned },
@@ -183,7 +183,7 @@ export default function OwnerDashboard() {
   const [, setIsRefreshing] = useState(false);
   const [showCreateProperty, setShowCreateProperty] = useState(false);
   const [showAddUnit, setShowAddUnit] = useState(false);
-  const [newUnitForm, setNewUnitForm] = useState({ name: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "house", condition: "", status: "vacant" as Unit["status"], rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
+  const [newUnitForm, setNewUnitForm] = useState({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "condo", condition: "", status: "vacant" as Unit["status"], rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
   const [propertyForm, setPropertyForm] = useState({ name: "", address: "", city: "", province: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house" as "house" | "residential" | "building" | "condominium" | string, features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
   const [isUploadingPropertyImage, setIsUploadingPropertyImage] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -805,8 +805,9 @@ export default function OwnerDashboard() {
     }
   }, [isLoading, isAuthenticated]);
 
-  const availableUnits = units.filter((u) => u.status === "vacant");
-  const occupiedUnits = units.filter((u) => u.status === "occupied");
+  const condoUnits = units.filter((u) => !["house", "villa", "residential"].includes((u.type || "").toLowerCase()));
+  const availableUnits = condoUnits.filter((u) => u.status === "vacant");
+  const occupiedUnits = condoUnits.filter((u) => u.status === "occupied");
   const pendingAssignments = tenants.filter((t) => t.assignmentStatus === "pending" && (t.unitId || t.propertyName));
   const filteredPendingAssignments = pendingAssignments.filter((tenant) => {
     if (assignmentPropertyFilter !== "all" && tenant.propertyName !== assignmentPropertyFilter) {
@@ -825,8 +826,11 @@ export default function OwnerDashboard() {
   const overduePayments = payments.filter((p) => p.status === "overdue");
   const normalizedUnitSearch = unitSearch.trim().toLowerCase();
   const filteredUnits = units.filter((unit) => {
+    // Only handle condominium units
+    const isHouse = ["house", "villa", "residential"].includes((unit.type || "").toLowerCase());
+    if (isHouse) return false;
     const prop = properties.find((p) => p.id === unit.propertyId);
-    const searchable = `${unit.unitNumber} ${unit.tenantName || ""} ${unit.address || ""} ${prop?.name || ""} ${prop?.location || ""} ${(unit as any).propertyName || prop?.name || ""}`.toLowerCase();
+    const searchable = `${unit.name || ""} ${unit.unitNumber} ${unit.tenantName || ""} ${unit.address || ""} ${unit.city || ""} ${unit.province || ""} ${prop?.name || ""} ${prop?.location || ""} ${(unit as any).propertyName || prop?.name || ""}`.toLowerCase();
     const searchMatches = !normalizedUnitSearch || searchable.includes(normalizedUnitSearch);
     const statusMatches = unitStatusFilter === "all" || unit.status === unitStatusFilter;
     const unitReason = unit.maintenanceReason || (unit.condition?.startsWith("Maintenance: ") ? unit.condition.replace("Maintenance: ", "") : "");
@@ -1032,22 +1036,24 @@ export default function OwnerDashboard() {
 
   const downloadUnitsExport = () => {
     const rows: Array<Array<string | number>> = [
-      ["Unit No.", "Building / Complex", "Floor Level", "Address", "Property type", "Monthly rent", "Status", "Tenant"],
+      ["Unit No.", "Condo Name / Tower", "Floor Level", "Address", "City", "Province", "Monthly Rent (₱)", "Condition", "Status", "Tenant"],
       ...sortedUnits.map((unit) => {
         const property = properties.find((item) => item.id === unit.propertyId);
         return [
           unit.unitNumber,
-          property?.name || "Standalone",
+          unit.name || property?.name || "Independent Condo Unit",
           unit.floor !== undefined && unit.floor !== null && String(unit.floor) !== "" ? `Floor ${unit.floor}` : "—",
           unit.address || property?.location || property?.name || "",
-          property?.type || "",
+          unit.city || property?.city || "",
+          unit.province || property?.province || "",
           unit.rentAmount,
+          unit.condition || "Standard",
           unit.status === "vacant" ? "Available" : unit.status === "occupied" ? "Occupied" : "Under Maintenance",
           unit.tenantName || tenants.find((tenant) => tenant.unitId === unit.id)?.name || "",
         ];
       }),
     ];
-    downloadExcelReport(`owner-units-${new Date().toISOString().slice(0, 10)}.xls`, [{ name: "Units", rows }]);
+    downloadExcelReport(`owner-condo-units-${new Date().toISOString().slice(0, 10)}.xls`, [{ name: "Condo Units", rows }]);
   };
 
   const downloadOccupancyExport = () => {
@@ -1103,12 +1109,13 @@ export default function OwnerDashboard() {
     setNewUnitMaintenanceReason(UNIT_MAINTENANCE_REASONS[0]);
     setNewUnitForm({
       name: "",
+      tower: "",
       address: "",
       city: "",
       province: "",
       unitNumber: "",
       floor: "",
-      type: "house",
+      type: "condo",
       condition: "",
       status: "vacant",
       rentAmount: "",
@@ -1121,10 +1128,9 @@ export default function OwnerDashboard() {
   const handleAddUnit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!newUnitForm.name.trim() || !newUnitForm.unitNumber.trim() || !newUnitForm.address.trim() || Number(newUnitForm.rentAmount) < 0) {
-      toast.error("Please provide unit name, unit number, address, and rent amount");
+      toast.error("Please provide unit name, unit number, complete address, and rent amount");
       return;
     }
-    const isHouse = newUnitForm.type === "house" || newUnitForm.type === "villa";
 
     setIsSubmitting(true);
     try {
@@ -1133,14 +1139,18 @@ export default function OwnerDashboard() {
         ? (newUnitMaintenanceReason ? `Maintenance: ${newUnitMaintenanceReason}` : newUnitForm.condition || undefined)
         : (newUnitForm.condition || undefined);
 
+      const fullAddress = newUnitForm.tower.trim()
+        ? `${newUnitForm.tower.trim()}, ${newUnitForm.address.trim()}`
+        : newUnitForm.address.trim();
+
       const newUnit = await addUnit({
         name: newUnitForm.name.trim(),
         unitNumber: newUnitForm.unitNumber.trim(),
-        address: newUnitForm.address.trim(),
+        address: fullAddress,
         city: newUnitForm.city.trim() || undefined,
         province: newUnitForm.province.trim() || undefined,
-        floor: isHouse ? undefined : (newUnitForm.floor ? Number(newUnitForm.floor) : undefined),
-        type: newUnitForm.type || "house",
+        floor: newUnitForm.floor ? Number(newUnitForm.floor) : undefined,
+        type: "condo",
         condition: finalCondition,
         maintenanceReason: isMaint ? newUnitMaintenanceReason : undefined,
         status: newUnitForm.status,
@@ -1150,12 +1160,12 @@ export default function OwnerDashboard() {
       });
       setUnits((current) => [...current, newUnit]);
       setShowAddUnit(false);
-      setNewUnitForm({ name: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "house", condition: "", status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
+      setNewUnitForm({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "condo", condition: "", status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
       setNewUnitMaintenanceReason(UNIT_MAINTENANCE_REASONS[0]);
-      toast.success(isHouse ? "House / Villa unit registered independently" : "Condominium unit registered independently");
+      toast.success("Condominium unit registered successfully");
       await loadData();
     } catch {
-      toast.error("Failed to add unit");
+      toast.error("Failed to register condominium unit");
     } finally {
       setIsSubmitting(false);
     }
@@ -1260,25 +1270,25 @@ export default function OwnerDashboard() {
         </motion.div>
       )}
 
-      {/* RENTAL UNITS PAGE */}
+      {/* CONDO UNITS PAGE */}
       {activeTab === "units" && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={cn(management.page, "space-y-6")}>
           <ManagementBanner
-            category="Units Management"
-            title="Rental Units (Floors & Units)"
-            description="Browse, filter, and manage individual condominium units and building floors across your portfolio."
-            icon={ClipboardCheck}
+            category="Condominium Units Management"
+            title="Condo Units"
+            description="Browse, filter, and manage individual condominium units, towers, and floors across your portfolio."
+            icon={DoorOpen}
           />
 
           <section id="units-section" className="space-y-4">
             <div>
               <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <span>Rental Units &amp; Floors</span>
+                <span>Condo Units</span>
                 <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                   {filteredUnits.length} {filteredUnits.length === 1 ? "unit" : "units"}
                 </span>
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">Manage the units and building floors bought across condominium developments.</p>
+              <p className="text-xs text-slate-500 mt-0.5">Manage individual condominium units and tower building floors across developments.</p>
             </div>
 
             <div className={management.toolbar}>
@@ -1288,8 +1298,8 @@ export default function OwnerDashboard() {
                   type="search"
                   value={unitSearch}
                   onChange={(event) => setUnitSearch(event.target.value)}
-                  placeholder="Search units by unit number, address, or tenant..."
-                  aria-label="Search units"
+                  placeholder="Search condo units by unit number, address, or tenant..."
+                  aria-label="Search condo units"
                 />
               </label>
               <AnimatedFilterDropdown
@@ -1329,21 +1339,21 @@ export default function OwnerDashboard() {
                   className="h-11 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer shadow-xs transition-colors flex items-center gap-1.5 px-3.5"
                 >
                   <Plus className="h-4 w-4" />
-                  Add Unit
+                  Add Condo Unit
                 </Button>
               </div>
             </div>
 
             <UnitMetrics
-              total={units.length}
+              total={condoUnits.length}
               available={availableUnits.length}
               occupied={occupiedUnits.length}
-              maintenance={units.filter((unit) => unit.status === "maintenance").length}
+              maintenance={condoUnits.filter((unit) => unit.status === "maintenance").length}
             />
 
-            <div className={management.tablePanel} aria-label="Rental units">
+            <div className={management.tablePanel} aria-label="Condo units">
               <div className={management.tableHeader}>
-                <h3 className={management.tableTitle}>Units List</h3>
+                <h3 className={management.tableTitle}>Condo Units List</h3>
                 <div className={management.tableControls}>
                   <select value={unitSort} onChange={(event) => setUnitSort(event.target.value)} aria-label="Sort units">
                     <option value="unit-asc">Sort by: Unit No. (A-Z)</option>
@@ -3144,35 +3154,27 @@ export default function OwnerDashboard() {
         />
       )}
 
-      {/* Independent Unit Registration Modal */}
+      {/* Condominium-Only Unit Registration Modal */}
       {showAddUnit && (() => {
-        const isHouse = newUnitForm.type === "house" || newUnitForm.type === "villa";
-
         return (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/50 backdrop-blur-xs" onClick={() => setShowAddUnit(false)} />
-            <form onSubmit={handleAddUnit} className="relative w-full max-w-xl rounded-2xl border border-indigo-100 bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <form onSubmit={handleAddUnit} className="relative w-full max-w-xl rounded-2xl border border-blue-100 bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
               {/* Header */}
               <div className="mb-5 flex items-start justify-between border-b border-border pb-4">
                 <div className="flex items-center gap-3">
-                  <div className={cn(
-                    "h-10 w-10 rounded-xl border flex items-center justify-center shrink-0",
-                    isHouse ? "bg-amber-50 border-amber-200 text-amber-600" : "bg-blue-50 border-blue-200 text-blue-600"
-                  )}>
-                    {isHouse ? <Home className="h-5 w-5" /> : <DoorOpen className="h-5 w-5" />}
+                  <div className="h-10 w-10 rounded-xl border border-blue-200 bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                    <DoorOpen className="h-5 w-5" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-semibold text-foreground">Register Rental Unit</h3>
-                      <Badge variant="outline" className={cn(
-                        "text-[10px]",
-                        isHouse ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-blue-50 text-blue-700 border-blue-200"
-                      )}>
-                        {isHouse ? "House / Villa" : "Condominium Unit"}
+                      <h3 className="text-lg font-semibold text-foreground">Register Condominium Unit</h3>
+                      <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
+                        Condominium Unit
                       </Badge>
                     </div>
                     <p className="text-xs text-text-secondary">
-                      Register an individual rental unit independently with its own address, pricing, and details.
+                      Register an individual condominium rental unit with tower/building details, floor level, and pricing.
                     </p>
                   </div>
                 </div>
@@ -3182,6 +3184,22 @@ export default function OwnerDashboard() {
               </div>
 
               <div className="space-y-4">
+                {/* Automatic Condominium Unit Indicator */}
+                <div className="flex items-center justify-between rounded-xl border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-8 w-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
+                      <DoorOpen className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-900">Unit Type: Condominium Unit</p>
+                      <p className="text-[11px] text-slate-500">Configured exclusively for condominium rental management</p>
+                    </div>
+                  </div>
+                  <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-300 font-bold text-[10px]">
+                    Condo Only
+                  </Badge>
+                </div>
+
                 {/* Unit Name / Title */}
                 <div>
                   <label className="mb-1.5 block text-sm font-medium">Unit Name / Title *</label>
@@ -3189,65 +3207,35 @@ export default function OwnerDashboard() {
                     required
                     value={newUnitForm.name}
                     onChange={(event) => setNewUnitForm({ ...newUnitForm, name: event.target.value })}
-                    placeholder="e.g. Modern Sunset Villa 12, Tower 2 Studio Suite"
+                    placeholder="e.g. Azure Urban Residences Unit 1402, Avida Towers Prime Suite"
                   />
                 </div>
 
-                {/* Unit Type Selection */}
+                {/* Tower / Building Information */}
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium">Unit Type *</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setNewUnitForm({ ...newUnitForm, type: "house", floor: "" })}
-                      className={cn(
-                        "flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all",
-                        isHouse
-                          ? "border-amber-500 bg-amber-50/60 text-amber-950 ring-2 ring-amber-500/20"
-                          : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
-                      )}
-                    >
-                      <Home className={cn("h-4 w-4", isHouse ? "text-amber-600" : "text-slate-400")} />
-                      <div>
-                        <p className="text-xs font-semibold">House / Villa</p>
-                        <p className="text-[10px] text-slate-500">Standalone house, townhome, villa</p>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNewUnitForm({ ...newUnitForm, type: "condo" })}
-                      className={cn(
-                        "flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all",
-                        !isHouse
-                          ? "border-blue-500 bg-blue-50/60 text-blue-950 ring-2 ring-blue-500/20"
-                          : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
-                      )}
-                    >
-                      <DoorOpen className={cn("h-4 w-4", !isHouse ? "text-blue-600" : "text-slate-400")} />
-                      <div>
-                        <p className="text-xs font-semibold">Condominium Unit</p>
-                        <p className="text-[10px] text-slate-500">Condo suite, apartment, tower unit</p>
-                      </div>
-                    </button>
+                  <label className="mb-1.5 block text-sm font-medium">Tower / Building Information *</label>
+                  <div className="relative">
+                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
+                    <Input
+                      required
+                      value={newUnitForm.tower}
+                      onChange={(event) => setNewUnitForm({ ...newUnitForm, tower: event.target.value })}
+                      placeholder="e.g. Tower 2, West Wing, Skyrise Tower B"
+                      className="pl-9"
+                    />
                   </div>
                 </div>
 
-                {/* Complete Unit Address */}
+                {/* Complete Address */}
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium">
-                    {isHouse ? "Complete Unit Address (Block, Lot, Street Address) *" : "Complete Unit Address (Tower, Building, Street) *"}
-                  </label>
+                  <label className="mb-1.5 block text-sm font-medium">Complete Address (Street Address) *</label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
                     <Input
                       required
                       value={newUnitForm.address}
                       onChange={(event) => setNewUnitForm({ ...newUnitForm, address: event.target.value })}
-                      placeholder={
-                        isHouse
-                          ? "e.g. Block 4 Lot 12, Phase 2, Sunset Drive"
-                          : "e.g. Tower 1, West Wing, 5th Avenue"
-                      }
+                      placeholder="e.g. A.S. Fortuna St., Brgy. Banilad"
                       className="pl-9"
                     />
                   </div>
@@ -3261,7 +3249,7 @@ export default function OwnerDashboard() {
                       required
                       value={newUnitForm.city}
                       onChange={(event) => setNewUnitForm({ ...newUnitForm, city: event.target.value })}
-                      placeholder="e.g. Cebu City, Davao City, Makati"
+                      placeholder="e.g. Mandaue City, Cebu City, Makati"
                     />
                   </div>
                   <div>
@@ -3275,31 +3263,28 @@ export default function OwnerDashboard() {
                   </div>
                 </div>
 
-                {/* Unit Number & Floor Level (Floor Level hidden for House / Villa) */}
-                <div className={cn("grid gap-3", isHouse ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2")}>
+                {/* Unit Number & Floor Level */}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium">
-                      {isHouse ? "House / Unit Number *" : "Unit Number *"}
-                    </label>
+                    <label className="mb-1.5 block text-sm font-medium">Unit Number *</label>
                     <Input
                       required
                       value={newUnitForm.unitNumber}
                       onChange={(event) => setNewUnitForm({ ...newUnitForm, unitNumber: event.target.value })}
-                      placeholder={isHouse ? "e.g. House 12" : "e.g. Unit 1205"}
+                      placeholder="e.g. Unit 1402"
                     />
                   </div>
-                  {!isHouse && (
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium">Floor Level (Optional)</label>
-                      <Input
-                        type="number"
-                        min="0"
-                        value={newUnitForm.floor}
-                        onChange={(event) => setNewUnitForm({ ...newUnitForm, floor: event.target.value })}
-                        placeholder="e.g. 12"
-                      />
-                    </div>
-                  )}
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Floor Level *</label>
+                    <Input
+                      required
+                      type="number"
+                      min="0"
+                      value={newUnitForm.floor}
+                      onChange={(event) => setNewUnitForm({ ...newUnitForm, floor: event.target.value })}
+                      placeholder="e.g. 14"
+                    />
+                  </div>
                 </div>
 
                 {/* Monthly Rent */}
@@ -3311,7 +3296,7 @@ export default function OwnerDashboard() {
                     min="0"
                     value={newUnitForm.rentAmount}
                     onChange={(event) => setNewUnitForm({ ...newUnitForm, rentAmount: event.target.value })}
-                    placeholder="e.g. 15000"
+                    placeholder="e.g. 25000"
                   />
                 </div>
 
@@ -3367,7 +3352,7 @@ export default function OwnerDashboard() {
                 {/* Unit Photos */}
                 <div>
                   <label className="mb-1.5 block text-sm font-medium">
-                    {isHouse ? "House Interior & Exterior Photos" : "Unit Interior Photos"}
+                    Condominium Unit Interior &amp; Amenities Photos
                   </label>
                   <div className="flex flex-col gap-3">
                     <label className="inline-flex w-fit items-center gap-2 px-4 py-2 rounded-xl border border-blue-200 bg-blue-50/50 text-blue-700 cursor-pointer hover:bg-blue-50 transition-colors">
@@ -3452,7 +3437,7 @@ export default function OwnerDashboard() {
                   Cancel
                 </Button>
                 <Button type="submit" disabled={isSubmitting} className="bg-blue-600 text-white hover:bg-blue-700 font-medium">
-                  {isSubmitting ? "Registering..." : isHouse ? "Register House Unit" : "Register Unit"}
+                  {isSubmitting ? "Registering..." : "Register Condominium Unit"}
                 </Button>
               </div>
             </form>

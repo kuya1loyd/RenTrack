@@ -125,12 +125,13 @@ export default function AgentDashboard() {
   const [showAddUnitModal, setShowAddUnitModal] = useState(false);
   const [newUnitForm, setNewUnitForm] = useState({
     name: "",
+    tower: "",
     address: "",
     city: "",
     province: "",
     unitNumber: "",
     floor: "",
-    type: "house",
+    type: "condo",
     condition: "",
     status: "vacant" as Unit["status"],
     rentAmount: "",
@@ -142,21 +143,24 @@ export default function AgentDashboard() {
   const handleAddUnit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!newUnitForm.name.trim() || !newUnitForm.unitNumber.trim() || !newUnitForm.address.trim() || Number(newUnitForm.rentAmount) < 0) {
-      toast.error("Please provide unit name, unit number, address, and rent amount");
+      toast.error("Please provide unit name, unit number, complete address, and rent amount");
       return;
     }
-    const isHouse = newUnitForm.type === "house" || newUnitForm.type === "villa";
 
     setIsSubmittingUnit(true);
     try {
+      const fullAddress = newUnitForm.tower.trim()
+        ? `${newUnitForm.tower.trim()}, ${newUnitForm.address.trim()}`
+        : newUnitForm.address.trim();
+
       const newUnit = await addUnit({
         name: newUnitForm.name.trim(),
         unitNumber: newUnitForm.unitNumber.trim(),
-        address: newUnitForm.address.trim(),
+        address: fullAddress,
         city: newUnitForm.city.trim() || undefined,
         province: newUnitForm.province.trim() || undefined,
-        floor: isHouse ? undefined : (newUnitForm.floor ? Number(newUnitForm.floor) : undefined),
-        type: newUnitForm.type || "house",
+        floor: newUnitForm.floor ? Number(newUnitForm.floor) : undefined,
+        type: "condo",
         condition: newUnitForm.condition || undefined,
         status: newUnitForm.status,
         rentAmount: Number(newUnitForm.rentAmount),
@@ -166,14 +170,14 @@ export default function AgentDashboard() {
       });
       setUnits((current) => [...current, newUnit]);
       setShowAddUnitModal(false);
-      setNewUnitForm({ name: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "house", condition: "", status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
-      toast.success(isHouse ? "House / Villa unit registered independently" : "Condominium unit registered independently");
+      setNewUnitForm({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "condo", condition: "", status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
+      toast.success("Condominium unit registered successfully");
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("renttrack-refresh-data"));
         window.dispatchEvent(new CustomEvent("renttrack-units-updated"));
       }
     } catch {
-      toast.error("Failed to add unit");
+      toast.error("Failed to register condominium unit");
     } finally {
       setIsSubmittingUnit(false);
     }
@@ -546,24 +550,35 @@ export default function AgentDashboard() {
   const hasPaymentActivity = monthlyPayments.some((month) => month.count > 0);
   const maxMonthlyPayments = Math.max(1, ...monthlyPayments.map((month) => month.count));
   const normalizedUnitSearch = unitSearch.trim().toLowerCase();
-  const filteredUnitProperties = properties.map((property) => {
-    const propertySearchText = searchablePropertyText(property).toLowerCase();
-    const propertyMatchesSearch = propertySearchText.includes(normalizedUnitSearch);
-    const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
-    const visibleUnits = propertyUnits.filter((unit) =>
-      (unitStatusFilter === "all" || unit.status === unitStatusFilter) &&
-      (unitTypeFilter === "all" || property.type === unitTypeFilter) &&
-      (!normalizedUnitSearch || propertyMatchesSearch || searchableUnitText(unit).toLowerCase().includes(normalizedUnitSearch))
-    );
-    return { property, propertyUnits, visibleUnits, propertyMatchesSearch };
-  }).filter(({ property, propertyUnits, visibleUnits, propertyMatchesSearch }) =>
-    (unitPropertyFilter === "all" || property.id === unitPropertyFilter) &&
-    (propertyMatchesSearch || visibleUnits.length > 0) &&
-    (visibleUnits.length > 0 || (propertyUnits.length === 0 && unitStatusFilter === "all" && unitTypeFilter === "all" && propertyMatchesSearch))
-  );
-  const filteredUnitRows = filteredUnitProperties.flatMap(({ property, visibleUnits }) =>
-    visibleUnits.map((unit) => ({ property, unit }))
-  );
+  const condoUnits = units.filter((unit) => {
+    const isHouse = ["house", "villa", "residential"].includes((unit.type || "").toLowerCase());
+    if (isHouse) return false;
+    const property = properties.find((p) => p.id === unit.propertyId);
+    if (property && ["house", "villa", "residential"].includes((property.type || "").toLowerCase())) {
+      return false;
+    }
+    return true;
+  });
+  const filteredUnitRows = condoUnits.filter((unit) => {
+    const property = properties.find((p) => p.id === unit.propertyId);
+    const searchable = `${unit.name || ""} ${unit.unitNumber} ${unit.tenantName || ""} ${unit.address || ""} ${unit.city || ""} ${unit.province || ""} ${property?.name || ""} ${property?.location || ""}`.toLowerCase();
+    const searchMatches = !normalizedUnitSearch || searchable.includes(normalizedUnitSearch);
+    const statusMatches = unitStatusFilter === "all" || unit.status === unitStatusFilter;
+    const propertyMatches = unitPropertyFilter === "all" || (property && property.id === unitPropertyFilter);
+    return searchMatches && statusMatches && propertyMatches;
+  }).map((unit) => {
+    const property = properties.find((p) => p.id === unit.propertyId) || {
+      id: unit.propertyId || "independent",
+      name: (unit as any).propertyName || unit.name || "Independent Condo Unit",
+      location: unit.address ? `${unit.address}${unit.city ? `, ${unit.city}` : ""}` : (unit.city || "Independent Unit"),
+      type: "condominium",
+      units: 1,
+      monthlyRevenue: unit.rentAmount || 0,
+      imageUrls: unit.imageUrls || (unit.imageUrl ? [unit.imageUrl] : []),
+      imageUrl: unit.imageUrl,
+    } as Property;
+    return { property, unit };
+  });
   const normalizedPropertySearch = propertySearch.trim().toLowerCase();
   const filteredPropertiesList = properties.filter((property) => {
     const searchMatches = !normalizedPropertySearch || `${property.name} ${property.location}`.toLowerCase().includes(normalizedPropertySearch);
@@ -760,10 +775,10 @@ export default function AgentDashboard() {
     return () => window.removeEventListener("agent-global-search", handleGlobalSearch);
   }, [payments, properties, units, inquiries, tenants]);
   const unitCounts = {
-    total: units.length,
-    available: vacantUnits.length,
-    occupied: units.filter((unit) => unit.status === "occupied").length,
-    maintenance: units.filter((unit) => unit.status === "maintenance").length,
+    total: condoUnits.length,
+    available: condoUnits.filter((unit) => unit.status === "vacant").length,
+    occupied: condoUnits.filter((unit) => unit.status === "occupied").length,
+    maintenance: condoUnits.filter((unit) => unit.status === "maintenance").length,
   };
   const inquiryCounts = {
     total: inquiries.length,
@@ -1563,9 +1578,9 @@ export default function AgentDashboard() {
             {activeTab === "units" && (
               <motion.div initial={reduceMotion ? false : { opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={management.page}>
                 <ManagementBanner
-                  category="Rental management"
-                  title="Units"
-                  description="Browse and manage all available units across your assigned properties."
+                  category="Condominium Units Management"
+                  title="Condo Units"
+                  description="Browse and manage all available condominium units across your assigned properties."
                 />
                 <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-200 bg-white shadow-2xs">
                   <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
@@ -1575,7 +1590,7 @@ export default function AgentDashboard() {
                         type="search"
                         value={unitSearch}
                         onChange={(event) => setUnitSearch(event.target.value)}
-                        placeholder="Search by unit number, property, or location..."
+                        placeholder="Search by unit number, condo name, or location..."
                         aria-label="Search properties or units"
                         className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-10 pr-3 text-xs text-slate-800 placeholder:text-slate-400 transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/15"
                       />
@@ -1635,7 +1650,7 @@ export default function AgentDashboard() {
                       className="h-9 gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3.5 shadow-2xs cursor-pointer"
                     >
                       <Plus className="h-3.5 w-3.5" />
-                      Add Unit
+                      Add Condo Unit
                     </Button>
                     <Button
                       onClick={() => {
@@ -1658,7 +1673,7 @@ export default function AgentDashboard() {
                 <UnitMetrics total={unitCounts.total} available={unitCounts.available} occupied={unitCounts.occupied} maintenance={unitCounts.maintenance} />
                   <section className={management.tablePanel} aria-label="Units">
                     <div className={management.tableHeader}>
-                      <h2 className={management.tableTitle}>Units <span className={management.count}>{filteredUnitRows.length} units</span></h2>
+                      <h2 className={management.tableTitle}>Condo Units <span className={management.count}>{filteredUnitRows.length} {filteredUnitRows.length === 1 ? "unit" : "units"}</span></h2>
                       <div className={management.tableControls}>
                         <select value={unitSort} onChange={(event) => setUnitSort(event.target.value)} aria-label="Sort units">
                           <option value="unit-asc">Sort by: Unit No. (A–Z)</option><option value="unit-desc">Unit No. (Z–A)</option><option value="property">Property (A–Z)</option><option value="rent-asc">Rent (Lowest first)</option><option value="rent-desc">Rent (Highest first)</option>
@@ -2717,34 +2732,26 @@ export default function AgentDashboard() {
           />
         )}
 
-        {/* Independent Add Unit Modal for Agents */}
+        {/* Independent Add Unit Modal for Agents - Condominium Units Only */}
         {showAddUnitModal && (() => {
-          const isHouse = newUnitForm.type === "house" || newUnitForm.type === "villa";
-
           return (
             <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
               <div className="absolute inset-0 bg-black/50 backdrop-blur-xs" onClick={() => setShowAddUnitModal(false)} />
               <form onSubmit={handleAddUnit} className="relative w-full max-w-xl rounded-2xl border border-indigo-100 bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
                 <div className="mb-5 flex items-start justify-between border-b border-border pb-4">
                   <div className="flex items-center gap-3">
-                    <div className={cn(
-                      "h-10 w-10 rounded-xl border flex items-center justify-center shrink-0",
-                      isHouse ? "bg-amber-50 border-amber-200 text-amber-600" : "bg-blue-50 border-blue-200 text-blue-600"
-                    )}>
-                      {isHouse ? <Home className="h-5 w-5" /> : <DoorOpen className="h-5 w-5" />}
+                    <div className="h-10 w-10 rounded-xl border border-blue-200 bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                      <DoorOpen className="h-5 w-5" />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-semibold text-foreground">Register Rental Unit</h3>
-                        <Badge variant="outline" className={cn(
-                          "text-[10px]",
-                          isHouse ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-blue-50 text-blue-700 border-blue-200"
-                        )}>
-                          {isHouse ? "House / Villa" : "Condominium Unit"}
+                        <h3 className="text-lg font-semibold text-foreground">Register Condominium Unit</h3>
+                        <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
+                          Condominium Unit
                         </Badge>
                       </div>
                       <p className="text-xs text-text-secondary">
-                        Register an individual rental unit independently with its own address and pricing.
+                        Register an individual condominium rental unit independently with its own address, tower, and pricing.
                       </p>
                     </div>
                   </div>
@@ -2760,51 +2767,34 @@ export default function AgentDashboard() {
                       required
                       value={newUnitForm.name}
                       onChange={(event) => setNewUnitForm({ ...newUnitForm, name: event.target.value })}
-                      placeholder="e.g. Modern Sunset Villa 12, Tower 2 Studio Suite"
+                      placeholder="e.g. Tower 2 Studio Suite 1205, Modern Sea View Condo"
                     />
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium">Unit Type *</label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setNewUnitForm({ ...newUnitForm, type: "house", floor: "" })}
-                        className={cn(
-                          "flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all",
-                          isHouse
-                            ? "border-amber-500 bg-amber-50/60 text-amber-950 ring-2 ring-amber-500/20"
-                            : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
-                        )}
-                      >
-                        <Home className={cn("h-4 w-4", isHouse ? "text-amber-600" : "text-slate-400")} />
-                        <div>
-                          <p className="text-xs font-semibold">House / Villa</p>
-                          <p className="text-[10px] text-slate-500">Standalone house, townhome, villa</p>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNewUnitForm({ ...newUnitForm, type: "condo" })}
-                        className={cn(
-                          "flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all",
-                          !isHouse
-                            ? "border-blue-500 bg-blue-50/60 text-blue-950 ring-2 ring-blue-500/20"
-                            : "border-slate-200 hover:border-slate-300 bg-white text-slate-700"
-                        )}
-                      >
-                        <DoorOpen className={cn("h-4 w-4", !isHouse ? "text-blue-600" : "text-slate-400")} />
-                        <div>
-                          <p className="text-xs font-semibold">Condominium Unit</p>
-                          <p className="text-[10px] text-slate-500">Condo suite, apartment, tower unit</p>
-                        </div>
-                      </button>
+                    <label className="mb-1.5 block text-sm font-medium">Unit Type</label>
+                    <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-blue-950">
+                      <DoorOpen className="h-4 w-4 text-blue-600 shrink-0" />
+                      <div>
+                        <p className="text-xs font-semibold">Condominium Unit</p>
+                        <p className="text-[10px] text-blue-600/80">Independent condominium rental unit with dedicated unit number and tower information</p>
+                      </div>
                     </div>
                   </div>
 
                   <div>
+                    <label className="mb-1.5 block text-sm font-medium">Tower / Building Information *</label>
+                    <Input
+                      required
+                      value={newUnitForm.tower}
+                      onChange={(event) => setNewUnitForm({ ...newUnitForm, tower: event.target.value })}
+                      placeholder="e.g. Tower 2, West Wing, Horizons Residences"
+                    />
+                  </div>
+
+                  <div>
                     <label className="mb-1.5 block text-sm font-medium">
-                      {isHouse ? "Complete Unit Address (Block, Lot, Street Address) *" : "Complete Unit Address (Tower, Building, Street) *"}
+                      Complete Unit Address (Street Address) *
                     </label>
                     <div className="relative">
                       <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
@@ -2812,11 +2802,7 @@ export default function AgentDashboard() {
                         required
                         value={newUnitForm.address}
                         onChange={(event) => setNewUnitForm({ ...newUnitForm, address: event.target.value })}
-                        placeholder={
-                          isHouse
-                            ? "e.g. Block 4 Lot 12, Phase 2, Sunset Drive"
-                            : "e.g. Tower 1, West Wing, 5th Avenue"
-                        }
+                        placeholder="e.g. 5th Avenue corner 28th Street, Bonifacio Global City"
                         className="pl-9"
                       />
                     </div>
@@ -2829,7 +2815,7 @@ export default function AgentDashboard() {
                         required
                         value={newUnitForm.city}
                         onChange={(event) => setNewUnitForm({ ...newUnitForm, city: event.target.value })}
-                        placeholder="e.g. Cebu City, Davao City"
+                        placeholder="e.g. Taguig, Cebu City, Makati"
                       />
                     </div>
                     <div>
@@ -2838,35 +2824,33 @@ export default function AgentDashboard() {
                         required
                         value={newUnitForm.province}
                         onChange={(event) => setNewUnitForm({ ...newUnitForm, province: event.target.value })}
-                        placeholder="e.g. Cebu, Metro Manila"
+                        placeholder="e.g. Metro Manila, Cebu"
                       />
                     </div>
                   </div>
 
-                  <div className={cn("grid gap-3", isHouse ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2")}>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                       <label className="mb-1.5 block text-sm font-medium">
-                        {isHouse ? "House / Unit Number *" : "Unit Number *"}
+                        Unit Number *
                       </label>
                       <Input
                         required
                         value={newUnitForm.unitNumber}
                         onChange={(event) => setNewUnitForm({ ...newUnitForm, unitNumber: event.target.value })}
-                        placeholder={isHouse ? "e.g. House 12" : "e.g. Unit 1205"}
+                        placeholder="e.g. Unit 1205"
                       />
                     </div>
-                    {!isHouse && (
-                      <div>
-                        <label className="mb-1.5 block text-sm font-medium">Floor Level (Optional)</label>
-                        <Input
-                          type="number"
-                          min="0"
-                          value={newUnitForm.floor}
-                          onChange={(event) => setNewUnitForm({ ...newUnitForm, floor: event.target.value })}
-                          placeholder="e.g. 12"
-                        />
-                      </div>
-                    )}
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium">Floor Level (Optional)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={newUnitForm.floor}
+                        onChange={(event) => setNewUnitForm({ ...newUnitForm, floor: event.target.value })}
+                        placeholder="e.g. 12"
+                      />
+                    </div>
                   </div>
 
                   <div>
@@ -2877,7 +2861,7 @@ export default function AgentDashboard() {
                       min="0"
                       value={newUnitForm.rentAmount}
                       onChange={(event) => setNewUnitForm({ ...newUnitForm, rentAmount: event.target.value })}
-                      placeholder="e.g. 15000"
+                      placeholder="e.g. 25000"
                     />
                   </div>
 
@@ -2889,7 +2873,7 @@ export default function AgentDashboard() {
                         <Input
                           value={newUnitForm.condition}
                           onChange={(event) => setNewUnitForm({ ...newUnitForm, condition: event.target.value })}
-                          placeholder="e.g. Brand New, Fully Furnished"
+                          placeholder="e.g. Brand New, Fully Furnished, Studio Suite"
                         />
                       </div>
                       <div>
@@ -2909,7 +2893,7 @@ export default function AgentDashboard() {
 
                   <div>
                     <label className="mb-1.5 block text-sm font-medium">
-                      {isHouse ? "House Interior & Exterior Photos" : "Unit Interior Photos"}
+                      Unit Interior Photos
                     </label>
                     <div className="flex flex-col gap-3">
                       <label className="inline-flex w-fit items-center gap-2 px-4 py-2 rounded-xl border border-blue-200 bg-blue-50/50 text-blue-700 cursor-pointer hover:bg-blue-50 transition-colors">
@@ -2994,7 +2978,7 @@ export default function AgentDashboard() {
                     Cancel
                   </Button>
                   <Button type="submit" disabled={isSubmittingUnit} className="bg-blue-600 text-white hover:bg-blue-700 font-medium">
-                    {isSubmittingUnit ? "Registering..." : isHouse ? "Register House Unit" : "Register Unit"}
+                    {isSubmittingUnit ? "Registering..." : "Register Condominium Unit"}
                   </Button>
                 </div>
               </form>

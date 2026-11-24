@@ -482,7 +482,7 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
           )}
           {mode === "owner" && recipientType === "agent" ? (
             <>
-              <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 min-w-0 w-full">
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 md:col-span-2 min-w-0 w-full">
                 <span>Agent</span>
                 <select
                   required
@@ -494,24 +494,35 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
                   {visibleAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
                 </select>
               </label>
-              <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 min-w-0 w-full overflow-hidden">
-                <div className="flex flex-wrap items-center justify-between gap-1 overflow-hidden">
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 md:col-span-2 min-w-0 w-full">
+                <div className="flex items-center justify-between gap-2">
                   <span>Tenant</span>
-                  <span className="text-xs font-normal text-slate-500 truncate">(Optional for property-wide)</span>
+                  <span className="text-xs font-normal text-slate-500">(Optional for property-wide contracts)</span>
                 </div>
                 <select
                   disabled={propertyTenants.length === 0}
                   value={tenantId}
                   onChange={(event) => setTenantId(event.target.value)}
-                  className="h-11 w-full min-w-0 max-w-full box-border rounded-xl border border-border bg-white px-3 pr-8 text-sm truncate disabled:bg-slate-100 disabled:text-slate-400"
+                  className="h-11 w-full min-w-0 max-w-full box-border rounded-xl border border-border bg-white px-3 pr-8 text-sm truncate disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 >
-                  <option value="">{propertyTenants.length === 0 ? "General property contract (No tenants available)" : "General property contract (Property-wide)"}</option>
-                  {propertyTenants.map((tenant) => (
-                    <option key={tenant.id} value={tenant.id}>
-                      {tenant.name} · Unit {tenant.unitNumber || "—"}
-                    </option>
-                  ))}
+                  {propertyTenants.length === 0 ? (
+                    <option value="">No tenants available</option>
+                  ) : (
+                    <>
+                      <option value="">General property contract (Property-wide)</option>
+                      {propertyTenants.map((tenant) => (
+                        <option key={tenant.id} value={tenant.id}>
+                          {tenant.name} · Unit {tenant.unitNumber || "—"}
+                        </option>
+                      ))}
+                    </>
+                  )}
                 </select>
+                {propertyTenants.length === 0 ? (
+                  <span className="text-xs text-slate-500">No active tenants for this property. Contract will apply property-wide.</span>
+                ) : (
+                  <span className="text-xs text-slate-500">Leave unselected to apply this contract property-wide.</span>
+                )}
               </label>
             </>
           ) : (

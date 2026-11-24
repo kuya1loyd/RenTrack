@@ -44,7 +44,7 @@ const navItems: AgentNavLink[] = [
     icon: Building2,
     children: [
       { label: "Properties", tab: "properties", href: "/dashboard/agent#properties", icon: Home },
-      { label: "Units", tab: "units", href: "/dashboard/agent#units", icon: DoorOpen },
+      { label: "Condo Units", tab: "units", href: "/dashboard/agent#units", icon: DoorOpen },
     ],
   },
   { label: "Property Map", tab: "map", href: "/dashboard/agent#map", icon: MapPinned },
