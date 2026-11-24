@@ -242,7 +242,7 @@ export async function PATCH(request: NextRequest) {
     delete cleaned.assigned_agent_id;
 
     const mapTenant = (row: any) => sanitizeResponse({
-      id: row?.id || tenantId,
+      id: tenantId || row?.id,
       name: row?.name || "",
       email: row?.email || "",
       phone: row?.phone || null,
@@ -336,93 +336,120 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    // If no row matched by id (data is null), look up the user in public.users and match by email or insert into tenants!
-    if (!data) {
-      const { data: userRow } = await getAdminSupabase()
-        .schema("public")
-        .from("users")
+    // Look up user in public.users to ensure any duplicate email rows in tenants are also synchronized!
+    const { data: userRow } = await getAdminSupabase()
+      .schema("public")
+      .from("users")
+      .select("*")
+      .eq("id", tenantId)
+      .maybeSingle();
+
+    if (userRow && (userRow as any).email) {
+      const userEmail = String((userRow as any).email).trim();
+      const { data: emailMatches } = await getAdminSupabase()
+        .from("tenants")
         .select("*")
-        .eq("id", tenantId)
-        .maybeSingle();
+        .ilike("email", userEmail);
 
-      if (userRow) {
-        // Check if a tenant row exists with the same email
-        let existingByEmail: any = null;
-        if ((userRow as any).email) {
-          const { data: emailMatch } = await getAdminSupabase()
-            .from("tenants")
-            .select("*")
-            .ilike("email", String((userRow as any).email).trim())
-            .maybeSingle();
-          existingByEmail = emailMatch;
-        }
+      if (emailMatches && emailMatches.length > 0) {
+        const bestMatch =
+          emailMatches.find((t: any) => Boolean(t.unit_id || t.property_name || t.unit_number)) ||
+          emailMatches[0];
 
-        if (existingByEmail) {
-          targetTenantDbId = existingByEmail.id;
-          const { data: updatedByEmail, error: updateEmailErr } = await getAdminSupabase()
-            .from("tenants")
-            .update(payloadToUpdate)
-            .eq("id", existingByEmail.id)
-            .select("*")
-            .maybeSingle();
-          if (!updateEmailErr && updatedByEmail) {
-            data = updatedByEmail;
-            error = null;
-          }
-        } else {
-          const insertRecord: Record<string, any> = {
-            id: tenantId,
-            name: (userRow as any).name,
-            email: (userRow as any).email,
-            phone: (userRow as any).phone || null,
-            address: (userRow as any).address || null,
-            status: "active",
+        if (!data || (!data.unit_id && !data.property_name && (bestMatch.unit_id || bestMatch.property_name))) {
+          targetTenantDbId = bestMatch.id;
+          const mergedPayload = {
             ...payloadToUpdate,
+            unit_id: payloadToUpdate.unit_id !== undefined ? payloadToUpdate.unit_id : bestMatch.unit_id,
+            property_name: payloadToUpdate.property_name !== undefined ? payloadToUpdate.property_name : bestMatch.property_name,
+            unit_number: payloadToUpdate.unit_number !== undefined ? payloadToUpdate.unit_number : bestMatch.unit_number,
+            rent_amount: payloadToUpdate.rent_amount !== undefined ? payloadToUpdate.rent_amount : bestMatch.rent_amount,
+            contract_start: payloadToUpdate.contract_start !== undefined ? payloadToUpdate.contract_start : bestMatch.contract_start,
+            contract_end: payloadToUpdate.contract_end !== undefined ? payloadToUpdate.contract_end : bestMatch.contract_end,
           };
-          const { data: insertedRow, error: insertError } = await getAdminSupabase()
-            .from("tenants")
-            .insert(insertRecord)
-            .select("*")
-            .maybeSingle();
-
-          if (!insertError && insertedRow) {
-            data = insertedRow;
-            error = null;
-          } else if (insertError) {
-            const savedStatus = payloadToUpdate.assignment_status;
-            const fallbackRecord = { ...insertRecord };
-            delete fallbackRecord.assignment_status;
-            const { data: insertedRow2, error: insertError2 } = await getAdminSupabase()
+          for (const m of emailMatches) {
+            const { data: updatedByEmail } = await getAdminSupabase()
               .from("tenants")
-              .insert(fallbackRecord)
+              .update(mergedPayload)
+              .eq("id", m.id)
               .select("*")
               .maybeSingle();
-            if (!insertError2 && insertedRow2) {
-              data = insertedRow2;
+            if (updatedByEmail) {
+              data = updatedByEmail;
               error = null;
-              if (savedStatus !== undefined) {
-                const safeStatus = String(savedStatus).replace(/'/g, "''");
-                const safeId = String(tenantId).replace(/'/g, "''");
-                await getAdminSupabase().rpc("exec_sql", {
-                  sql: `UPDATE tenants SET assignment_status = '${safeStatus}' WHERE id = '${safeId}'`,
-                });
-                data.assignment_status = savedStatus;
-              }
-            } else {
-              error = insertError2;
+            }
+          }
+        } else {
+          for (const m of emailMatches) {
+            if (m.id !== data.id) {
+              await getAdminSupabase().from("tenants").update(payloadToUpdate).eq("id", m.id);
             }
           }
         }
       }
     }
 
-    if (error) {
+    // If no row matched by id or email (data is still null), insert into tenants from userRow!
+    if (!data && userRow) {
+      const insertRecord: Record<string, any> = {
+        id: tenantId,
+        name: (userRow as any).name,
+        email: (userRow as any).email,
+        phone: (userRow as any).phone || null,
+        address: (userRow as any).address || null,
+        status: "active",
+        ...payloadToUpdate,
+      };
+      const { data: insertedRow, error: insertError } = await getAdminSupabase()
+        .from("tenants")
+        .insert(insertRecord)
+        .select("*")
+        .maybeSingle();
+
+      if (!insertError && insertedRow) {
+        data = insertedRow;
+        error = null;
+      } else if (insertError) {
+        const savedStatus = payloadToUpdate.assignment_status;
+        const fallbackRecord = { ...insertRecord };
+        delete fallbackRecord.assignment_status;
+        const { data: insertedRow2, error: insertError2 } = await getAdminSupabase()
+          .from("tenants")
+          .insert(fallbackRecord)
+          .select("*")
+          .maybeSingle();
+        if (!insertError2 && insertedRow2) {
+          data = insertedRow2;
+          error = null;
+          if (savedStatus !== undefined) {
+            const safeStatus = String(savedStatus).replace(/'/g, "''");
+            const safeId = String(tenantId).replace(/'/g, "''");
+            await getAdminSupabase().rpc("exec_sql", {
+              sql: `UPDATE tenants SET assignment_status = '${safeStatus}' WHERE id = '${safeId}'`,
+            });
+            data.assignment_status = savedStatus;
+          }
+        } else {
+          error = insertError2;
+        }
+      }
+    }
+
+    if (error && !data) {
       console.error("Patch tenant error after retry:", error);
       throw error;
     }
 
     if (cleaned.unit_id !== undefined || cleaned.assignment_status !== undefined) {
-      await syncTenantUnit(targetTenantDbId, cleaned.unit_id !== undefined ? cleaned.unit_id : (data?.unit_id || null), cleaned.assignment_status || data?.assignment_status || "");
+      try {
+        await syncTenantUnit(
+          targetTenantDbId,
+          cleaned.unit_id !== undefined ? cleaned.unit_id : (data?.unit_id || null),
+          cleaned.assignment_status || data?.assignment_status || ""
+        );
+      } catch (syncErr) {
+        console.warn("syncTenantUnit non-fatal warning:", syncErr);
+      }
     }
     if (cleaned.name || cleaned.phone !== undefined || cleaned.address !== undefined) {
       try {

@@ -452,12 +452,34 @@ export default function OwnerDashboard() {
 
   const handleConfirmAssignment = async (tenantId: string) => {
     try {
-      const updated = await updateTenantAssignment(tenantId, { assignmentStatus: "confirmed" });
+      const targetTenant = tenants.find((t) => t.id === tenantId) || reviewAssignment;
+      const updated = await updateTenantAssignment(tenantId, {
+        assignmentStatus: "confirmed",
+        unitId: targetTenant?.unitId || undefined,
+        propertyName: targetTenant?.propertyName || undefined,
+        unitNumber: targetTenant?.unitNumber || undefined,
+        rentAmount: targetTenant?.rentAmount || undefined,
+      });
       if (updated) {
-        setTenants(tenants.map(t => t.id === tenantId ? { ...t, assignmentStatus: "confirmed" } : t));
+        setTenants((prev) =>
+          prev.map((t) => (t.id === tenantId ? { ...t, assignmentStatus: "confirmed", status: "active" } : t))
+        );
+        if (targetTenant?.unitId) {
+          setUnits((prev) =>
+            prev.map((u) =>
+              u.id === targetTenant.unitId
+                ? { ...u, status: "occupied", tenantId, tenantName: targetTenant.name }
+                : u
+            )
+          );
+        }
         toast.success("Assignment confirmed! Tenant can now access the system.");
-        window.dispatchEvent(new Event("owner-data-changed"));
         setReviewAssignment(null);
+        setReturnReason("");
+        window.dispatchEvent(new Event("owner-data-changed"));
+        void loadData();
+      } else {
+        toast.error("Failed to confirm assignment");
       }
     } catch {
       toast.error("Failed to confirm assignment");

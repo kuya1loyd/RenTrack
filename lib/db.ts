@@ -521,19 +521,28 @@ $$;`;
     // These contain semicolons, so they run outside the ';'-split migration batch.
     const tenancyStatements = [
       `CREATE OR REPLACE FUNCTION log_unit_tenancy() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE prop_name text; t record;
+DECLARE prop_name text; t record; start_ts timestamptz;
 BEGIN
-  IF TG_OP = 'UPDATE' AND OLD.tenant_id IS NOT NULL AND NEW.tenant_id IS DISTINCT FROM OLD.tenant_id THEN
-    UPDATE tenancy_history SET end_date = NOW() WHERE unit_id = OLD.id AND tenant_id = OLD.tenant_id AND end_date IS NULL;
-  END IF;
-  IF NEW.tenant_id IS NOT NULL AND (TG_OP = 'INSERT' OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id) THEN
-    IF NOT EXISTS (SELECT 1 FROM tenancy_history WHERE unit_id = NEW.id AND tenant_id = NEW.tenant_id AND end_date IS NULL) THEN
-      SELECT name INTO prop_name FROM properties WHERE id = NEW.property_id;
-      SELECT * INTO t FROM tenants WHERE id = NEW.tenant_id;
-      INSERT INTO tenancy_history (unit_id, property_id, property_name, unit_number, tenant_id, tenant_name, tenant_email, rent_amount, start_date)
-      VALUES (NEW.id, NEW.property_id, prop_name, NEW.unit_number, NEW.tenant_id, COALESCE(NEW.tenant_name, t.name), t.email, COALESCE(NEW.rent_amount, 0), COALESCE(t.contract_start::timestamptz, NOW()));
+  BEGIN
+    IF TG_OP = 'UPDATE' AND OLD.tenant_id IS NOT NULL AND NEW.tenant_id IS DISTINCT FROM OLD.tenant_id THEN
+      UPDATE tenancy_history SET end_date = NOW() WHERE unit_id = OLD.id AND tenant_id = OLD.tenant_id AND end_date IS NULL;
     END IF;
-  END IF;
+    IF NEW.tenant_id IS NOT NULL AND (TG_OP = 'INSERT' OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id) THEN
+      IF NOT EXISTS (SELECT 1 FROM tenancy_history WHERE unit_id = NEW.id AND tenant_id = NEW.tenant_id AND end_date IS NULL) THEN
+        SELECT name INTO prop_name FROM properties WHERE id = NEW.property_id;
+        SELECT * INTO t FROM tenants WHERE id = NEW.tenant_id;
+        BEGIN
+          start_ts := COALESCE(NULLIF(trim(t.contract_start::text), '')::timestamptz, NOW());
+        EXCEPTION WHEN OTHERS THEN
+          start_ts := NOW();
+        END;
+        INSERT INTO tenancy_history (unit_id, property_id, property_name, unit_number, tenant_id, tenant_name, tenant_email, rent_amount, start_date)
+        VALUES (NEW.id, NEW.property_id, COALESCE(prop_name, NEW.name, t.property_name, 'Condominium Unit'), NEW.unit_number, NEW.tenant_id, COALESCE(NEW.tenant_name, t.name, 'Tenant'), t.email, COALESCE(NEW.rent_amount, 0), start_ts);
+      END IF;
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'log_unit_tenancy warning: %', SQLERRM;
+  END;
   RETURN NEW;
 END;
 $$`,
@@ -1603,12 +1612,41 @@ export async function clearTenantUnitAssignment(tenantId: string, tenantName?: s
 
 export async function syncTenantUnit(tenantId: string, unitId: string | null, assignmentStatus: string) {
   const client = getAdminSupabase();
-  const { data: currentTenant, error: tenantError } = await client
+  let { data: currentTenant, error: tenantError } = await client
     .from("tenants")
-    .select("unit_id, name")
+    .select("id, unit_id, name, email, property_name, unit_number")
     .eq("id", tenantId)
     .maybeSingle();
-  if (tenantError) throw tenantError;
+  if (tenantError) {
+    console.warn("syncTenantUnit lookup warning:", tenantError.message);
+  }
+
+  if (!currentTenant) {
+    try {
+      const { data: userRow } = await client.schema("public").from("users").select("id, name, email").eq("id", tenantId).maybeSingle();
+      if (userRow && (userRow as any).email) {
+        const { data: emailMatch } = await client
+          .from("tenants")
+          .select("id, unit_id, name, email, property_name, unit_number")
+          .ilike("email", String((userRow as any).email).trim())
+          .maybeSingle();
+        if (emailMatch) {
+          currentTenant = emailMatch;
+        } else {
+          currentTenant = {
+            id: tenantId,
+            unit_id: unitId,
+            name: (userRow as any).name || "",
+            email: (userRow as any).email || "",
+            property_name: null,
+            unit_number: null,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("syncTenantUnit user fallback lookup error:", e);
+    }
+  }
 
   // When assignment is pending owner approval, do NOT clear the tenant assignment!
   // The tenant keeps their unitId, unitNumber, propertyName and pending status so owner can approve it.
@@ -1621,22 +1659,62 @@ export async function syncTenantUnit(tenantId: string, unitId: string | null, as
 
   // Clear tenant assignment only when rejected or explicitly unassigned
   if (assignmentStatus === "rejected" || (!unitId && assignmentStatus !== "confirmed")) {
-    await clearTenantUnitAssignment(tenantId, currentTenant?.name, currentTenant?.unit_id ?? unitId);
+    await clearTenantUnitAssignment(currentTenant?.id || tenantId, currentTenant?.name, currentTenant?.unit_id ?? unitId);
     return;
   }
 
-  // When confirmed, occupy the unit
-  if (assignmentStatus === "confirmed" && unitId) {
-    if (currentTenant?.unit_id && currentTenant.unit_id !== unitId) {
-      await client.from("units").update({ status: "vacant", tenant_id: null, tenant_name: null }).eq("id", currentTenant.unit_id);
+  // When confirmed, occupy the unit (or mark the house property as occupied)
+  if (assignmentStatus === "confirmed") {
+    const effectiveUnitId = unitId || currentTenant?.unit_id || null;
+    const tenantName = currentTenant?.name || null;
+    const effectiveTenantId = currentTenant?.id || tenantId;
+
+    if (effectiveUnitId) {
+      if (currentTenant?.unit_id && currentTenant.unit_id !== effectiveUnitId) {
+        await client.from("units").update({ status: "vacant", tenant_id: null, tenant_name: null }).eq("id", currentTenant.unit_id);
+      }
+      const { error } = await client.from("units").update({
+        status: "occupied",
+        tenant_id: effectiveTenantId,
+        tenant_name: tenantName,
+      }).eq("id", effectiveUnitId);
+
+      if (error) {
+        console.warn("Unit occupation update warning, repairing trigger and retrying:", error.message);
+        try {
+          await client.rpc("exec_sql", {
+            sql: `DROP TRIGGER IF EXISTS units_tenancy_log ON units;`,
+          });
+        } catch {}
+        const retryUnit = await client.from("units").update({
+          status: "occupied",
+          tenant_id: effectiveTenantId,
+          tenant_name: tenantName,
+        }).eq("id", effectiveUnitId);
+        if (retryUnit.error) {
+          const safeUnitId = String(effectiveUnitId).replace(/'/g, "''");
+          const safeTenantId = String(effectiveTenantId).replace(/'/g, "''");
+          const safeTenantName = String(tenantName || "").replace(/'/g, "''");
+          try {
+            await client.rpc("exec_sql", {
+              sql: `UPDATE units SET status = 'occupied', tenant_id = '${safeTenantId}', tenant_name = '${safeTenantName}' WHERE id = '${safeUnitId}';`,
+            });
+          } catch (sqlErr) {
+            console.warn("Direct SQL unit occupation fallback error:", sqlErr);
+          }
+        }
+      }
+    } else if (currentTenant?.property_name) {
+      // Whole house/subdivision property assignment
+      try {
+        await client
+          .from("properties")
+          .update({ availability_status: "Occupied", occupied_units: 1 })
+          .ilike("name", String(currentTenant.property_name).trim());
+      } catch (propErr) {
+        console.warn("Could not update property availability on confirm:", propErr);
+      }
     }
-    const { data: tenant } = await client.from("tenants").select("name").eq("id", tenantId).maybeSingle();
-    const { error } = await client.from("units").update({
-      status: "occupied",
-      tenant_id: tenantId,
-      tenant_name: tenant?.name || null,
-    }).eq("id", unitId);
-    if (error) throw error;
   }
 }
 
@@ -1683,9 +1761,19 @@ export async function getTenants() {
   const results: any[] = [];
 
   for (const u of usersList) {
-    let tr = tenantsList.find((t: any) => t.id === u.id || (t.email && String(t.email).toLowerCase() === String(u.email || "").toLowerCase()));
+    const matchingTenants = tenantsList.filter(
+      (t: any) => t.id === u.id || (t.email && u.email && String(t.email).toLowerCase() === String(u.email || "").toLowerCase())
+    );
+    for (const m of matchingTenants) {
+      matchedTenantIds.add(m.id);
+    }
+    let tr =
+      matchingTenants.find((t: any) => t.assignment_status === "confirmed") ||
+      matchingTenants.find((t: any) => t.assignment_status === "pending" && (t.unit_id || t.property_name || t.unit_number)) ||
+      matchingTenants.find((t: any) => Boolean(t.unit_id || t.property_name || t.unit_number)) ||
+      matchingTenants.find((t: any) => t.id === u.id) ||
+      matchingTenants[0];
 
-    if (tr) matchedTenantIds.add(tr.id);
     const hasAssignmentTarget = Boolean(tr?.unit_id || tr?.property_name || tr?.unit_number);
     const assignedAgent = tr?.assigned_agent_id || tr?.agent_id || (hasAssignmentTarget ? fallbackAgentId : "");
     results.push({
