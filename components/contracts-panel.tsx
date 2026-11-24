@@ -393,21 +393,21 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
             title="Request a contract"
             description="Select the property and tenant. The owner will be notified and can attach the contract here."
           >
-            <form onSubmit={requestContract} className="grid gap-3">
-              <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-                Assigned property
-                <select required value={propertyId} onChange={(event) => { setPropertyId(event.target.value); setTenantId(""); }} className="h-11 rounded-xl border border-border bg-white px-3 text-sm">
+            <form onSubmit={requestContract} className="grid gap-3 w-full min-w-0">
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 min-w-0 w-full">
+                <span>Assigned property</span>
+                <select required value={propertyId} onChange={(event) => { setPropertyId(event.target.value); setTenantId(""); }} className="h-11 w-full min-w-0 max-w-full rounded-xl border border-border bg-white px-3 text-sm truncate">
                   <option value="">Select assigned property</option>{visibleProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
                 </select>
               </label>
-              <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-                Tenant
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 min-w-0 w-full">
+                <span>Tenant</span>
                 <select
                   required
                   disabled={propertyTenants.length === 0}
                   value={tenantId}
                   onChange={(event) => setTenantId(event.target.value)}
-                  className="h-11 rounded-xl border border-border bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                  className="h-11 w-full min-w-0 max-w-full rounded-xl border border-border bg-white px-3 text-sm truncate disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 >
                   {propertyTenants.length === 0 ? (
                     <option value="">No tenants available</option>
@@ -426,9 +426,9 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
                   <span className="text-xs text-amber-600">No tenants available for this property</span>
                 )}
               </label>
-              <label className="grid gap-1.5 text-sm font-medium text-slate-700">
-                Note to owner <span className="font-normal text-slate-500">(optional)</span>
-                <textarea value={requestMessage} onChange={(event) => setRequestMessage(event.target.value)} rows={3} maxLength={1000} placeholder="Add details for the owner" className="rounded-xl border border-border bg-white px-3 py-2.5 text-sm" />
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 min-w-0 w-full">
+                <span>Note to owner <span className="font-normal text-slate-500">(optional)</span></span>
+                <textarea value={requestMessage} onChange={(event) => setRequestMessage(event.target.value)} rows={3} maxLength={1000} placeholder="Add details for the owner" className="w-full min-w-0 rounded-xl border border-border bg-white px-3 py-2.5 text-sm" />
               </label>
               <div className="flex justify-end gap-2 pt-1">
                 <Button type="button" variant="outline" onClick={() => setShowRequestModal(false)}>Cancel</Button>
@@ -445,41 +445,65 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
         description={mode === "owner" ? "Attach a PDF or Word document and choose who should receive it." : "Attach a PDF or Word document to issue to the tenant."}
         className="max-h-[90vh] max-w-2xl overflow-y-auto"
       >
-        <form onSubmit={submitOwnerContract} className="grid gap-3 md:grid-cols-2">
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700">Property
-            <select required value={propertyId} onChange={(event) => { setPropertyId(event.target.value); setAgentId(""); setTenantId(""); }} className="h-11 rounded-xl border border-border bg-white px-3 text-sm">
+        <form onSubmit={submitOwnerContract} className="grid gap-3.5 md:grid-cols-2 w-full min-w-0">
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 min-w-0 w-full">
+            <span>Property</span>
+            <select
+              required
+              value={propertyId}
+              onChange={(event) => { setPropertyId(event.target.value); setAgentId(""); setTenantId(""); }}
+              className="h-11 w-full min-w-0 max-w-full rounded-xl border border-border bg-white px-3 text-sm truncate"
+            >
               <option value="">Select property</option>
               {visibleProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
             </select>
           </label>
           {mode === "owner" ? (
-            <label className="grid gap-1.5 text-sm font-medium text-slate-700">Recipient
-              <select required value={recipientType} onChange={(event) => { setRecipientType(event.target.value as "agent" | "tenant"); setAgentId(""); setTenantId(""); }} aria-label="Send contract to" className="h-11 rounded-xl border border-border bg-white px-3 text-sm">
+            <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 min-w-0 w-full">
+              <span>Recipient</span>
+              <select
+                required
+                value={recipientType}
+                onChange={(event) => { setRecipientType(event.target.value as "agent" | "tenant"); setAgentId(""); setTenantId(""); }}
+                aria-label="Send contract to"
+                className="h-11 w-full min-w-0 max-w-full rounded-xl border border-border bg-white px-3 text-sm truncate"
+              >
                 <option value="agent">Send to agent</option>
                 <option value="tenant">Send directly to tenant</option>
               </select>
             </label>
           ) : (
-            <label className="grid gap-1.5 text-sm font-medium text-slate-700">Recipient
-              <div className="flex h-11 items-center rounded-xl border border-border bg-slate-50 px-3 text-sm font-semibold text-blue-700">
+            <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 min-w-0 w-full">
+              <span>Recipient</span>
+              <div className="flex h-11 w-full min-w-0 max-w-full items-center rounded-xl border border-border bg-slate-50 px-3 text-sm font-semibold text-blue-700">
                 Direct to Tenant
               </div>
             </label>
           )}
           {mode === "owner" && recipientType === "agent" ? (
             <>
-              <label className="grid gap-1.5 text-sm font-medium text-slate-700">Agent
-                <select required value={agentId} onChange={(event) => setAgentId(event.target.value)} className="h-11 rounded-xl border border-border bg-white px-3 text-sm">
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 min-w-0 w-full">
+                <span>Agent</span>
+                <select
+                  required
+                  value={agentId}
+                  onChange={(event) => setAgentId(event.target.value)}
+                  className="h-11 w-full min-w-0 max-w-full rounded-xl border border-border bg-white px-3 text-sm truncate"
+                >
                   <option value="">Select agent</option>
                   {visibleAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
                 </select>
               </label>
-              <label className="grid gap-1.5 text-sm font-medium text-slate-700">Tenant <span className="font-normal text-slate-500">Optional for property-wide contracts</span>
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 min-w-0 w-full">
+                <div className="flex items-center justify-between gap-1 overflow-hidden">
+                  <span>Tenant</span>
+                  <span className="truncate text-xs font-normal text-slate-500">(Optional for property-wide)</span>
+                </div>
                 <select
                   disabled={propertyTenants.length === 0}
                   value={tenantId}
                   onChange={(event) => setTenantId(event.target.value)}
-                  className="h-11 rounded-xl border border-border bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                  className="h-11 w-full min-w-0 max-w-full rounded-xl border border-border bg-white px-3 text-sm truncate disabled:bg-slate-100 disabled:text-slate-400"
                 >
                   <option value="">{propertyTenants.length === 0 ? "General property contract (No tenants available)" : "General property contract (Property-wide)"}</option>
                   {propertyTenants.map((tenant) => (
@@ -491,13 +515,14 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
               </label>
             </>
           ) : (
-            <label className="grid gap-1.5 text-sm font-medium text-slate-700 md:col-span-2">Tenant
+            <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 md:col-span-2 min-w-0 w-full">
+              <span>Tenant</span>
               <select
                 required
                 disabled={propertyTenants.length === 0}
                 value={tenantId}
                 onChange={(event) => setTenantId(event.target.value)}
-                className="h-11 rounded-xl border border-border bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                className="h-11 w-full min-w-0 max-w-full rounded-xl border border-border bg-white px-3 text-sm truncate disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
               >
                 {propertyTenants.length === 0 ? (
                   <option value="">No tenants available</option>
@@ -517,11 +542,21 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
               )}
             </label>
           )}
-          <label className="grid gap-1.5 text-sm font-medium text-slate-700 md:col-span-2">Contract title
-            <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} aria-label="Contract title" placeholder="Contract title" className="h-11 rounded-xl border border-border bg-white px-3 text-sm" />
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 md:col-span-2 min-w-0 w-full">
+            <span>Contract title</span>
+            <input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              maxLength={200}
+              aria-label="Contract title"
+              placeholder="Contract title"
+              className="h-11 w-full min-w-0 max-w-full rounded-xl border border-border bg-white px-3 text-sm"
+            />
           </label>
-          <label className="flex h-11 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border px-3 text-sm text-text-secondary md:col-span-2">
-            <UploadCloud className="h-4 w-4" /><span className="min-w-0 flex-1 truncate">{file?.name || "Choose PDF or Word contract (max 15 MB)"}</span><input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+          <label className="flex h-11 w-full min-w-0 max-w-full cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border px-3 text-sm text-text-secondary md:col-span-2">
+            <UploadCloud className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{file?.name || "Choose PDF or Word contract (max 15 MB)"}</span>
+            <input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" onChange={(event) => setFile(event.target.files?.[0] || null)} />
           </label>
           <div className="flex justify-end gap-2 pt-1 md:col-span-2">
             <Button type="button" variant="outline" onClick={() => setShowOwnerSendModal(false)}>Cancel</Button>
