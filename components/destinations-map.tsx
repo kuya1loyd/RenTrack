@@ -121,8 +121,10 @@ export default function DestinationsMap({
     const getListingCount = (destName: string) => {
       const q = destName.toLowerCase();
       const propMatches = (properties || []).filter((p: any) => {
+        // Exclude condo building wrappers to avoid double-counting
         // Exclude condo building wrappers and properties that have units to avoid double-counting
         const isCondoBuilding = String(p.type || "").toLowerCase() === "condominium" || String(p.type || "").toLowerCase() === "building";
+        if (isCondoBuilding) return false;
         const hasUnits = (units || []).some((u: any) => (u.propertyId || u.property_id) === p.id);
         if (isCondoBuilding || hasUnits) return false;
         const str = `${p.name || ""} ${p.location || ""} ${p.city || ""} ${p.province || ""} ${p.address || ""}`.toLowerCase();

@@ -48,8 +48,8 @@ const navItems: OwnerNavLink[] = [
     icon: Building2,
     group: "Management",
     children: [
-      { label: "Properties", tab: "properties", href: "/dashboard/owner#properties", icon: Home },
-      { label: "Units", tab: "units", href: "/dashboard/owner#units", icon: DoorOpen },
+      { label: "Housing Properties", tab: "properties", href: "/dashboard/owner#properties", icon: Home },
+      { label: "Condo Units", tab: "units", href: "/dashboard/owner#units", icon: DoorOpen },
       { label: "Occupancy", tab: "occupancy", href: "/dashboard/owner#occupancy", icon: BarChart3 },
     ],
   },

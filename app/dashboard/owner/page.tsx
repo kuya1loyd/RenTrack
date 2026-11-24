@@ -70,20 +70,16 @@ function PropertyMetrics({ total, active, inactive, revenue }: { total: number; 
   );
 }
 
-function OccupancyMetrics({ totalUnits, rate, occupied, vacant, propertiesCount }: { totalUnits: number; rate: number; occupied: number; vacant: number; propertiesCount: number }) {
+function OccupancyMetrics({ totalUnits, occupied, vacant, propertiesCount }: { totalUnits: number; occupied: number; vacant: number; propertiesCount: number }) {
   return (
-    <section className={management.metrics} aria-label="Occupancy metrics">
+    <section className="grid grid-cols-1 sm:grid-cols-3 gap-3.5" aria-label="Occupancy metrics">
       <article className={management.metric}>
         <span className={`${management.metricIcon} ${management.blue}`}><Building2 aria-hidden="true" /></span>
         <div className={management.metricCopy}><p>Monitored Properties</p><strong>{propertiesCount}</strong><small>{totalUnits} total units in care</small></div>
       </article>
       <article className={management.metric}>
-        <span className={`${management.metricIcon} ${management.cyan}`}><BarChart3 aria-hidden="true" /></span>
-        <div className={management.metricCopy}><p>Portfolio Occupancy</p><strong>{rate}%</strong><small>Live average occupancy</small></div>
-      </article>
-      <article className={management.metric}>
         <span className={`${management.metricIcon} ${management.green}`}><CheckCircle2 aria-hidden="true" /></span>
-        <div className={management.metricCopy}><p>Occupied Units</p><strong>{occupied}</strong><small>{totalUnits ? Math.round((occupied / totalUnits) * 100) : 0}% capacity reached</small></div>
+        <div className={management.metricCopy}><p>Occupied Units</p><strong>{occupied}</strong><small>{totalUnits ? `${occupied} of ${totalUnits} leased` : "0 units leased"}</small></div>
       </article>
       <article className={management.metric}>
         <span className={`${management.metricIcon} ${management.amber}`}><DoorOpen aria-hidden="true" /></span>
@@ -134,7 +130,6 @@ const PROPERTY_TYPES = [
 ];
 
 const OWNER_ADD_PROPERTY_TYPES = [
-  { value: "condominium", label: "Condominium Complex" },
   { value: "house", label: "House / Villa" },
 ];
 
@@ -230,7 +225,7 @@ export default function OwnerDashboard() {
   const [occupancySearch, setOccupancySearch] = useState("");
   const [occupancyFilter, setOccupancyFilter] = useState<"all" | "full" | "partial" | "vacant">("all");
   const [occupancyTypeFilter, setOccupancyTypeFilter] = useState("all");
-  const [occupancySort, setOccupancySort] = useState("rate-desc");
+  const [occupancySort, setOccupancySort] = useState("name-asc");
   const [occupancyPage, setOccupancyPage] = useState(1);
   const [occupancyDisplayMode, setOccupancyDisplayMode] = useState<"grid" | "table">("table");
   const [historyTarget, setHistoryTarget] = useState<{ unitId?: string; propertyId?: string; title: string } | null>(null);
@@ -524,10 +519,6 @@ export default function OwnerDashboard() {
   };
 
   const handleDeleteProperty = async (property: Property) => {
-    if (property.type === "condominium" || property.type === "building") {
-      toast.error("Condominium buildings cannot be deleted by owners. You can only manage and delete your own units.");
-      return;
-    }
     const propertyUnits = units.filter((u) => u.propertyId === property.id);
     const occupied = propertyUnits.filter((u) => u.status === "occupied").length;
     if (occupied > 0) {
@@ -827,8 +818,12 @@ export default function OwnerDashboard() {
     const reasonMatches = unitStatusFilter !== "maintenance" || unitMaintenanceReasonFilter === "all" || unitReason === unitMaintenanceReasonFilter;
     return searchMatches && statusMatches && reasonMatches;
   });
+  const housingProperties = properties.filter((property) => {
+    const isCondoBuilding = String(property.type || "").toLowerCase() === "condominium" || String(property.type || "").toLowerCase() === "building";
+    return !isCondoBuilding;
+  });
   const normalizedPropertySearch = propertySearch.trim().toLowerCase();
-  const filteredProperties = properties.filter((property) => {
+  const filteredProperties = housingProperties.filter((property) => {
     const searchMatches = !normalizedPropertySearch || `${property.name} ${property.location}`.toLowerCase().includes(normalizedPropertySearch);
     const typeMatches = propertyTypeFilter === "all" || property.type === propertyTypeFilter;
     const statusMatches =
@@ -890,13 +885,7 @@ export default function OwnerDashboard() {
   const sortedOccupancyProperties = [...filteredOccupancyProperties].sort((a, b) => {
     const aUnits = units.filter((u) => u.propertyId === a.id);
     const bUnits = units.filter((u) => u.propertyId === b.id);
-    const aOcc = aUnits.filter((u) => u.status === "occupied").length;
-    const bOcc = bUnits.filter((u) => u.status === "occupied").length;
-    const aRate = aUnits.length ? Math.round((aOcc / aUnits.length) * 100) : 0;
-    const bRate = bUnits.length ? Math.round((bOcc / bUnits.length) * 100) : 0;
 
-    if (occupancySort === "rate-asc") return aRate - bRate;
-    if (occupancySort === "rate-desc") return bRate - aRate;
     if (occupancySort === "units-desc") return bUnits.length - aUnits.length;
     return a.name.localeCompare(b.name);
   });
@@ -1028,11 +1017,13 @@ export default function OwnerDashboard() {
 
   const downloadUnitsExport = () => {
     const rows: Array<Array<string | number>> = [
-      ["Unit No.", "Address", "Property type", "Monthly rent", "Status", "Tenant"],
+      ["Unit No.", "Building / Complex", "Floor Level", "Address", "Property type", "Monthly rent", "Status", "Tenant"],
       ...sortedUnits.map((unit) => {
         const property = properties.find((item) => item.id === unit.propertyId);
         return [
           unit.unitNumber,
+          property?.name || "Standalone",
+          unit.floor !== undefined && unit.floor !== null && String(unit.floor) !== "" ? `Floor ${unit.floor}` : "—",
           unit.address || property?.location || property?.name || "",
           property?.type || "",
           unit.rentAmount,
@@ -1046,12 +1037,12 @@ export default function OwnerDashboard() {
 
   const downloadOccupancyExport = () => {
     const rows: Array<Array<string | number>> = [
-      ["Property Name", "Address / Location", "Property Type", "Total Units", "Occupied Units", "Vacant Units", "Occupancy Rate (%)", "Status"],
+      ["Property Name", "Address / Location", "Property Type", "Total Units", "Occupied Units", "Vacant Units", "Status"],
       ...sortedOccupancyProperties.map((property) => {
         const propUnits = units.filter((u) => u.propertyId === property.id);
         const occ = propUnits.filter((u) => u.status === "occupied").length;
         const vac = propUnits.filter((u) => u.status === "vacant").length;
-        const rate = propUnits.length ? Math.round((occ / propUnits.length) * 100) : 0;
+        const status = propUnits.length > 0 && occ === propUnits.length ? "Fully Leased" : occ > 0 ? "Partially Leased" : "Vacant";
         return [
           property.name,
           property.location || "—",
@@ -1059,8 +1050,7 @@ export default function OwnerDashboard() {
           propUnits.length,
           occ,
           vac,
-          `${rate}%`,
-          property.status,
+          status,
         ];
       }),
     ];
@@ -1262,20 +1252,20 @@ export default function OwnerDashboard() {
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={cn(management.page, "space-y-6")}>
           <ManagementBanner
             category="Units Management"
-            title="Rental Units"
-            description="Browse, filter, and manage individual rental units across your portfolio."
+            title="Rental Units (Floors & Units)"
+            description="Browse, filter, and manage individual condominium units and building floors across your portfolio."
             icon={ClipboardCheck}
           />
 
           <section id="units-section" className="space-y-4">
             <div>
               <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <span>Rental Units</span>
+                <span>Rental Units &amp; Floors</span>
                 <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                   {filteredUnits.length} {filteredUnits.length === 1 ? "unit" : "units"}
                 </span>
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">Browse, filter, and manage individual units across your portfolio.</p>
+              <p className="text-xs text-slate-500 mt-0.5">Manage the units and building floors bought across condominium developments.</p>
             </div>
 
             <div className={management.toolbar}>
@@ -1318,9 +1308,6 @@ export default function OwnerDashboard() {
                 ]}
               />
               <div className={management.toolbarActions}>
-                <button type="button" className={management.reset} onClick={() => { setUnitSearch(""); setUnitStatusFilter("all"); setUnitMaintenanceReasonFilter("all"); }}>
-                  <RotateCcw aria-hidden="true" />Reset
-                </button>
                 <Button onClick={downloadUnitsExport} className={management.export}>
                   <Download className="h-4 w-4" />Export
                 </Button>
@@ -1382,8 +1369,9 @@ export default function OwnerDashboard() {
                         <tr>
                           <th>Unit Photo</th>
                           <th>Unit No.</th>
+                          <th>Building / Complex</th>
+                          <th>Floor Level</th>
                           <th>Address</th>
-                          <th>Type</th>
                           <th>Monthly Rent</th>
                           <th>Status</th>
                           <th>Tenant</th>
@@ -1404,22 +1392,30 @@ export default function OwnerDashboard() {
                                   images={unitImgs}
                                   alt={`Unit ${unit.unitNumber}`}
                                   title={`Unit ${unit.unitNumber}`}
-                                  subtitle={`${unit.address || property?.location || ""} • Floor ${unit.floor ?? "—"} • ${formatCurrency(unit.rentAmount)}/mo`}
+                                  subtitle={`${property?.name ? `${property.name} • ` : ""}Floor ${unit.floor ?? "—"} • ${formatCurrency(unit.rentAmount)}/mo`}
                                   className="h-10 w-14 shrink-0 rounded-md border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
                                   imageClassName="group-hover:scale-100"
                                 />
                               </td>
-                              <td className="font-semibold">{unit.unitNumber}</td>
+                              <td className="font-semibold text-slate-900">{unit.unitNumber}</td>
+                              <td className="font-medium text-slate-900">
+                                <span className="inline-flex items-center gap-1.5 font-semibold text-blue-700">
+                                  <Building2 className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                                  {property?.name || "Standalone"}
+                                </span>
+                              </td>
+                              <td className="font-semibold text-slate-700">
+                                {unit.floor !== undefined && unit.floor !== null && String(unit.floor) !== "" ? `Floor ${unit.floor}` : "—"}
+                              </td>
                               <td>
                                 <div className="flex items-center gap-2">
                                   <MapPin className="h-4 w-4 text-blue-600 shrink-0" />
-                                  <span className="text-sm font-medium text-slate-800 truncate max-w-[200px]" title={unit.address || property?.location || "—"}>
+                                  <span className="text-sm font-medium text-slate-800 truncate max-w-[180px]" title={unit.address || property?.location || "—"}>
                                     {unit.address || property?.location || "—"}
                                   </span>
                                 </div>
                               </td>
-                              <td className="capitalize">{property?.type || "—"}</td>
-                              <td className="whitespace-nowrap tabular-nums">{formatCurrency(unit.rentAmount)}</td>
+                              <td className="whitespace-nowrap tabular-nums font-semibold text-slate-900">{formatCurrency(unit.rentAmount)}</td>
                               <td>
                                 <UnitStatus
                                   status={unit.status}
@@ -1466,20 +1462,20 @@ export default function OwnerDashboard() {
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={cn(management.page, "space-y-6")}>
           <ManagementBanner
             category="Property Portfolio"
-            title="Properties"
-            description="Browse, filter, and manage registered properties across your portfolio."
+            title="Housing Properties"
+            description="Browse, filter, and manage standalone houses and residential properties across your portfolio."
             icon={Building2}
           />
 
           <section id="properties-section" className="space-y-4">
             <div>
               <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <span>Properties List</span>
+                <span>Housing Properties</span>
                 <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
                   {filteredProperties.length} {filteredProperties.length === 1 ? "property" : "properties"}
                 </span>
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">Browse, filter, and manage your property portfolio.</p>
+              <p className="text-xs text-slate-500 mt-0.5">Manage your standalone houses and residential housing properties.</p>
             </div>
 
             {/* Filter Toolbar */}
@@ -1534,9 +1530,8 @@ export default function OwnerDashboard() {
                     value={propertyTypeFilter}
                     onChange={(e) => setPropertyTypeFilter(e.target.value)}
                     options={[
-                      { value: "all", label: "All types" },
+                      { value: "all", label: "All Houses" },
                       { value: "house", label: "House / Residential" },
-                      { value: "condominium", label: "Condominium" },
                     ]}
                   />
 
@@ -1570,28 +1565,14 @@ export default function OwnerDashboard() {
                     ]}
                   />
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPropertySearch("");
-                    setPropertyTypeFilter("all");
-                    setPropertyStatusFilter("all");
-                    setPropertyMaintenanceReasonFilter("all");
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-white px-3.5 py-2 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50/60 dark:border-blue-900/40 dark:bg-gray-800 dark:text-blue-400 dark:hover:bg-blue-950/30 cursor-pointer"
-                >
-                  <RotateCcw className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                  Reset
-                </button>
               </div>
             </div>
 
             <PropertyMetrics
-              total={properties.length}
-              active={properties.filter(p => p.status === "active").length}
-              inactive={properties.filter(p => p.status === "inactive").length}
-              revenue={formatCurrency(properties.reduce((sum, p) => sum + (p.monthlyRevenue || 0), 0))}
+              total={housingProperties.length}
+              active={housingProperties.filter(p => p.status === "active").length}
+              inactive={housingProperties.filter(p => p.status === "inactive").length}
+              revenue={formatCurrency(housingProperties.reduce((sum, p) => sum + (p.monthlyRevenue || 0), 0))}
             />
 
             <div className={management.tablePanel} aria-label="Properties">
@@ -1702,22 +1683,15 @@ export default function OwnerDashboard() {
                                       </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end">
-                                      {(property.type === "condominium" || property.type === "building") && (
-                                        <DropdownMenuItem onSelect={() => openAddUnit(property.id)} icon={<Plus className="h-4 w-4 text-blue-600" />}>
-                                          Add Unit to this Condo
-                                        </DropdownMenuItem>
-                                      )}
                                       <DropdownMenuItem onSelect={() => handleEditProperty(property)} icon={<Eye className="h-4 w-4" />}>
                                         Edit property
                                       </DropdownMenuItem>
                                       <DropdownMenuItem onSelect={() => setHistoryTarget({ propertyId: property.id, title: `Tenancy history · ${property.name}` })} icon={<HistoryIcon className="h-4 w-4" />}>
                                         Tenancy history
                                       </DropdownMenuItem>
-                                      {property.type !== "condominium" && property.type !== "building" && (
-                                        <DropdownMenuItem onSelect={() => handleDeleteProperty(property)} icon={<Trash2 className="h-4 w-4" />} className="text-red-600">
-                                          Delete property
-                                        </DropdownMenuItem>
-                                      )}
+                                      <DropdownMenuItem onSelect={() => handleDeleteProperty(property)} icon={<Trash2 className="h-4 w-4" />} className="text-red-600">
+                                        Delete property
+                                      </DropdownMenuItem>
                                     </DropdownMenuContent>
                                   </DropdownMenu>
                                 </div>
@@ -1781,15 +1755,8 @@ export default function OwnerDashboard() {
                             </div>
                           </div>
                           <div className="mt-4 flex flex-wrap gap-2">
-                            {(property.type === "condominium" || property.type === "building") && (
-                              <Button size="sm" variant="outline" className="border-blue-200 text-blue-700 hover:bg-blue-50 font-semibold" onClick={() => openAddUnit(property.id)}>
-                                <Plus className="mr-1 h-3.5 w-3.5" />Add Unit
-                              </Button>
-                            )}
                             <Button size="sm" variant="outline" onClick={() => handleEditProperty(property)}><Eye className="mr-1 h-3.5 w-3.5" />Edit</Button>
-                            {property.type !== "condominium" && property.type !== "building" && (
-                              <Button size="sm" variant="destructive" onClick={() => handleDeleteProperty(property)}><Trash2 className="mr-1 h-3.5 w-3.5" />Delete</Button>
-                            )}
+                            <Button size="sm" variant="destructive" onClick={() => handleDeleteProperty(property)}><Trash2 className="mr-1 h-3.5 w-3.5" />Delete</Button>
                           </div>
                         </CardContent>
                       </Card>
@@ -1799,9 +1766,9 @@ export default function OwnerDashboard() {
                     <Card className="col-span-full">
                       <CardContent className="p-12 text-center">
                         <Home className="mx-auto mb-3 h-10 w-10 text-text-tertiary" />
-                        <p className="font-medium text-text-secondary">{properties.length ? "No matching properties" : "No properties yet"}</p>
-                        <p className="mt-1 text-sm text-text-tertiary">{properties.length ? "Try another search or filter." : "Click below to register your first property."}</p>
-                        {properties.length === 0 && (
+                        <p className="font-medium text-text-secondary">{housingProperties.length ? "No matching properties" : "No properties yet"}</p>
+                        <p className="mt-1 text-sm text-text-tertiary">{housingProperties.length ? "Try another search or filter." : "Click below to register your first house property."}</p>
+                        {housingProperties.length === 0 && (
                           <Button className="mt-4" onClick={openAddProperty}>
                             <Plus className="mr-1 h-4 w-4" /> Add House Property
                           </Button>
@@ -1869,17 +1836,10 @@ export default function OwnerDashboard() {
                   { value: "condominium", label: "Condominium" },
                 ]}
               />
-              <div className={management.toolbarActions}>
-                <button type="button" className={management.reset} onClick={() => { setOccupancySearch(""); setOccupancyFilter("all"); setOccupancyTypeFilter("all"); }}>
-                  <RotateCcw aria-hidden="true" />Reset
-                </button>
-
-              </div>
             </div>
 
             <OccupancyMetrics
               totalUnits={units.length}
-              rate={units.length ? Math.round((occupiedUnits.length / units.length) * 100) : 0}
               occupied={occupiedUnits.length}
               vacant={availableUnits.length}
               propertiesCount={properties.length}
@@ -1890,8 +1850,6 @@ export default function OwnerDashboard() {
                 <h3 className={management.tableTitle}>Portfolio Breakdown</h3>
                 <div className={management.tableControls}>
                   <select value={occupancySort} onChange={(event) => setOccupancySort(event.target.value)} aria-label="Sort occupancy">
-                    <option value="rate-desc">Sort by: Highest Occupancy</option>
-                    <option value="rate-asc">Lowest Occupancy</option>
                     <option value="name-asc">Property Name (A-Z)</option>
                     <option value="units-desc">Most Units</option>
                   </select>
@@ -1909,7 +1867,7 @@ export default function OwnerDashboard() {
                 <div className={management.empty}>
                   <Building2 aria-hidden="true" />
                   <strong>{properties.length ? "No properties match these occupancy filters" : "No properties yet"}</strong>
-                  <p>{properties.length ? "Adjust your search or reset the filters to see occupancy." : "Register properties and units to monitor portfolio occupancy."}</p>
+                  <p>{properties.length ? "Adjust your search or change filters to see occupancy." : "Register properties and units to monitor portfolio occupancy."}</p>
                 </div>
               ) : occupancyDisplayMode === "table" ? (
                 <>
@@ -1924,7 +1882,6 @@ export default function OwnerDashboard() {
                           <th>Total Units</th>
                           <th>Occupied</th>
                           <th>Vacant</th>
-                          <th>Occupancy Rate</th>
                           <th>Status</th>
                           <th>Actions</th>
                         </tr>
@@ -1934,7 +1891,6 @@ export default function OwnerDashboard() {
                           const propertyUnits = units.filter((u) => u.propertyId === property.id);
                           const occupied = propertyUnits.filter((u) => u.status === "occupied").length;
                           const vacant = propertyUnits.filter((u) => u.status === "vacant").length;
-                          const rate = propertyUnits.length ? Math.round((occupied / propertyUnits.length) * 100) : 0;
                           const propImgs = property.imageUrls?.length ? property.imageUrls : property.imageUrl ? [property.imageUrl] : [];
 
                           return (
@@ -1971,41 +1927,19 @@ export default function OwnerDashboard() {
                                 {property.type?.toLowerCase() === "house" ? "—" : vacant}
                               </td>
                               <td>
-                                {property.type?.toLowerCase() === "house" ? (
-                                  <span className="text-slate-400 font-normal">—</span>
-                                ) : (
-                                  <div className="flex items-center gap-2 min-w-[120px]">
-                                    <div className="h-2 w-16 overflow-hidden rounded-full bg-slate-100">
-                                      <div
-                                        className={`h-full rounded-full ${
-                                          rate === 100
-                                            ? "bg-emerald-500"
-                                            : rate >= 60
-                                            ? "bg-blue-600"
-                                            : rate > 0
-                                            ? "bg-amber-500"
-                                            : "bg-slate-300"
-                                        }`}
-                                        style={{ width: `${rate}%` }}
-                                      />
-                                    </div>
-                                    <span className="text-xs font-bold tabular-nums text-slate-800">{rate}%</span>
-                                  </div>
-                                )}
-                              </td>
-                              <td>
                                 <Badge
-                                  className={`shrink-0 font-bold text-xs px-2.5 py-0.5 rounded-full border ${
-                                    rate === 100
-                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                      : rate >= 60
+                                  className={`shrink-0 font-bold text-xs px-2.5 py-0.5 rounded-full border ${propertyUnits.length > 0 && occupied === propertyUnits.length
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : occupied > 0
                                       ? "bg-blue-50 text-blue-700 border-blue-200"
-                                      : rate > 0
-                                      ? "bg-amber-50 text-amber-700 border-amber-200"
                                       : "bg-slate-50 text-slate-600 border-slate-200"
-                                  }`}
+                                    }`}
                                 >
-                                  {rate === 100 ? "Full" : rate > 0 ? `${rate}% Active` : "Vacant"}
+                                  {propertyUnits.length > 0 && occupied === propertyUnits.length
+                                    ? "Fully Leased"
+                                    : occupied > 0
+                                      ? `${occupied} Occupied`
+                                      : "Vacant"}
                                 </Badge>
                               </td>
                               <td>
@@ -2077,17 +2011,18 @@ export default function OwnerDashboard() {
                                   {property.name}
                                 </h3>
                                 <Badge
-                                  className={`shrink-0 font-bold text-xs px-2.5 py-0.5 rounded-full border ${
-                                    rate === 100
-                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                      : rate >= 60
+                                  className={`shrink-0 font-bold text-xs px-2.5 py-0.5 rounded-full border ${propertyUnits.length > 0 && occupied === propertyUnits.length
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : occupied > 0
                                       ? "bg-blue-50 text-blue-700 border-blue-200"
-                                      : rate > 0
-                                      ? "bg-amber-50 text-amber-700 border-amber-200"
                                       : "bg-slate-50 text-slate-600 border-slate-200"
-                                  }`}
+                                    }`}
                                 >
-                                  {rate}% Occupied
+                                  {propertyUnits.length > 0 && occupied === propertyUnits.length
+                                    ? "Fully Leased"
+                                    : occupied > 0
+                                      ? `${occupied} Leased`
+                                      : "Vacant"}
                                 </Badge>
                               </div>
                               <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-500 truncate">
@@ -2108,21 +2043,13 @@ export default function OwnerDashboard() {
                           {/* Progress Track */}
                           <div className="mt-4">
                             <div className="flex items-center justify-between text-xs font-semibold mb-1.5">
-                              <span className="text-slate-600">Occupancy Progress</span>
-                              <span className="text-slate-900 font-bold">{occupied} of {propertyUnits.length} units</span>
+                              <span className="text-slate-600">Unit Capacity</span>
+                              <span className="text-slate-900 font-bold">{occupied} of {propertyUnits.length} units leased</span>
                             </div>
-                            <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100 p-0.5">
+                            <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
                               <div
-                                className={`h-full rounded-full transition-all duration-500 ${
-                                  rate === 100
-                                    ? "bg-gradient-to-r from-emerald-500 to-teal-500"
-                                    : rate >= 60
-                                    ? "bg-gradient-to-r from-blue-500 to-indigo-600"
-                                    : rate > 0
-                                    ? "bg-gradient-to-r from-amber-400 to-orange-500"
-                                    : "bg-transparent"
-                                }`}
-                                style={{ width: `${rate}%` }}
+                                className="h-full rounded-full transition-all duration-500 bg-blue-600"
+                                style={{ width: `${propertyUnits.length ? Math.min(100, Math.round((occupied / propertyUnits.length) * 100)) : 0}%` }}
                               />
                             </div>
                           </div>
@@ -2166,22 +2093,20 @@ export default function OwnerDashboard() {
                                 {propertyUnits.slice(0, 8).map((unit) => (
                                   <span
                                     key={unit.id}
-                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border ${
-                                      unit.status === "occupied"
-                                        ? "bg-blue-50/60 text-blue-700 border-blue-200/80"
-                                        : unit.status === "vacant"
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border ${unit.status === "occupied"
+                                      ? "bg-blue-50/60 text-blue-700 border-blue-200/80"
+                                      : unit.status === "vacant"
                                         ? "bg-emerald-50/60 text-emerald-700 border-emerald-200/80"
                                         : "bg-amber-50/60 text-amber-700 border-amber-200/80"
-                                    }`}
+                                      }`}
                                   >
                                     <span
-                                      className={`h-1.5 w-1.5 rounded-full ${
-                                        unit.status === "occupied"
-                                          ? "bg-blue-600"
-                                          : unit.status === "vacant"
+                                      className={`h-1.5 w-1.5 rounded-full ${unit.status === "occupied"
+                                        ? "bg-blue-600"
+                                        : unit.status === "vacant"
                                           ? "bg-emerald-600"
                                           : "bg-amber-500"
-                                      }`}
+                                        }`}
                                     />
                                     Unit {unit.unitNumber}
                                   </span>
@@ -3210,7 +3135,7 @@ export default function OwnerDashboard() {
       {showAddUnit && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowAddUnit(false)} />
-          <form onSubmit={handleAddUnit} className="relative w-full max-w-lg rounded-2xl border border-indigo-100 bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <form onSubmit={handleAddUnit} className="relative w-full max-w-xl rounded-2xl border border-indigo-100 bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="mb-5 flex items-start justify-between border-b border-border pb-4">
               <div className="flex items-center gap-3">
@@ -3254,11 +3179,17 @@ export default function OwnerDashboard() {
                   {properties
                     .filter((property) => property.type?.toLowerCase() !== "house")
                     .map((property) => (
-                    <option key={property.id} value={property.id}>
-                      {property.name} ({property.location})
-                    </option>
-                  ))}
+                      <option key={property.id} value={property.id}>
+                        {property.name}
+                      </option>
+                    ))}
                 </select>
+                {newUnitForm.propertyId && (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-500">
+                    <MapPin className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                    <span className="truncate">{properties.find((p) => p.id === newUnitForm.propertyId)?.location}</span>
+                  </div>
+                )}
                 <p className="mt-1 text-[11px] text-text-secondary">
                   Owners add individual units to condominium developments and buildings.
                 </p>
@@ -3318,13 +3249,13 @@ export default function OwnerDashboard() {
               {/* Classification & Unit Condition */}
               <div className="rounded-xl border border-border bg-surface-secondary/40 p-4">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">Classification &amp; Unit Condition</p>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
-                    <label className="block text-sm font-medium mb-1.5">Unit Type</label>
+                    <label className="block text-xs font-medium mb-1.5 text-slate-700">Unit Type</label>
                     <select
                       value={newUnitForm.type}
                       onChange={(event) => setNewUnitForm({ ...newUnitForm, type: event.target.value })}
-                      className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"
+                      className="h-10 w-full rounded-xl border border-border bg-white px-2.5 text-xs text-foreground focus:ring-2 focus:ring-blue-500"
                     >
                       {UNIT_TYPES.map((t) => (
                         <option key={t.value} value={t.value}>{t.label}</option>
@@ -3332,11 +3263,11 @@ export default function OwnerDashboard() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1.5">Unit Condition</label>
+                    <label className="block text-xs font-medium mb-1.5 text-slate-700">Unit Condition</label>
                     <select
                       value={newUnitForm.condition}
                       onChange={(event) => setNewUnitForm({ ...newUnitForm, condition: event.target.value })}
-                      className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"
+                      className="h-10 w-full rounded-xl border border-border bg-white px-2.5 text-xs text-foreground focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select condition...</option>
                       {PROPERTY_CONDITIONS.map((c) => (
@@ -3345,11 +3276,11 @@ export default function OwnerDashboard() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1.5">Unit Status</label>
+                    <label className="block text-xs font-medium mb-1.5 text-slate-700">Unit Status</label>
                     <select
                       value={newUnitForm.status}
                       onChange={(event) => setNewUnitForm({ ...newUnitForm, status: event.target.value as Unit["status"] })}
-                      className="h-10 w-full rounded-xl border border-border bg-white px-3 text-sm"
+                      className="h-10 w-full rounded-xl border border-border bg-white px-2.5 text-xs text-foreground focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="vacant">Vacant (Available)</option>
                       <option value="occupied">Occupied</option>
@@ -4141,13 +4072,13 @@ export default function OwnerDashboard() {
               {/* Classification & Unit Condition */}
               <div className="rounded-xl border border-border bg-surface-secondary/40 p-4">
                 <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">Classification &amp; Unit Condition</p>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
-                    <label className="block text-sm font-medium mb-1.5">Unit Type</label>
+                    <label className="block text-xs font-medium mb-1.5 text-slate-700">Unit Type</label>
                     <select
                       value={editUnitForm.type}
                       onChange={(e) => setEditUnitForm({ ...editUnitForm, type: e.target.value })}
-                      className="h-10 px-3 rounded-xl border border-border bg-white text-sm w-full"
+                      className="h-10 px-2.5 rounded-xl border border-border bg-white text-xs w-full focus:ring-2 focus:ring-blue-500"
                     >
                       {UNIT_TYPES.map((t) => (
                         <option key={t.value} value={t.value}>{t.label}</option>
@@ -4155,11 +4086,11 @@ export default function OwnerDashboard() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1.5">Unit Condition</label>
+                    <label className="block text-xs font-medium mb-1.5 text-slate-700">Unit Condition</label>
                     <select
                       value={editUnitForm.condition}
                       onChange={(e) => setEditUnitForm({ ...editUnitForm, condition: e.target.value })}
-                      className="h-10 px-3 rounded-xl border border-border bg-white text-sm w-full"
+                      className="h-10 px-2.5 rounded-xl border border-border bg-white text-xs w-full focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select condition...</option>
                       {PROPERTY_CONDITIONS.map((c) => (
@@ -4168,11 +4099,11 @@ export default function OwnerDashboard() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1.5">Unit Status</label>
+                    <label className="block text-xs font-medium mb-1.5 text-slate-700">Unit Status</label>
                     <select
                       value={editUnitForm.status}
                       onChange={(e) => setEditUnitForm({ ...editUnitForm, status: e.target.value as "vacant" | "occupied" | "maintenance" })}
-                      className="h-10 px-3 rounded-xl border border-border bg-white text-sm w-full"
+                      className="h-10 px-2.5 rounded-xl border border-border bg-white text-xs w-full focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="vacant">Vacant</option>
                       <option value="occupied">Occupied</option>
