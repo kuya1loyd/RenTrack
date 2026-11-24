@@ -95,7 +95,7 @@ export default function AssignTenantModal({
     if (selectedUnit) {
       const prop = properties.find((p) => p.id === selectedUnit.propertyId);
       setAssignForm({
-        propertyName: prop?.name || selectedUnit.propertyName || "",
+        propertyName: prop?.name || selectedUnit.propertyName || selectedUnit.name || "Condominium Unit",
         unitNumber: selectedUnit.unitNumber || "",
         rentAmount: selectedUnit.rentAmount || 0,
         contractStart: new Date().toISOString().slice(0, 10),
@@ -116,7 +116,7 @@ export default function AssignTenantModal({
   });
 
   const filteredVacantUnits = vacantUnits.filter((unit) => {
-    if (assignmentPropertyFilter !== "all" && unit.propertyId !== assignmentPropertyFilter) {
+    if (assignmentPropertyFilter !== "all" && unit.propertyId !== assignmentPropertyFilter && unit.name !== assignmentPropertyFilter) {
       return false;
     }
     const q = searchStep2.toLowerCase().trim();
@@ -124,6 +124,8 @@ export default function AssignTenantModal({
     const prop = properties.find((p) => p.id === unit.propertyId);
     return (
       unit.unitNumber.toLowerCase().includes(q) ||
+      (unit.name && unit.name.toLowerCase().includes(q)) ||
+      (unit.address && unit.address.toLowerCase().includes(q)) ||
       (prop && prop.name.toLowerCase().includes(q))
     );
   });

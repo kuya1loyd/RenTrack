@@ -912,7 +912,7 @@ export default function OwnerAgentsPage() {
       <AnimatePresence>
         {selectedApplication && (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4">
-            <motion.div initial={{ opacity: 0, scale: .95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <motion.div initial={{ opacity: 0, scale: .95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-xl overflow-hidden rounded-2xl bg-white p-6 shadow-2xl">
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="text-lg font-bold">Applicant Information</h3>
@@ -949,7 +949,7 @@ export default function OwnerAgentsPage() {
                 View Resume
               </a>
               {selectedApplication.status === "approved" ? (
-                <div className="mt-5 flex gap-2">
+                <div className="mt-5 flex flex-wrap gap-2">
                   <Button
                     className="flex-1"
                     onClick={() => {
@@ -979,7 +979,7 @@ export default function OwnerAgentsPage() {
                   </Button>
                 </div>
               ) : selectedApplication.status === "rejected" ? (
-                <div className="mt-5 flex justify-end gap-2">
+                <div className="mt-5 flex flex-wrap justify-end gap-2">
                   <Button disabled={isSubmitting} onClick={() => handleReturnToReview(selectedApplication)}>
                     {isSubmitting ? "Returning..." : "Return to pending applicants"}
                   </Button>
@@ -998,7 +998,7 @@ export default function OwnerAgentsPage() {
                 <div className="mt-5 space-y-3">
                   <label htmlFor="application-rejection-reason" className="block text-sm font-medium text-slate-800">Reason for rejection *</label>
                   <textarea id="application-rejection-reason" value={rejectionReason} onChange={(event) => setRejectionReason(event.target.value)} maxLength={1000} rows={4} required className="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="Explain why this application is being rejected" />
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button className="flex-1" disabled={isSubmitting || !rejectionReason.trim()} onClick={() => handleReviewApplication("rejected", rejectionReason)}>
                       {isSubmitting ? "Sending..." : "Reject & Email Applicant"}
                     </Button>
@@ -1008,13 +1008,13 @@ export default function OwnerAgentsPage() {
                   </div>
                 </div>
               ) : (
-                <div className="mt-5 flex flex-col sm:flex-row gap-2">
-                  <Button className="flex-1" disabled={isSubmitting} onClick={() => handleReviewApplication("approved")}>
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                  <Button className="flex-1 px-3.5 text-xs sm:text-sm" disabled={isSubmitting} onClick={() => handleReviewApplication("approved")}>
                     {isSubmitting ? "Creating account..." : "Approve & Create Account"}
                   </Button>
                   <Button
                     variant="secondary"
-                    className="flex-1"
+                    className="flex-1 px-3.5 text-xs sm:text-sm"
                     onClick={() => {
                       const app = selectedApplication;
                       setSelectedApplication(null);
@@ -1024,11 +1024,12 @@ export default function OwnerAgentsPage() {
                   >
                     Open in Register Form
                   </Button>
-                  <Button variant="outline" disabled={isSubmitting} onClick={() => setShowRejectionForm(true)}>
+                  <Button variant="outline" className="px-3.5 text-xs sm:text-sm" disabled={isSubmitting} onClick={() => setShowRejectionForm(true)}>
                     Reject
                   </Button>
                   <Button
                     variant="destructive"
+                    className="px-3.5 text-xs sm:text-sm"
                     disabled={isSubmitting}
                     onClick={() => {
                       const app = selectedApplication;

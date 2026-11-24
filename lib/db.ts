@@ -144,7 +144,6 @@ export async function initDatabase() {
     statements.push(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_id_verification_status_check`);
     statements.push(`ALTER TABLE users ADD CONSTRAINT users_id_verification_status_check CHECK (id_verification_status IN ('pending', 'approved', 'rejected', 'not_required', 'exempt'))`);
     statements.push(`UPDATE users SET id_verification_status = 'not_required' WHERE role IN ('admin', 'owner') OR LOWER(email) IN ('admin@renttrack.com', 'renttrackowner@gmail.com')`);
-    statements.push(`UPDATE properties SET agent_id = NULL`);
     statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ`);
     statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ`);
     statements.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT FALSE`);
@@ -1171,25 +1170,6 @@ export async function getProperties() {
 
   const rows = data || [];
   let fallbackOwnerId: string | null = null;
-  let fallbackAgentId: string | null = null;
-
-  try {
-    const { data: agentUsers } = await adminClient.schema("public").from("users").select("id, email, address").eq("role", "agent").order("created_at", { ascending: true });
-    if (agentUsers && agentUsers.length > 0) {
-      const butuanAgentIds = new Set(agentUsers.filter((a: any) => (a.email || "").toLowerCase().includes("galitojohnlloyd") || (a.address || "").toLowerCase().includes("butuan")).map((a: any) => a.id));
-      const mismatchedIds = rows.filter((r: any) => r.agent_id && butuanAgentIds.has(r.agent_id) && !String(r.location || "").toLowerCase().includes("butuan")).map((r: any) => r.id);
-      if (mismatchedIds.length > 0) {
-        Promise.resolve(
-          adminClient.from("properties").update({ agent_id: null }).in("id", mismatchedIds)
-        ).catch(() => {});
-        for (const row of rows) {
-          if (mismatchedIds.includes(row.id)) row.agent_id = null;
-        }
-      }
-    }
-  } catch (e) {
-    console.warn("Could not check agent user for properties:", e);
-  }
 
   const needsReassignment = rows.some((row: any) => 
     !row.created_by || row.created_by === "usr_builtin_admin" || (typeof row.created_by === "string" && row.created_by.toLowerCase().includes("admin"))

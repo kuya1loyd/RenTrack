@@ -80,7 +80,8 @@ function searchableInquiryText(inquiry: ChatInquiry) {
 const flowSteps: { key: Step; label: string; icon: React.ElementType }[] = [
   { key: "overview", label: "Dashboard", icon: LayoutDashboard },
   { key: "map", label: "Property Map", icon: Home },
-  { key: "units", label: "Units", icon: Home },
+  { key: "properties", label: "Properties", icon: Building2 },
+  { key: "units", label: "Condo Units", icon: Home },
   { key: "tenants", label: "Tenants", icon: Users },
   { key: "payments", label: "Payments", icon: CreditCard },
   { key: "contracts", label: "Contracts", icon: FileText },
@@ -123,70 +124,6 @@ export default function AgentDashboard() {
   const threadEndRef = useRef<HTMLDivElement>(null);
   const lastLocalReplyAt = useRef<string | null>(null);
 
-  const [showAddUnitModal, setShowAddUnitModal] = useState(false);
-  const [newUnitForm, setNewUnitForm] = useState({
-    name: "",
-    tower: "",
-    address: "",
-    city: "",
-    province: "",
-    unitNumber: "",
-    floor: "",
-    type: "condo",
-    condition: "",
-    amenities: [] as string[],
-    status: "vacant" as Unit["status"],
-    rentAmount: "",
-    imageUrl: "",
-    imageUrls: [] as string[],
-  });
-  const [isSubmittingUnit, setIsSubmittingUnit] = useState(false);
-
-  const handleAddUnit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!newUnitForm.name.trim() || !newUnitForm.unitNumber.trim() || !newUnitForm.address.trim() || Number(newUnitForm.rentAmount) < 0) {
-      toast.error("Please provide unit name, unit number, complete address, and rent amount");
-      return;
-    }
-
-    setIsSubmittingUnit(true);
-    try {
-      const fullAddress = newUnitForm.tower.trim()
-        ? `${newUnitForm.tower.trim()}, ${newUnitForm.address.trim()}`
-        : newUnitForm.address.trim();
-
-      const newUnit = await addUnit({
-        name: newUnitForm.name.trim(),
-        unitNumber: newUnitForm.unitNumber.trim(),
-        address: fullAddress,
-        city: newUnitForm.city.trim() || undefined,
-        province: newUnitForm.province.trim() || undefined,
-        floor: newUnitForm.floor ? Number(newUnitForm.floor) : undefined,
-        type: "condo",
-        condition: newUnitForm.condition || undefined,
-        status: newUnitForm.status,
-        rentAmount: Number(newUnitForm.rentAmount),
-        imageUrl: newUnitForm.imageUrl || undefined,
-        imageUrls: newUnitForm.imageUrls,
-        amenities: newUnitForm.amenities,
-        features: newUnitForm.amenities,
-        agentId: user?.id,
-      });
-      setUnits((current) => [...current, newUnit]);
-      setShowAddUnitModal(false);
-      setNewUnitForm({ name: "", tower: "", address: "", city: "", province: "", unitNumber: "", floor: "", type: "condo", condition: "", amenities: [], status: "vacant", rentAmount: "", imageUrl: "", imageUrls: [] });
-      toast.success("Condominium unit registered successfully");
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("renttrack-refresh-data"));
-        window.dispatchEvent(new CustomEvent("renttrack-units-updated"));
-      }
-    } catch {
-      toast.error("Failed to register condominium unit");
-    } finally {
-      setIsSubmittingUnit(false);
-    }
-  };
-
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   const [selectedTenant, setSelectedTenant] = useState<TenantRecord | null>(null);
@@ -228,39 +165,58 @@ export default function AgentDashboard() {
   const [viewingReceipt, setViewingReceipt] = useState<Payment | null>(null);
   const [initialLoad, setInitialLoad] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [dbProperties, setDbProperties] = useState<Property[]>([]);
+  const [dbUnits, setDbUnits] = useState<Unit[]>([]);
+
+  const loadDatabaseInventoryFast = useCallback(async () => {
+    try {
+      const [propsRes, unitsRes] = await Promise.all([
+        fetch("/api/data/properties", { credentials: "include", cache: "no-store" }),
+        fetch("/api/data/units", { credentials: "include", cache: "no-store" }),
+      ]);
+      const [propsJson, unitsJson] = await Promise.all([
+        safeParseJson(propsRes),
+        safeParseJson(unitsRes),
+      ]);
+      const nextProperties: Property[] = Array.isArray(propsJson?.properties) ? propsJson.properties : [];
+      const nextUnits: Unit[] = Array.isArray(unitsJson?.units) ? unitsJson.units : [];
+      setDbProperties(nextProperties);
+      setDbUnits(nextUnits);
+      setProperties(nextProperties);
+      setUnits(nextUnits);
+      setInitialLoad(false);
+      setLoadError(false);
+      return { nextProperties, nextUnits };
+    } catch (error) {
+      console.error("Fast database inventory load error:", error);
+      return { nextProperties: [] as Property[], nextUnits: [] as Unit[] };
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDatabaseInventoryFast();
+  }, [loadDatabaseInventoryFast]);
 
   const loadData = useCallback(async () => {
-    if (!user) return [];
-
-    // An agent won't be assigned properties, units, or tenants once they are not verified
-    if (!isAgentVerified) {
-      setProperties([]);
-      setUnits([]);
-      setTenants([]);
-      setPayments([]);
-      setConversations([]);
-      setInquiries([]);
-      setInitialLoad(false);
-      setIsRefreshing(false);
-      return [];
-    }
-
     setIsRefreshing(true);
     setLoadError(false);
     try {
-      const [props, unitsData, tenantsData, paymentsData, convs, inquiriesData] = await Promise.all([
-        getProperties(user),
-        getUnits(user),
+      // 1. Read properties and units from the database immediately so the UI renders fast
+      const { nextProperties: props } = await loadDatabaseInventoryFast();
+
+      if (!user) {
+        setInitialLoad(false);
+        return [];
+      }
+
+      // 2. Load tenants, payments, conversations, and inquiries in parallel
+      const [tenantsData, paymentsData, convs, inquiriesData] = await Promise.all([
         getTenants(user),
         getPayments(user),
         getConversations(),
         getInquiries(),
       ]);
-      const assignedProperties = props.filter((property) => property.agentId === user.id);
-      const assignedPropertyIds = new Set(assignedProperties.map((property) => property.id));
-      const assignedUnits = unitsData.filter((unit) => Boolean(unit.propertyId && assignedPropertyIds.has(unit.propertyId)));
-      setProperties(assignedProperties);
-      setUnits(assignedUnits);
+
       setTenants(tenantsData);
       const managedTenantIds = new Set(tenantsData.map((tenant) => tenant.id));
       const filteredPayments = paymentsData.filter((payment: Payment) =>
@@ -269,11 +225,11 @@ export default function AgentDashboard() {
       setPayments(filteredPayments);
       setConversations(convs);
       const filteredInquiries = inquiriesData
-        .filter((inq: any) => inq.agentId === user.id)
+        .filter((inq: any) => !inq.agentId || inq.agentId === user.id)
         .map((inq: ChatInquiry) => {
           if (!inq.propertyId) {
             const lower = (inq.text || "").toLowerCase();
-            const matched = assignedProperties.find((p) => p.name && lower.includes(p.name.toLowerCase()));
+            const matched = props.find((p) => p.name && lower.includes(p.name.toLowerCase()));
             if (matched) {
               return { ...inq, propertyId: matched.id, propertyName: matched.name };
             }
@@ -285,13 +241,15 @@ export default function AgentDashboard() {
       return filteredInquiries;
     } catch (err) {
       console.error("Agent dashboard load error:", err);
-      setLoadError(true);
+      if (dbProperties.length === 0 && dbUnits.length === 0) {
+        setLoadError(true);
+      }
       return [];
     } finally {
       setInitialLoad(false);
       setIsRefreshing(false);
     }
-  }, [user, isAgentVerified]);
+  }, [user, loadDatabaseInventoryFast, dbProperties.length, dbUnits.length]);
 
   const closeThread = () => {
     setViewingThread(null);
@@ -391,23 +349,32 @@ export default function AgentDashboard() {
 
   useEffect(() => {
     const refreshProfileData = () => {
-      loadData();
+      void loadDatabaseInventoryFast();
+      void loadData();
     };
     window.addEventListener("renttrack-profile-updated", refreshProfileData);
     window.addEventListener("renttrack-tenants-updated", refreshProfileData);
     window.addEventListener("renttrack-units-updated", refreshProfileData);
+    window.addEventListener("renttrack-refresh-data", refreshProfileData);
+    window.addEventListener("owner-data-changed", refreshProfileData);
+    window.addEventListener("focus", refreshProfileData);
     return () => {
       window.removeEventListener("renttrack-profile-updated", refreshProfileData);
       window.removeEventListener("renttrack-tenants-updated", refreshProfileData);
       window.removeEventListener("renttrack-units-updated", refreshProfileData);
+      window.removeEventListener("renttrack-refresh-data", refreshProfileData);
+      window.removeEventListener("owner-data-changed", refreshProfileData);
+      window.removeEventListener("focus", refreshProfileData);
     };
-  }, [loadData]);
+  }, [loadData, loadDatabaseInventoryFast]);
 
   useEffect(() => {
     if (activeTab === "profile") {
       refreshUser();
+    } else if (activeTab === "properties" || activeTab === "units" || activeTab === "map" || activeTab === "overview") {
+      void loadDatabaseInventoryFast();
     }
-  }, [activeTab, refreshUser]);
+  }, [activeTab, refreshUser, loadDatabaseInventoryFast]);
 
   useEffect(() => {
     if (!viewingThread) return;
@@ -480,12 +447,12 @@ export default function AgentDashboard() {
 
   useEffect(() => {
     const readHash = () => {
-      const rawHash = window.location.hash.replace("#", "");
-      const hash = rawHash === "properties" || rawHash === "assign" ? "units" : rawHash === "history" ? "payments" : rawHash;
+      const rawHash = window.location.hash.replace("#", "").split("?")[0];
+      const hash = rawHash === "assign" ? "units" : rawHash === "history" ? "payments" : rawHash;
       if (hash && flowSteps.some((s) => s.key === hash)) {
         setActiveTab(hash as Step);
         if (rawHash !== hash) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${hash}`);
-        if (hash === "overview" && userRef.current) {
+        if ((hash === "overview" || hash === "properties" || hash === "units") && userRef.current) {
           loadDataRef.current();
         }
       }
@@ -568,13 +535,17 @@ export default function AgentDashboard() {
     const searchable = `${unit.name || ""} ${unit.unitNumber} ${unit.tenantName || ""} ${unit.address || ""} ${unit.city || ""} ${unit.province || ""} ${property?.name || ""} ${property?.location || ""}`.toLowerCase();
     const searchMatches = !normalizedUnitSearch || searchable.includes(normalizedUnitSearch);
     const statusMatches = unitStatusFilter === "all" || unit.status === unitStatusFilter;
-    const propertyMatches = unitPropertyFilter === "all" || (property && property.id === unitPropertyFilter);
+    const propertyMatches =
+      unitPropertyFilter === "all" ||
+      (property && property.id === unitPropertyFilter) ||
+      (unit.name && unit.name === unitPropertyFilter);
     return searchMatches && statusMatches && propertyMatches;
   }).map((unit) => {
+    const unitLocation = [unit.address, unit.city, unit.province].filter(Boolean).join(", ");
     const property = properties.find((p) => p.id === unit.propertyId) || {
       id: unit.propertyId || "independent",
-      name: (unit as any).propertyName || unit.name || "Independent Condo Unit",
-      location: unit.address ? `${unit.address}${unit.city ? `, ${unit.city}` : ""}` : (unit.city || "Independent Unit"),
+      name: unit.name || (unit as any).propertyName || "Condominium Unit",
+      location: unitLocation || "Condominium Unit",
       type: "condominium",
       units: 1,
       monthlyRevenue: unit.rentAmount || 0,
@@ -1213,8 +1184,10 @@ export default function AgentDashboard() {
                         <tbody className="divide-y divide-slate-100">
                           {units.slice(0, 6).map((unit) => {
                             const property = properties.find((item) => item.id === unit.propertyId);
+                            const condoTitle = unit.name || property?.name || "Condominium Unit";
+                            const condoLoc = [unit.address, unit.city, unit.province].filter(Boolean).join(", ") || property?.location || "";
                             const unitImgs = unit.imageUrls?.length ? unit.imageUrls : unit.imageUrl ? [unit.imageUrl] : property?.imageUrls?.length ? property.imageUrls : property?.imageUrl ? [property.imageUrl] : [];
-                            const propImgs = property?.imageUrls?.length ? property.imageUrls : property?.imageUrl ? [property.imageUrl] : [];
+                            const propImgs = property?.imageUrls?.length ? property.imageUrls : property?.imageUrl ? [property.imageUrl] : unitImgs;
                             const statusClass = unit.status === "occupied"
                               ? "bg-emerald-50 text-emerald-700"
                               : unit.status === "maintenance"
@@ -1226,8 +1199,8 @@ export default function AgentDashboard() {
                                   <UnitImageCarousel
                                     images={unitImgs}
                                     alt={`Unit ${unit.unitNumber}`}
-                                    title={`Unit ${unit.unitNumber} - ${property?.name || "Property"}`}
-                                    subtitle={`${property?.location || ""} • Floor ${unit.floor ?? "—"} • ${formatCurrency(unit.rentAmount)}/mo`}
+                                    title={`Unit ${unit.unitNumber} - ${condoTitle}`}
+                                    subtitle={`${condoLoc} • Floor ${unit.floor ?? "—"} • ${formatCurrency(unit.rentAmount)}/mo`}
                                     className="h-10 w-14 shrink-0 rounded-md border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
                                     imageClassName="group-hover:scale-100"
                                   />
@@ -1236,15 +1209,15 @@ export default function AgentDashboard() {
                                   <div className="flex items-center gap-2.5">
                                     <UnitImageCarousel
                                       images={propImgs}
-                                      alt={property?.name || "Property"}
-                                      title={property?.name || "Property"}
-                                      subtitle={property?.location || "Property details unavailable"}
+                                      alt={condoTitle}
+                                      title={condoTitle}
+                                      subtitle={condoLoc}
                                       className="h-8 w-11 shrink-0 rounded-md border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
                                       imageClassName="group-hover:scale-105"
                                     />
                                     <div className="min-w-0">
-                                      <span className="block font-semibold text-slate-800 truncate max-w-[130px]">{property?.name || "—"}</span>
-                                      <span className="mt-0.5 block text-[10px] text-slate-500 truncate max-w-[140px]">{property?.location || "Property details unavailable"}</span>
+                                      <span className="block font-semibold text-slate-800 truncate max-w-[130px]">{condoTitle}</span>
+                                      {condoLoc && <span className="mt-0.5 block text-[10px] text-slate-500 truncate max-w-[140px]">{condoLoc}</span>}
                                     </div>
                                   </div>
                                 </td>
@@ -1271,6 +1244,8 @@ export default function AgentDashboard() {
                     <div className="divide-y divide-slate-100 md:hidden">
                       {units.slice(0, 6).map((unit) => {
                         const property = properties.find((item) => item.id === unit.propertyId);
+                        const condoTitle = unit.name || property?.name || "Condominium Unit";
+                        const condoLoc = [unit.address, unit.city, unit.province].filter(Boolean).join(", ") || property?.location || "";
                         const unitImgs = unit.imageUrls?.length ? unit.imageUrls : unit.imageUrl ? [unit.imageUrl] : property?.imageUrls?.length ? property.imageUrls : property?.imageUrl ? [property.imageUrl] : [];
                         const statusClass = unit.status === "occupied"
                           ? "bg-emerald-50 text-emerald-700"
@@ -1283,13 +1258,13 @@ export default function AgentDashboard() {
                               <UnitImageCarousel
                                 images={unitImgs}
                                 alt={`Unit ${unit.unitNumber}`}
-                                title={`Unit ${unit.unitNumber} - ${property?.name || "Property"}`}
-                                subtitle={`${property?.location || ""} • Floor ${unit.floor ?? "—"} • ${formatCurrency(unit.rentAmount)}/mo`}
+                                title={`Unit ${unit.unitNumber} - ${condoTitle}`}
+                                subtitle={`${condoLoc} • Floor ${unit.floor ?? "—"} • ${formatCurrency(unit.rentAmount)}/mo`}
                                 className="h-10 w-14 shrink-0 rounded-md border border-slate-200 cursor-pointer shadow-2xs hover:shadow-md transition-all"
                                 imageClassName="group-hover:scale-100"
                               />
                               <div className="min-w-0">
-                                <p className="truncate text-xs font-semibold text-slate-800">{property?.name || "—"} · Unit {unit.unitNumber}</p>
+                                <p className="truncate text-xs font-semibold text-slate-800">{condoTitle} · Unit {unit.unitNumber}</p>
                                 <p className="mt-0.5 truncate text-[10px] text-slate-500">{formatCurrency(unit.rentAmount)} / month</p>
                               </div>
                             </div>
@@ -1608,6 +1583,11 @@ export default function AgentDashboard() {
                         ...properties
                           .filter((p) => p.type === "condominium" || p.type === "building" || units.some((u) => u.propertyId === p.id))
                           .map((property) => ({ value: property.id, label: property.name })),
+                        ...Array.from(new Set(
+                          condoUnits
+                            .filter((u) => !u.propertyId && u.name && u.name.trim())
+                            .map((u) => u.name!.trim())
+                        )).map((name) => ({ value: name, label: name })),
                       ]}
                     />
                     <AnimatedFilterDropdown
@@ -1646,19 +1626,6 @@ export default function AgentDashboard() {
                     <Button
                       onClick={() => {
                         if (!isAgentVerified) {
-                          toast.error("ID Verification Required: You must be verified by the owner before you can register units.");
-                          return;
-                        }
-                        setShowAddUnitModal(true);
-                      }}
-                      className="h-9 gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3.5 shadow-2xs cursor-pointer"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add Condo Unit
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        if (!isAgentVerified) {
                           toast.error("ID Verification Required: You must be verified by the owner before you can assign tenants.");
                           return;
                         }
@@ -1686,7 +1653,7 @@ export default function AgentDashboard() {
                     </div>
                     {initialLoad ? <div role="status" className={management.empty}>Loading units…</div>
                       : loadError ? <div role="alert" className={management.empty}><strong>Unable to load unit data</strong><Button variant="outline" onClick={() => void loadData()}>Try again</Button></div>
-                      : properties.length === 0 ? <div className={management.empty}><Home aria-hidden="true" /><strong>No properties assigned yet</strong><p>Properties will appear here once the owner assigns them to you.</p></div>
+                      : condoUnits.length === 0 ? <div className={management.empty}><Home aria-hidden="true" /><strong>No condo units registered yet</strong><p>Condominium units added by the property owner will appear here.</p></div>
                       : filteredUnitRows.length === 0 ? <div className={management.empty}><Search aria-hidden="true" /><strong>No units match these filters</strong><p>Adjust your search or reset the filters to see available units.</p></div>
                       : <>
                         <div className={management.tableScroll}>
@@ -2735,268 +2702,6 @@ export default function AgentDashboard() {
             agentName={user?.name || "Agent"}
           />
         )}
-
-        {/* Independent Add Unit Modal for Agents - Condominium Units Only */}
-        {showAddUnitModal && (() => {
-          return (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-              <div className="absolute inset-0 bg-black/50 backdrop-blur-xs" onClick={() => setShowAddUnitModal(false)} />
-              <form onSubmit={handleAddUnit} className="relative w-full max-w-xl rounded-2xl border border-indigo-100 bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-                <div className="mb-5 flex items-start justify-between border-b border-border pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl border border-blue-200 bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                      <DoorOpen className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-semibold text-foreground">Register Condominium Unit</h3>
-                        <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
-                          Condominium Unit
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-text-secondary">
-                        Register an individual condominium rental unit independently with its own address, tower, and pricing.
-                      </p>
-                    </div>
-                  </div>
-                  <button type="button" onClick={() => setShowAddUnitModal(false)} className="rounded-lg p-2 text-text-secondary hover:text-foreground hover:bg-surface-secondary cursor-pointer">
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium">Unit Name / Title *</label>
-                    <Input
-                      required
-                      value={newUnitForm.name}
-                      onChange={(event) => setNewUnitForm({ ...newUnitForm, name: event.target.value })}
-                      placeholder="e.g. Tower 2 Studio Suite 1205, Modern Sea View Condo"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium">Unit Type</label>
-                    <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-blue-950">
-                      <DoorOpen className="h-4 w-4 text-blue-600 shrink-0" />
-                      <div>
-                        <p className="text-xs font-semibold">Condominium Unit</p>
-                        <p className="text-[10px] text-blue-600/80">Independent condominium rental unit with dedicated unit number and tower information</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium">Tower / Building Information *</label>
-                    <Input
-                      required
-                      value={newUnitForm.tower}
-                      onChange={(event) => setNewUnitForm({ ...newUnitForm, tower: event.target.value })}
-                      placeholder="e.g. Tower 2, West Wing, Horizons Residences"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium">
-                      Complete Unit Address (Street Address) *
-                    </label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
-                      <Input
-                        required
-                        value={newUnitForm.address}
-                        onChange={(event) => setNewUnitForm({ ...newUnitForm, address: event.target.value })}
-                        placeholder="e.g. 5th Avenue corner 28th Street, Bonifacio Global City"
-                        className="pl-9"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium">City *</label>
-                      <Input
-                        required
-                        value={newUnitForm.city}
-                        onChange={(event) => setNewUnitForm({ ...newUnitForm, city: event.target.value })}
-                        placeholder="e.g. Taguig, Cebu City, Makati"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium">Province *</label>
-                      <Input
-                        required
-                        value={newUnitForm.province}
-                        onChange={(event) => setNewUnitForm({ ...newUnitForm, province: event.target.value })}
-                        placeholder="e.g. Metro Manila, Cebu"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium">
-                        Unit Number *
-                      </label>
-                      <Input
-                        required
-                        value={newUnitForm.unitNumber}
-                        onChange={(event) => setNewUnitForm({ ...newUnitForm, unitNumber: event.target.value })}
-                        placeholder="e.g. Unit 1205"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium">Floor Level (Optional)</label>
-                      <Input
-                        type="number"
-                        min="0"
-                        value={newUnitForm.floor}
-                        onChange={(event) => setNewUnitForm({ ...newUnitForm, floor: event.target.value })}
-                        placeholder="e.g. 12"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium">Monthly Rent (₱) *</label>
-                    <Input
-                      required
-                      type="number"
-                      min="0"
-                      value={newUnitForm.rentAmount}
-                      onChange={(event) => setNewUnitForm({ ...newUnitForm, rentAmount: event.target.value })}
-                      placeholder="e.g. 25000"
-                    />
-                  </div>
-
-                  <div className="rounded-xl border border-border bg-surface-secondary/40 p-4">
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">Condition &amp; Status</p>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="block text-xs font-medium mb-1.5 text-slate-700">Unit Condition</label>
-                        <Input
-                          value={newUnitForm.condition}
-                          onChange={(event) => setNewUnitForm({ ...newUnitForm, condition: event.target.value })}
-                          placeholder="e.g. Brand New, Fully Furnished, Studio Suite"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium mb-1.5 text-slate-700">Unit Status</label>
-                        <select
-                          value={newUnitForm.status}
-                          onChange={(event) => setNewUnitForm({ ...newUnitForm, status: event.target.value as Unit["status"] })}
-                          className="h-10 w-full rounded-xl border border-border bg-white px-2.5 text-xs text-foreground focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="vacant">Vacant (Available)</option>
-                          <option value="occupied">Occupied</option>
-                          <option value="maintenance">Under Maintenance</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium">Unit Amenities &amp; Facilities</label>
-                    <UnitAmenitiesPicker
-                      value={newUnitForm.amenities}
-                      onChange={(amenities) => setNewUnitForm({ ...newUnitForm, amenities })}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium">
-                      Unit Interior Photos
-                    </label>
-                    <div className="flex flex-col gap-3">
-                      <label className="inline-flex w-fit items-center gap-2 px-4 py-2 rounded-xl border border-blue-200 bg-blue-50/50 text-blue-700 cursor-pointer hover:bg-blue-50 transition-colors">
-                        <Camera className="h-4 w-4" />
-                        <span className="text-sm font-medium">{newUnitForm.imageUrls.length ? "Add More Unit Photos" : "Upload Unit Photos"}</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          className="hidden"
-                          onChange={async (event) => {
-                            const files = Array.from(event.target.files || []);
-                            if (!files.length) return;
-                            try {
-                              const urls = await Promise.all(
-                                files.map(async (file) => {
-                                  const upload = new FormData();
-                                  upload.append("file", file);
-                                  upload.append("type", "unit");
-                                  try {
-                                    const response = await fetch("/api/auth/upload", { method: "POST", credentials: "include", body: upload });
-                                    const result = await safeParseJson(response);
-                                    if (result.success && result.url) return result.url as string;
-                                    throw new Error(result.error || "Upload failed");
-                                  } catch {
-                                    return new Promise<string>((resolve) => {
-                                      const reader = new FileReader();
-                                      reader.onload = () => resolve(reader.result as string);
-                                      reader.onerror = () => resolve("");
-                                      reader.readAsDataURL(file);
-                                    });
-                                  }
-                                })
-                              );
-                              const validUrls = urls.filter(Boolean);
-                              setNewUnitForm((current) => ({
-                                ...current,
-                                imageUrl: current.imageUrl || validUrls[0],
-                                imageUrls: [...current.imageUrls, ...validUrls],
-                              }));
-                              event.target.value = "";
-                              toast.success(`${validUrls.length} unit photo${validUrls.length === 1 ? "" : "s"} added`);
-                            } catch (error) {
-                              toast.error(error instanceof Error ? error.message : "Upload failed");
-                            }
-                          }}
-                        />
-                      </label>
-                      {newUnitForm.imageUrls.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {newUnitForm.imageUrls.map((url, index) => (
-                            <div key={`${url}-${index}`} className="relative group">
-                              <Image
-                                src={url}
-                                alt={`Unit preview ${index + 1}`}
-                                width={64}
-                                height={64}
-                                unoptimized
-                                className="h-16 w-16 rounded-lg object-cover border border-border"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const updated = newUnitForm.imageUrls.filter((_, i) => i !== index);
-                                  setNewUnitForm({ ...newUnitForm, imageUrls: updated, imageUrl: updated[0] || "" });
-                                }}
-                                className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow-md hover:bg-red-600 transition-colors"
-                                title="Remove photo"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-border">
-                  <Button type="button" variant="outline" onClick={() => setShowAddUnitModal(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={isSubmittingUnit} className="bg-blue-600 text-white hover:bg-blue-700 font-medium">
-                    {isSubmittingUnit ? "Registering..." : "Register Condominium Unit"}
-                  </Button>
-                </div>
-              </form>
-            </div>
-          );
-        })()}
        </div>
   );
 }

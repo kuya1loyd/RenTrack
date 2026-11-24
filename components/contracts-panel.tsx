@@ -71,10 +71,11 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
   const [contractPage, setContractPage] = useState(1);
   const [showRequestModal, setShowRequestModal] = useState(false);
 
-  const visibleProperties = useMemo(() => mode === "agent"
-    ? properties.filter((property) => property.agentId === user?.id || (property as any).agent_id === user?.id)
-    : properties,
-    [mode, properties, user?.id]);
+  const visibleProperties = useMemo(() => {
+    if (mode !== "agent") return properties;
+    const assigned = properties.filter((property) => property.agentId === user?.id || (property as any).agent_id === user?.id);
+    return assigned.length > 0 ? assigned : properties;
+  }, [mode, properties, user?.id]);
   const propertyUnits = useMemo(() => units.filter((unit) => (unit.propertyId || (unit as any).property_id) === propertyId), [units, propertyId]);
   const eligibleTenants = useMemo(() => {
     return (tenants || []).filter((tenant) => {
