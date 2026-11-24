@@ -198,7 +198,7 @@ export default function OwnerDashboard() {
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
   const [editPropertyForm, setEditPropertyForm] = useState({ name: "", location: "", latitude: "", longitude: "", monthlyRevenue: "", type: "house" as "house" | "residential" | "building" | "condominium" | string, status: "active" as "active" | "inactive", features: [] as string[], condition: "", availabilityStatus: "Available" as typeof AVAILABILITY_STATUSES[number], imageUrl: "", imageUrls: [] as string[], agentId: "" });
   const [editUnitPropertyId, setEditUnitPropertyId] = useState<string | null>(null);
-  const [editUnitForm, setEditUnitForm] = useState({ unitNumber: "", address: "", floor: "", type: "condo", condition: "", amenities: [] as string[], status: "vacant" as "vacant" | "occupied" | "maintenance", rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
+  const [editUnitForm, setEditUnitForm] = useState({ name: "", unitNumber: "", address: "", city: "", province: "", floor: "", type: "condo", condition: "", amenities: [] as string[], status: "vacant" as "vacant" | "occupied" | "maintenance", rentAmount: "", imageUrl: "", imageUrls: [] as string[] });
   const [isUploadingEditPropertyImage, setIsUploadingEditPropertyImage] = useState(false);
   const [isUploadingEditUnitImage, setIsUploadingEditUnitImage] = useState(false);
   const [createTenantSubmitting, setCreateTenantSubmitting] = useState(false);
@@ -628,12 +628,15 @@ export default function OwnerDashboard() {
       });
     }
     setEditUnitForm({
+      name: unit.name || property?.name || "",
       unitNumber: unit.unitNumber,
       address: unit.address || property?.location || "",
+      city: unit.city || property?.city || "",
+      province: unit.province || property?.province || "",
       floor: unit.floor?.toString() || "",
-      type: unit.type || "condo",
+      type: "condo",
       condition: unit.condition || "",
-      amenities: unit.amenities || unit.features || [],
+      amenities: Array.isArray(unit.amenities) && unit.amenities.length > 0 ? unit.amenities : Array.isArray(unit.features) ? unit.features : [],
       status: unit.status,
       rentAmount: unit.rentAmount.toString(),
       imageUrl: unit.imageUrl || "",
@@ -752,10 +755,13 @@ export default function OwnerDashboard() {
         : (editUnitForm.condition || undefined);
 
       const updatedUnitResult = await updateUnit(editingUnit.id, {
-        unitNumber: editUnitForm.unitNumber,
-        address: editUnitForm.address || undefined,
+        name: editUnitForm.name.trim() || undefined,
+        unitNumber: editUnitForm.unitNumber.trim(),
+        address: editUnitForm.address.trim() || undefined,
+        city: editUnitForm.city.trim() || undefined,
+        province: editUnitForm.province.trim() || undefined,
         floor: editUnitForm.floor ? parseInt(editUnitForm.floor) : undefined,
-        type: editUnitForm.type || "condo",
+        type: "condo",
         condition: finalCondition,
         maintenanceReason: isMaint ? editUnitMaintenanceReason : undefined,
         status: editUnitForm.status,
@@ -768,10 +774,13 @@ export default function OwnerDashboard() {
       if (!updatedUnitResult) throw new Error("Failed to update unit");
       const updatedUnit: Unit = {
         ...editingUnit,
-        unitNumber: editUnitForm.unitNumber,
-        address: editUnitForm.address || undefined,
+        name: editUnitForm.name.trim() || editingUnit.name,
+        unitNumber: editUnitForm.unitNumber.trim(),
+        address: editUnitForm.address.trim() || undefined,
+        city: editUnitForm.city.trim() || undefined,
+        province: editUnitForm.province.trim() || undefined,
         floor: editUnitForm.floor ? parseInt(editUnitForm.floor) : undefined,
-        type: editUnitForm.type || "condo",
+        type: "condo",
         condition: finalCondition,
         maintenanceReason: isMaint ? editUnitMaintenanceReason : undefined,
         status: editUnitForm.status,
@@ -4222,26 +4231,54 @@ export default function OwnerDashboard() {
               </button>
             </div>
             <form onSubmit={handleSaveUnit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Unit Number *</label>
-                <Input value={editUnitForm.unitNumber} onChange={(e) => setEditUnitForm({ ...editUnitForm, unitNumber: e.target.value })} required />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Condominium / Building Name</label>
+                  <Input
+                    value={editUnitForm.name}
+                    onChange={(e) => setEditUnitForm({ ...editUnitForm, name: e.target.value })}
+                    placeholder="e.g. AEON BLEU, Avida Towers Riala"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Unit Number *</label>
+                  <Input value={editUnitForm.unitNumber} onChange={(e) => setEditUnitForm({ ...editUnitForm, unitNumber: e.target.value })} required />
+                </div>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1.5">Unit Address *</label>
+                <label className="block text-sm font-medium mb-1.5">Complete Address / Tower Information *</label>
                 <div className="relative">
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
                   <Input
                     required
                     value={editUnitForm.address}
                     onChange={(e) => setEditUnitForm({ ...editUnitForm, address: e.target.value })}
-                    placeholder="e.g. Mandaue, Cebu, Mindanao"
+                    placeholder="e.g. Tower 2, J.P. Laurel Ave"
                     className="pl-9"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">City</label>
+                  <Input
+                    value={editUnitForm.city}
+                    onChange={(e) => setEditUnitForm({ ...editUnitForm, city: e.target.value })}
+                    placeholder="e.g. Cebu City, Davao City"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Province</label>
+                  <Input
+                    value={editUnitForm.province}
+                    onChange={(e) => setEditUnitForm({ ...editUnitForm, province: e.target.value })}
+                    placeholder="e.g. Cebu, Davao del Sur"
                   />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium mb-1.5">Floor</label>
+                  <label className="block text-sm font-medium mb-1.5">Floor Level</label>
                   <Input type="number" value={editUnitForm.floor} onChange={(e) => setEditUnitForm({ ...editUnitForm, floor: e.target.value })} />
                 </div>
                 <div>
@@ -4256,15 +4293,9 @@ export default function OwnerDashboard() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
                     <label className="block text-xs font-medium mb-1.5 text-slate-700">Unit Type</label>
-                    <select
-                      value={editUnitForm.type}
-                      onChange={(e) => setEditUnitForm({ ...editUnitForm, type: e.target.value })}
-                      className="h-10 px-2.5 rounded-xl border border-border bg-white text-xs w-full focus:ring-2 focus:ring-blue-500"
-                    >
-                      {UNIT_TYPES.map((t) => (
-                        <option key={t.value} value={t.value}>{t.label}</option>
-                      ))}
-                    </select>
+                    <div className="h-10 px-2.5 rounded-xl border border-blue-200 bg-blue-50/70 text-xs font-semibold text-blue-800 flex items-center">
+                      Condominium Unit
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs font-medium mb-1.5 text-slate-700">Unit Condition</label>

@@ -57,6 +57,10 @@ export default function UnitsPage() {
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
   const [editForm, setEditForm] = useState({
     propertyId: "",
+    name: "",
+    address: "",
+    city: "",
+    province: "",
     unitNumber: "",
     floor: "",
     status: "vacant" as Unit["status"],
@@ -162,16 +166,21 @@ export default function UnitsPage() {
 
   const openEdit = (unit: Unit) => {
     setEditingUnit(unit);
+    const parentProp = properties.find((p) => p.id === unit.propertyId);
     const existingReason = unit.maintenanceReason || (unit.condition?.startsWith("Maintenance: ") ? unit.condition.replace("Maintenance: ", "") : UNIT_MAINTENANCE_REASONS[0]);
     setEditForm({
       propertyId: unit.propertyId || "",
+      name: unit.name || parentProp?.name || "",
+      address: unit.address || parentProp?.location || "",
+      city: unit.city || parentProp?.city || "",
+      province: unit.province || parentProp?.province || "",
       unitNumber: unit.unitNumber,
       floor: unit.floor?.toString() || "",
       status: unit.status,
       rentAmount: unit.rentAmount.toString(),
-      type: unit.type || "condo",
+      type: "condo",
       condition: unit.condition || "",
-      amenities: unit.amenities || unit.features || [],
+      amenities: Array.isArray(unit.amenities) && unit.amenities.length > 0 ? unit.amenities : Array.isArray(unit.features) ? unit.features : [],
       maintenanceReason: existingReason,
       imageUrl: unit.imageUrl || "",
       imageUrls: unit.imageUrls || (unit.imageUrl ? [unit.imageUrl] : []),
@@ -180,18 +189,22 @@ export default function UnitsPage() {
 
   const handleSaveEdit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (isSaving || !editingUnit || !editForm.propertyId || !editForm.unitNumber || editForm.rentAmount === "") {
-      toast.error("Complete the property, unit number, and rent fields");
+    if (isSaving || !editingUnit || !editForm.unitNumber.trim() || editForm.rentAmount === "") {
+      toast.error("Complete the unit number and monthly rent fields");
       return;
     }
     setIsSaving(true);
     try {
       const activeReason = editForm.maintenanceReason || UNIT_MAINTENANCE_REASONS[0];
       const savedUnit = await updateUnit(editingUnit.id, {
-        propertyId: editForm.propertyId,
+        propertyId: editForm.propertyId || undefined,
+        name: editForm.name.trim() || undefined,
+        address: editForm.address.trim() || undefined,
+        city: editForm.city.trim() || undefined,
+        province: editForm.province.trim() || undefined,
         unitNumber: editForm.unitNumber.trim(),
         floor: editForm.floor === "" ? undefined : Number(editForm.floor),
-        type: editForm.type || "condo",
+        type: "condo",
         condition: editForm.status === "maintenance" ? `Maintenance: ${activeReason}` : (editForm.condition || undefined),
         maintenanceReason: editForm.status === "maintenance" ? activeReason : undefined,
         status: editForm.status,
@@ -205,6 +218,10 @@ export default function UnitsPage() {
       const updatedUnit = {
         ...editingUnit,
         ...editForm,
+        name: editForm.name.trim() || editingUnit.name,
+        address: editForm.address.trim() || editingUnit.address,
+        city: editForm.city.trim() || editingUnit.city,
+        province: editForm.province.trim() || editingUnit.province,
         floor: editForm.floor === "" ? undefined : Number(editForm.floor),
         rentAmount: Number(editForm.rentAmount),
         condition: editForm.status === "maintenance" ? `Maintenance: ${activeReason}` : editForm.condition,
@@ -667,16 +684,18 @@ export default function UnitsPage() {
 
       <Modal isOpen={!!editingUnit} onClose={() => setEditingUnit(null)} title="Edit Unit" description="Update every unit detail">
         <form onSubmit={handleSaveEdit} className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-foreground">Property *</label>
-            <select required value={editForm.propertyId} onChange={(event) => setEditForm({ ...editForm, propertyId: event.target.value })} className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm">
-              <option value="">Select a property</option>
-              {properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
-            </select>
-          </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div><label className="mb-1 block text-sm font-medium text-foreground">Condominium / Building Name</label><Input value={editForm.name} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} placeholder="e.g. AEON BLEU, Avida Towers Riala" /></div>
             <div><label className="mb-1 block text-sm font-medium text-foreground">Unit Number *</label><Input required value={editForm.unitNumber} onChange={(event) => setEditForm({ ...editForm, unitNumber: event.target.value })} /></div>
-            <div><label className="mb-1 block text-sm font-medium text-foreground">Floor</label><Input type="number" min="0" value={editForm.floor} onChange={(event) => setEditForm({ ...editForm, floor: event.target.value })} /></div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-foreground">Complete Address / Tower Information</label>
+            <Input value={editForm.address} onChange={(event) => setEditForm({ ...editForm, address: event.target.value })} placeholder="e.g. Tower 2, J.P. Laurel Ave" />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div><label className="mb-1 block text-sm font-medium text-foreground">City</label><Input value={editForm.city} onChange={(event) => setEditForm({ ...editForm, city: event.target.value })} placeholder="e.g. Cebu City" /></div>
+            <div><label className="mb-1 block text-sm font-medium text-foreground">Province</label><Input value={editForm.province} onChange={(event) => setEditForm({ ...editForm, province: event.target.value })} placeholder="e.g. Cebu" /></div>
+            <div><label className="mb-1 block text-sm font-medium text-foreground">Floor Level</label><Input type="number" min="0" value={editForm.floor} onChange={(event) => setEditForm({ ...editForm, floor: event.target.value })} /></div>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div><label className="mb-1 block text-sm font-medium text-foreground">Monthly Rent (₱) *</label><Input required type="number" min="0" value={editForm.rentAmount} onChange={(event) => setEditForm({ ...editForm, rentAmount: event.target.value })} /></div>
@@ -722,9 +741,9 @@ export default function UnitsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">Unit Type</label>
-                <select value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm">
-                  {UNIT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
+                <div className="h-10 w-full rounded-lg border border-blue-200 bg-blue-50/70 px-3 text-xs font-semibold text-blue-800 flex items-center">
+                  Condominium Unit
+                </div>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">Unit Condition</label>

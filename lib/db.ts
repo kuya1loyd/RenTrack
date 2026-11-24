@@ -1222,6 +1222,23 @@ export async function getProperties() {
       property.createdBy = fallbackOwnerId;
     }
     property.agentId = row.agent_id || property.agentId || null;
+    const parseFeatureList = (val: unknown): string[] => {
+      if (Array.isArray(val)) return val.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((s) => s.trim());
+      if (typeof val === "string" && val.trim()) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) return parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((s) => s.trim());
+        } catch {
+          return val.split(",").map((s) => s.trim()).filter(Boolean);
+        }
+      }
+      return [];
+    };
+    const parsedFeatures = parseFeatureList(row.features);
+    const parsedAmenities = parseFeatureList(row.amenities);
+    const combinedFeatures = Array.from(new Set([...parsedFeatures, ...parsedAmenities]));
+    property.features = combinedFeatures;
+    property.amenities = combinedFeatures;
     property.imageUrls = Array.isArray(row.image_urls) && row.image_urls.length > 0
       ? Array.from(new Set(row.image_urls.filter((url: unknown): url is string => typeof url === "string")))
       : row.image_url ? [row.image_url] : [];
@@ -1374,6 +1391,19 @@ export async function getUnits() {
   if (error) throw error;
   let rows = data || [];
 
+  const parseAmenityList = (val: unknown): string[] => {
+    if (Array.isArray(val)) return val.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((s) => s.trim());
+    if (typeof val === "string" && val.trim()) {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((s) => s.trim());
+      } catch {
+        return val.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+    }
+    return [];
+  };
+
   return (rows || []).map((row: any) => {
     const unit = snakeToCamel(row);
     if (unit.status === "vacant") {
@@ -1386,13 +1416,11 @@ export async function getUnits() {
     unit.createdBy = row.created_by || "";
     unit.agentId = row.agent_id || "";
     unit.address = row.address || "";
-    const rawAmenities = row.amenities || row.features;
-    unit.amenities = Array.isArray(rawAmenities)
-      ? rawAmenities
-      : typeof rawAmenities === "string"
-      ? (() => { try { return JSON.parse(rawAmenities); } catch { return []; } })()
-      : [];
-    unit.features = unit.amenities;
+    const parsedAmenities = parseAmenityList(row.amenities);
+    const parsedFeatures = parseAmenityList(row.features);
+    const combinedAmenities = Array.from(new Set([...parsedAmenities, ...parsedFeatures]));
+    unit.amenities = combinedAmenities;
+    unit.features = combinedAmenities;
     unit.imageUrls = Array.isArray(row.image_urls) && row.image_urls.length > 0
       ? Array.from(new Set(row.image_urls.filter((url: unknown): url is string => typeof url === "string")))
       : row.image_url ? [row.image_url] : [];
@@ -1402,6 +1430,12 @@ export async function getUnits() {
 
 export async function createUnit(data: any) {
   const id = `unit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const savedAmenities: string[] = Array.isArray(data.amenities) && data.amenities.length > 0
+    ? Array.from(new Set(data.amenities.filter((x: unknown): x is string => typeof x === "string" && x.trim().length > 0).map((s: string) => s.trim())))
+    : Array.isArray(data.features) && data.features.length > 0
+      ? Array.from(new Set(data.features.filter((x: unknown): x is string => typeof x === "string" && x.trim().length > 0).map((s: string) => s.trim())))
+      : [];
+
   let { error } = await getAdminSupabase().from("units").insert({
     id,
     name: data.name || data.title || null,
@@ -1419,8 +1453,8 @@ export async function createUnit(data: any) {
     agent_id: data.agentId || null,
     image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
     image_urls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [],
-    amenities: Array.isArray(data.amenities) ? data.amenities : Array.isArray(data.features) ? data.features : [],
-    features: Array.isArray(data.features) ? data.features : Array.isArray(data.amenities) ? data.amenities : [],
+    amenities: savedAmenities,
+    features: savedAmenities,
   });
 
   if (error && (error.message?.includes("units_type_check") || error.code === "23514" || error.message?.includes("type") || error.message?.includes("condition") || error.code === "PGRST204" || error.message?.includes("name") || error.message?.includes("city") || error.message?.includes("province") || error.message?.includes("amenities") || error.message?.includes("features"))) {
@@ -1468,8 +1502,39 @@ export async function createUnit(data: any) {
         agent_id: data.agentId || null,
         image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
         image_urls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [],
+        amenities: savedAmenities,
+        features: savedAmenities,
       });
-      error = retry.error;
+      if (retry.error && (retry.error.code === "PGRST204" || retry.error.message?.includes("amenities") || retry.error.message?.includes("features"))) {
+        const retryWithoutJsonCols = await getAdminSupabase().from("units").insert({
+          id,
+          name: data.name || data.title || null,
+          property_id: data.propertyId || null,
+          unit_number: data.unitNumber,
+          floor: data.floor ? Number(data.floor) : null,
+          status: data.status || "vacant",
+          rent_amount: data.rentAmount || 0,
+          type: data.type || "condo",
+          condition: data.condition || null,
+          address: data.address || null,
+          city: data.city || null,
+          province: data.province || null,
+          created_by: data.createdBy || null,
+          agent_id: data.agentId || null,
+          image_url: data.imageUrl || (Array.isArray(data.imageUrls) ? data.imageUrls[0] : null) || null,
+          image_urls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [],
+        });
+        error = retryWithoutJsonCols.error;
+        if (!error && savedAmenities.length > 0) {
+          const jsonLiteral = JSON.stringify(savedAmenities).replace(/'/g, "''");
+          const safeId = id.replace(/'/g, "''");
+          await getAdminSupabase().rpc("exec_sql", {
+            sql: `UPDATE units SET amenities = '${jsonLiteral}'::jsonb, features = '${jsonLiteral}'::jsonb WHERE id = '${safeId}'`,
+          });
+        }
+      } else {
+        error = retry.error;
+      }
     } catch (e) {
       console.warn("Could not auto-repair units table constraint:", e);
     }
@@ -1484,6 +1549,8 @@ export async function createUnit(data: any) {
     type: data.type || "condo",
     condition: data.condition || null,
     address: data.address || "",
+    amenities: savedAmenities,
+    features: savedAmenities,
     imageUrls: Array.isArray(data.imageUrls) ? Array.from(new Set(data.imageUrls)) : data.imageUrl ? [data.imageUrl] : [],
     status: data.status || "vacant"
   };

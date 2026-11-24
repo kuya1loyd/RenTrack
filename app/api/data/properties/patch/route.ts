@@ -8,7 +8,7 @@ import { logAudit, getAdminSupabase } from "@/lib/db";
 
 const ALLOWED_PROPERTY_FIELDS = [
   "name", "location", "type", "units", "occupiedUnits",
-  "monthlyRevenue", "rentAmount", "rent_amount", "status", "latitude", "longitude", "imageUrl", "imageUrls", "features", "condition", "availabilityStatus", "agentId", "agent_id"
+  "monthlyRevenue", "rentAmount", "rent_amount", "status", "latitude", "longitude", "imageUrl", "imageUrls", "features", "amenities", "condition", "availabilityStatus", "agentId", "agent_id"
 ];
 
 export async function PATCH(request: NextRequest) {
@@ -39,9 +39,9 @@ export async function PATCH(request: NextRequest) {
         updates[dbKey] = val && typeof val === "string" && val.trim() ? val.trim() : null;
       } else if (val === null) {
         continue;
-      } else if (dbKey === "features") {
+      } else if (dbKey === "features" || dbKey === "amenities") {
         if (!Array.isArray(val) || val.some((feature) => typeof feature !== "string")) continue;
-        updates[dbKey] = val.slice(0, 30);
+        updates.features = Array.from(new Set(val.map((s) => s.trim()).filter(Boolean))).slice(0, 50);
       } else if (dbKey === "latitude" || dbKey === "longitude") {
         const coordinate = Number(val);
         const min = dbKey === "latitude" ? -90 : -180;

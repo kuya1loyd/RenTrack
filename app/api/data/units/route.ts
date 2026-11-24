@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUnits, createUnit, deleteUnit } from "@/lib/db";
+import { getUnits, createUnit, deleteUnit, initDatabase, logAudit } from "@/lib/db";
 import {
   requireAuth, requireRole, validateApiRequest, withRateLimit,
   sanitizeResponse, withSecurityHeaders, withCorsHeaders,
   sanitizeObject, getClientIp
 } from "@/lib/api-security";
-import { logAudit } from "@/lib/db";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,6 +20,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    await initDatabase();
     const rateLimit = await withRateLimit(request, `create_unit:${getClientIp(request)}`);
     if (rateLimit) return rateLimit;
 

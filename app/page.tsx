@@ -118,18 +118,16 @@ export default function LandingPage() {
     (async () => {
       try {
         const [propRes, unitRes] = await Promise.all([
-          fetch("/api/data/properties"),
-          fetch("/api/data/units"),
+          fetch("/api/data/properties", { cache: "no-store" }),
+          fetch("/api/data/units", { cache: "no-store" }),
         ]);
         const propData = await safeParseJson(propRes);
         const unitData = await safeParseJson(unitRes);
-        console.log("Landing page properties:", propData);
-        console.log("Landing page units:", unitData);
         setPropertyCountsReady(Boolean(propRes.ok && propData.success && !propData.degraded && Array.isArray(propData.properties)));
         if (propData.success && Array.isArray(propData.properties)) {
           setProperties(propData.properties);
         }
-        if (unitData.success && unitData.units.length > 0) {
+        if (unitData.success && Array.isArray(unitData.units)) {
           setUnits(unitData.units);
         }
       } catch (err) {
@@ -231,12 +229,89 @@ export default function LandingPage() {
   }, []);
 
   const normalizedSearch = searchTerm.trim().toLowerCase();
-  const locations = Array.from(new Set(properties
-    .map((property: any) => property.location || property.city || property.province)
-    .filter(Boolean)));
+  const locations = Array.from(new Set([
+    ...properties.map((property: any) => property.city || property.province || property.location),
+    ...units.map((unit: any) => unit.city || unit.province || unit.address),
+  ].filter(Boolean)));
   const propertyTypes = Array.from(new Set(properties.map((property: any) => property.type).filter(Boolean)));
   const minPrice = minPriceFilter ? Number(minPriceFilter) : 0;
   const maxPrice = maxPriceFilter ? Number(maxPriceFilter) : Number.POSITIVE_INFINITY;
+
+  const extractAmenities = (item: any): string[] => {
+    if (!item) return [];
+    const parseList = (val: unknown): string[] => {
+      if (Array.isArray(val)) {
+        return val.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((s) => s.trim());
+      }
+      if (typeof val === "string" && val.trim()) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) {
+            return parsed.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((s) => s.trim());
+          }
+        } catch {
+          return val.split(",").map((s) => s.trim()).filter(Boolean);
+        }
+      }
+      return [];
+    };
+    const fromAmenities = parseList(item.amenities);
+    const fromFeatures = parseList(item.features);
+    return Array.from(new Set([...fromAmenities, ...fromFeatures]));
+  };
+
+  const getAmenityIcon = (feature: string) => {
+    const normalized = feature.toLowerCase();
+    if (normalized.includes("studio")) return Building2;
+    if (normalized.includes("bedroom") || /\b\d+\s*br\b/.test(normalized)) return BedDouble;
+    if (normalized.includes("bathroom") || normalized.includes("bath") || /\b\d+\s*(ba|tb|t&b)\b/.test(normalized)) return Bath;
+    if (normalized.includes("parking") || normalized.includes("car") || normalized.includes("garage")) return Car;
+    if (normalized.includes("furnished") || normalized.includes("cabinet")) return Sofa;
+    if (normalized.includes("air conditioning") || normalized.includes("aircon")) return Snowflake;
+    if (normalized.includes("wi-fi") || normalized.includes("wifi") || normalized.includes("internet")) return Wifi;
+    if (normalized.includes("laundry") || normalized.includes("washing")) return WashingMachine;
+    if (normalized.includes("kitchen") || normalized.includes("dining")) return Utensils;
+    if (normalized.includes("swimming") || normalized.includes("pool")) return Sparkles;
+    if (normalized.includes("gym") || normalized.includes("fitness")) return Award;
+    if (normalized.includes("elevator") || normalized.includes("lift")) return Building2;
+    if (normalized.includes("balcony") || normalized.includes("terrace")) return Grid2X2;
+    if (normalized.includes("function room") || normalized.includes("clubhouse")) return Users;
+    if (normalized.includes("playground") || normalized.includes("outdoor") || normalized.includes("garden")) return TreePine;
+    if (normalized.includes("security") || normalized.includes("cctv") || normalized.includes("surveillance")) return ShieldCheck;
+    if (normalized.includes("gated") || normalized.includes("gate")) return LockKeyhole;
+    if (normalized.includes("floor area") || normalized.includes("sqm") || normalized.includes("m²")) return Grid2X2;
+    if (normalized.includes("lot area")) return Ruler;
+    return CheckCircle2;
+  };
+
+  const formatUnitNumberLabel = (raw: any): string => {
+    const cleaned = String(raw || "").trim().replace(/^(unit\s*#?\s*)+/i, "").trim();
+    return cleaned ? `Unit ${cleaned}` : "Unit";
+  };
+
+  const formatUnitCompleteAddress = (u: any, parentProp?: any): string => {
+    if (!u && !parentProp) return "";
+    const addr = String(u?.address || "").trim();
+    const city = String(u?.city || "").trim();
+    const province = String(u?.province || "").trim();
+    const parts: string[] = [];
+    if (addr) parts.push(addr);
+    if (city && !addr.toLowerCase().includes(city.toLowerCase())) parts.push(city);
+    if (province && !addr.toLowerCase().includes(province.toLowerCase()) && province.toLowerCase() !== city.toLowerCase()) parts.push(province);
+    if (parts.length > 0) return parts.join(", ");
+    if (parentProp) {
+      const parentParts: string[] = [];
+      const pLoc = String(parentProp.location || parentProp.address || "").trim();
+      const pCity = String(parentProp.city || "").trim();
+      const pProv = String(parentProp.province || "").trim();
+      if (pLoc) parentParts.push(pLoc);
+      if (pCity && !pLoc.toLowerCase().includes(pCity.toLowerCase())) parentParts.push(pCity);
+      if (pProv && !pLoc.toLowerCase().includes(pProv.toLowerCase()) && pProv.toLowerCase() !== pCity.toLowerCase()) parentParts.push(pProv);
+      return parentParts.join(", ");
+    }
+    return "";
+  };
+
   const getRoomCountDisplay = (item: any, kind: "bedroom" | "bathroom"): string => {
     if (!item) return "Not specified";
 
@@ -259,12 +334,14 @@ export default function LandingPage() {
       }
     }
 
-    const features: string[] = Array.isArray(item.features)
-      ? item.features
-      : (typeof item.features === "string" ? [item.features] : []);
+    const features = extractAmenities(item);
+    let hasStudio = false;
 
     for (const f of features) {
       if (typeof f !== "string") continue;
+      if (kind === "bedroom" && /\bstudio(\s+unit)?\b/i.test(f)) {
+        hasStudio = true;
+      }
       const match = f.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*\\+?\\s*${kind === "bedroom" ? "bed(room)?" : "bath(room)?"}s?`, "i"));
       if (match) {
         const num = match[1];
@@ -287,26 +364,178 @@ export default function LandingPage() {
       }
     }
 
+    if (kind === "bedroom" && hasStudio) {
+      return "Studio Unit";
+    }
+
     return "Not specified";
+  };
+
+  const parseUnitDetails = (unit: any, parentProp?: any) => {
+    const unitLabel = formatUnitNumberLabel(unit?.unitNumber || unit?.unit_number);
+    const rawNumber = String(unit?.unitNumber || unit?.unit_number || "").trim().replace(/^(unit\s*#?\s*)+/i, "").trim();
+    const condoName = String(unit?.name || unit?.title || parentProp?.name || "").trim();
+    const rawAddress = String(unit?.address || "").trim();
+    let towerInfo = String(unit?.tower || "").trim();
+    if (!towerInfo && rawAddress) {
+      const segments = rawAddress.split(",").map((s) => s.trim()).filter(Boolean);
+      const towerSeg = segments.find((seg) => /\b(tower\s*[a-z0-9-]+|bldg\.?\s*[a-z0-9-]+|building\s*[a-z0-9-]+|wing\s*[a-z0-9-]+)\b/i.test(seg));
+      if (towerSeg && towerSeg.toLowerCase() !== condoName.toLowerCase()) {
+        towerInfo = towerSeg;
+      }
+    }
+    const completeAddress = formatUnitCompleteAddress(unit, parentProp);
+    const hasFloor = unit?.floor !== undefined && unit?.floor !== null && String(unit.floor).trim() !== "" && !isNaN(Number(unit.floor));
+    const floorLabel = hasFloor ? `Floor ${unit.floor}` : "";
+    const statusRaw = String(unit?.status || "vacant").toLowerCase();
+    const isAvailable = statusRaw === "vacant";
+    const isMaintenance = statusRaw === "maintenance";
+    const availabilityLabel = isAvailable ? "Available" : isMaintenance ? "Under Maintenance" : "Occupied";
+    const availabilityBadgeLabel = isAvailable ? "Available for Rent" : isMaintenance ? "Under Maintenance" : "Currently Occupied";
+    const condition = String(unit?.condition || "").trim();
+    const directBed = getRoomCountDisplay(unit, "bedroom");
+    const bedrooms = directBed !== "Not specified" ? directBed : (parentProp ? (getRoomCountDisplay(parentProp, "bedroom") !== "Not specified" ? getRoomCountDisplay(parentProp, "bedroom") : "") : "");
+    const directBath = getRoomCountDisplay(unit, "bathroom");
+    const bathrooms = directBath !== "Not specified" ? directBath : (parentProp ? (getRoomCountDisplay(parentProp, "bathroom") !== "Not specified" ? getRoomCountDisplay(parentProp, "bathroom") : "") : "");
+    const directAmenities = extractAmenities(unit);
+    const amenities = directAmenities.length > 0 ? directAmenities : (parentProp ? extractAmenities(parentProp) : []);
+    return {
+      unitLabel,
+      rawNumber,
+      condoName,
+      towerInfo,
+      completeAddress,
+      floorLabel,
+      statusRaw,
+      isAvailable,
+      isMaintenance,
+      availabilityLabel,
+      availabilityBadgeLabel,
+      condition,
+      bedrooms,
+      bathrooms,
+      amenities,
+      unitTypeLabel: "Condominium Unit",
+    };
+  };
+
+  const parseHouseDetails = (property: any, propertyUnits: any[] = []) => {
+    const name = String(property?.name || "").trim();
+    const rawLocation = String(property?.location || property?.address || "").trim();
+    const phase = String(property?.phase || rawLocation.match(/\b(Phase\s+[A-Za-z0-9-]+)\b/i)?.[1] || "").trim();
+    const block = String(property?.block || rawLocation.match(/\b((?:Block|Blk\.?)\s+[A-Za-z0-9-]+)\b/i)?.[1] || "").trim();
+    const lot = String(property?.lot || rawLocation.match(/\b(Lot\s+[A-Za-z0-9-]+)\b/i)?.[1] || "").trim();
+    const houseNumber = String(property?.houseNumber || rawLocation.match(/\b(House(?:\s+No\.?)?\s+[A-Za-z0-9-]+)\b/i)?.[1] || "").trim();
+
+    const segments = rawLocation.split(",").map((s) => s.trim()).filter(Boolean);
+    const nonUnitSegments = segments.filter((seg) =>
+      !/^(Phase\s+[A-Za-z0-9-]+|(?:Block|Blk\.?)\s+[A-Za-z0-9-]+|Lot\s+[A-Za-z0-9-]+|House(?:\s+No\.?)?\s+[A-Za-z0-9-]+)$/i.test(seg)
+    );
+
+    const subdivisionKeywords = /\b(subdivision|subd\.?|homes|village|estates|residences|meadows|heights|woods|plains|gardens|camella|lumina|bria|deca|amaia|avida|vista|crown\s+asia|lessandra|lancaster|phirst|bellavita)\b/i;
+    let subdivision = String(property?.subdivision || "").trim();
+    if (!subdivision) {
+      const subdFromSeg = nonUnitSegments.find((seg) => subdivisionKeywords.test(seg));
+      if (subdFromSeg) {
+        subdivision = subdFromSeg;
+      } else if (subdivisionKeywords.test(name)) {
+        subdivision = name;
+      }
+    }
+
+    let streetAddress = String(property?.address || "").trim();
+    let city = String(property?.city || "").trim();
+    let province = String(property?.province || "").trim();
+
+    if (!city && !province && nonUnitSegments.length >= 2) {
+      province = nonUnitSegments[nonUnitSegments.length - 1];
+      city = nonUnitSegments[nonUnitSegments.length - 2];
+      if (!streetAddress && nonUnitSegments.length > 2) {
+        streetAddress = nonUnitSegments.slice(0, nonUnitSegments.length - 2).join(", ");
+      }
+    } else if (!streetAddress && nonUnitSegments.length > 0) {
+      streetAddress = nonUnitSegments.join(", ");
+    }
+
+    const cityProvince = [city, province].filter(Boolean).join(", ");
+    const completeAddressParts: string[] = [];
+    if (rawLocation) {
+      completeAddressParts.push(rawLocation);
+      if (city && !rawLocation.toLowerCase().includes(city.toLowerCase())) completeAddressParts.push(city);
+      if (province && !rawLocation.toLowerCase().includes(province.toLowerCase()) && province.toLowerCase() !== city.toLowerCase()) completeAddressParts.push(province);
+    } else if (cityProvince) {
+      completeAddressParts.push(cityProvince);
+    }
+    const completeAddress = completeAddressParts.join(", ");
+
+    const subdivisionSummary = [phase, block, lot, houseNumber].filter(Boolean).join(" • ");
+
+    let availabilityLabel = String(property?.availabilityStatus || "").trim();
+    if (!availabilityLabel) {
+      if (property?.status === "inactive") {
+        availabilityLabel = "Under Maintenance";
+      } else if (propertyUnits.length > 0) {
+        availabilityLabel = propertyUnits.some((u: any) => (u.status || "vacant") === "vacant") ? "Available" : "Occupied";
+      } else {
+        availabilityLabel = "Available";
+      }
+    }
+    const isAvailable = availabilityLabel.toLowerCase() === "available";
+    const isMaintenance = availabilityLabel.toLowerCase().includes("maintenance");
+    const condition = String(property?.condition || "").trim();
+    const amenities = extractAmenities(property);
+    const rawBed = getRoomCountDisplay(property, "bedroom");
+    const bedrooms = rawBed !== "Not specified" ? rawBed : "";
+    const rawBath = getRoomCountDisplay(property, "bathroom");
+    const bathrooms = rawBath !== "Not specified" ? rawBath : "";
+    const furnishedStatus = amenities.find((a) => /^(fully\s+furnished|semi[- ]furnished|unfurnished|furnished)$/i.test(a.trim())) || "";
+    const hasAirConditioning = amenities.some((a) => /air\s*conditioning|aircon/i.test(a));
+    const hasKitchen = amenities.some((a) => /\bkitchen\b/i.test(a));
+
+    return {
+      name,
+      subdivision,
+      phase,
+      block,
+      lot,
+      houseNumber,
+      streetAddress,
+      city,
+      province,
+      cityProvince,
+      completeAddress,
+      subdivisionSummary,
+      availabilityLabel,
+      isAvailable,
+      isMaintenance,
+      condition,
+      amenities,
+      bedrooms,
+      bathrooms,
+      furnishedStatus,
+      hasAirConditioning,
+      hasKitchen,
+    };
   };
 
   const getRoomCountNumber = (item: any, kind: "bedroom" | "bathroom"): number | null => {
     const text = getRoomCountDisplay(item, kind);
+    if (text === "Studio Unit") return 1;
     const match = text.match(/^(\d+(?:\.\d+)?)/);
     return match ? Number(match[1]) : null;
   };
 
-  const matchesRoomCount = (property: any, kind: "bedroom" | "bathroom", filter: string) => {
+  const matchesRoomCount = (item: any, kind: "bedroom" | "bathroom", filter: string) => {
     if (!filter) return true;
-    const count = getRoomCountNumber(property, kind);
+    const count = getRoomCountNumber(item, kind);
     if (count === null) return false;
     return filter === "4+" ? count >= 4 : count === Number(filter);
   };
 
-  const matchesFurnishing = (property: any) => {
+  const matchesFurnishing = (item: any) => {
     if (!furnishingFilter) return true;
-    return Array.isArray(property?.features) && property.features.some((feature: unknown) => {
-      if (typeof feature !== "string") return false;
+    const list = extractAmenities(item);
+    return list.some((feature: string) => {
       const normalized = feature.toLowerCase().replace(/[-_]/g, " ").trim();
       return furnishingFilter === "Furnished"
         ? /^(fully\s+|semi\s+)?furnished\b/.test(normalized)
@@ -316,32 +545,33 @@ export default function LandingPage() {
 
   const isCondominiumProperty = (p: any) => {
     const t = String(p?.type || "").toLowerCase();
+    if (t === "house" || t === "villa" || t === "residential") return false;
     const name = String(p?.name || "").toLowerCase();
-    return t === "condominium" || t === "condo" || name.includes("residences") || name.includes("tower");
+    return t === "condominium" || t === "condo" || name.includes("tower") || name.includes("condo");
   };
 
   const getPropertyDisplayType = (p: any) => {
     const raw = String(p?.type || "").toLowerCase();
     const name = String(p?.name || "").toLowerCase();
-    if (raw === "condominium" || raw === "condo" || name.includes("residences") || name.includes("tower")) {
-      return {
-        badgeUpper: "CONDOMINIUM",
-        label: "Condominium",
-        isCondo: true,
-      };
-    }
     if (raw === "house" || raw === "villa") {
       return {
-        badgeUpper: "HOUSE",
-        label: "House",
+        badgeUpper: "SUBDIVISION / HOUSE",
+        label: "Subdivision / House",
         isCondo: false,
       };
     }
     if (raw === "residential") {
       return {
         badgeUpper: "RESIDENTIAL",
-        label: "Residential",
+        label: "Subdivision / House",
         isCondo: false,
+      };
+    }
+    if (raw === "condominium" || raw === "condo" || name.includes("tower") || name.includes("condo")) {
+      return {
+        badgeUpper: "CONDOMINIUM",
+        label: "Condominium",
+        isCondo: true,
       };
     }
     if (raw === "building" || raw === "commercial") {
@@ -367,12 +597,11 @@ export default function LandingPage() {
   };
 
   const getUnitDisplayType = (u: any, parentProp?: any) => {
-    const raw = String(u?.type || parentProp?.type || "").toLowerCase();
-    const parentName = String(parentProp?.name || "").toLowerCase();
-    if (raw === "condo" || raw === "condominium" || parentName.includes("residences") || parentName.includes("tower")) {
+    const raw = String(u?.type || parentProp?.type || "condo").toLowerCase();
+    if (raw === "condo" || raw === "condominium" || !raw) {
       return {
-        badgeUpper: "CONDOMINIUM",
-        label: "Condo Unit",
+        badgeUpper: "CONDOMINIUM UNIT",
+        label: "Condominium Unit",
         isCondo: true,
       };
     }
@@ -387,7 +616,7 @@ export default function LandingPage() {
       return {
         badgeUpper: "STUDIO",
         label: "Studio Unit",
-        isCondo: false,
+        isCondo: true,
       };
     }
     if (raw === "dorm") {
@@ -404,16 +633,16 @@ export default function LandingPage() {
         isCondo: false,
       };
     }
-    const clean = u?.type ? (u.type.charAt(0).toUpperCase() + u.type.slice(1)) : "Rental Unit";
     return {
-      badgeUpper: clean.toUpperCase(),
-      label: clean,
-      isCondo: false,
+      badgeUpper: "CONDOMINIUM UNIT",
+      label: "Condominium Unit",
+      isCondo: true,
     };
   };
 
   const isCondoListing = (itemType: any, parentProp?: any) => {
     const t = String(itemType || "").toLowerCase();
+    if (t === "house" || t === "villa" || t === "residential") return false;
     const pt = String(parentProp?.type || "").toLowerCase();
     const name = String(parentProp?.name || "").toLowerCase();
     return (
@@ -421,7 +650,6 @@ export default function LandingPage() {
       t === "condominium" ||
       pt === "condo" ||
       pt === "condominium" ||
-      name.includes("residences") ||
       name.includes("tower") ||
       name.includes("condo")
     );
@@ -432,10 +660,10 @@ export default function LandingPage() {
     const filter = propertyTypeFilter.toLowerCase();
     const type = String(rawType || "").toLowerCase();
     if (filter === "house") {
-      return (type === "house" || type === "villa") && !isCondoListing(rawType, parentProp);
+      return !isUnit && (type === "house" || type === "villa" || type === "residential") && !isCondoListing(rawType, parentProp);
     }
     if (filter === "condominium" || filter === "condo") {
-      return isCondoListing(rawType, parentProp);
+      return isUnit || isCondoListing(rawType, parentProp);
     }
     if (filter === "residential") {
       return type === "residential" || type === "house";
@@ -453,13 +681,10 @@ export default function LandingPage() {
   };
 
   const matchesPropertyFilters = (property: any, unit?: any) => {
-    // If filtering specifically for units, hide properties
     if (propertyTypeFilter === "units") return false;
 
     const propUnits = units.filter((u: any) => (u.propertyId || u.property_id) === property?.id);
     const isCondo = isCondoListing(property?.type, property) || String(property?.type || "").toLowerCase() === "condominium" || String(property?.type || "").toLowerCase() === "building";
-    // If this is a condominium/building with individual units listed, hide the building wrapper
-    // from the general rental listings so we don't display duplicate cards for the same rental
     if (propertyTypeFilter !== "properties" && (isCondo || propUnits.length > 0) && propUnits.length > 0) {
       return false;
     }
@@ -470,7 +695,8 @@ export default function LandingPage() {
     const rents = propUnits.map((u: any) => Number(u.rentAmount ?? u.rent_amount ?? 0)).filter(Boolean);
     const rentAmount = rents.length ? Math.min(...rents) : Number(unit?.rentAmount ?? unit?.rent_amount ?? property?.monthlyRevenue ?? property?.rentAmount ?? property?.monthlyRent ?? 0);
     const unitKeywords = propUnits.map((u: any) => `${u.unitNumber} unit ${u.unitNumber} floor ${u.floor || ""}`).join(" ");
-    const haystack = [propertyName, propertyLocation, property?.address, property?.city, property?.province, propertyType, unitKeywords, unit?.unitNumber, unit?.unit_number, unit?.status]
+    const amenitiesKeywords = extractAmenities(property).join(" ");
+    const haystack = [propertyName, propertyLocation, property?.address, property?.city, property?.province, propertyType, unitKeywords, amenitiesKeywords, unit?.unitNumber, unit?.unit_number, unit?.status]
       .filter(Boolean).join(" ").toLowerCase();
 
     return (!normalizedSearch || haystack.includes(normalizedSearch))
@@ -489,22 +715,26 @@ export default function LandingPage() {
 
     const parentProperty = properties.find((p) => p.id === (unit.propertyId || unit.property_id));
     const unitNumber = String(unit.unitNumber || unit.unit_number || "");
-    const propertyName = parentProperty?.name || "";
-    const parentLocation = [parentProperty?.location, parentProperty?.city, parentProperty?.province, parentProperty?.address].filter(Boolean).join(" ");
-    const unitLocation = [unit.address, unit.location, parentLocation].filter(Boolean).join(" ");
+    const condoName = unit.name || unit.title || parentProperty?.name || "";
+    const unitLocation = [unit.address, unit.city, unit.province, unit.location, parentProperty?.location, parentProperty?.city, parentProperty?.province].filter(Boolean).join(" ");
     const unitType = unit.type || parentProperty?.type || "condominium";
     const rentAmount = Number(unit.rentAmount ?? unit.rent_amount ?? parentProperty?.rentAmount ?? parentProperty?.monthlyRent ?? 0);
-    const haystack = [unitNumber, `unit ${unitNumber}`, propertyName, unitLocation, unit.address, unitType, unit.status, unit.floor ? `floor ${unit.floor}` : ""]
+    const amenitiesKeywords = extractAmenities(unit).join(" ");
+    const haystack = [unitNumber, `unit ${unitNumber}`, condoName, unitLocation, unit.address, unit.city, unit.province, unitType, unit.status, amenitiesKeywords, unit.floor ? `floor ${unit.floor}` : ""]
       .filter(Boolean).join(" ").toLowerCase();
+
+    const bedroomMatch = matchesRoomCount(unit, "bedroom", bedroomFilter) || (Boolean(parentProperty) && getRoomCountNumber(unit, "bedroom") === null && matchesRoomCount(parentProperty, "bedroom", bedroomFilter));
+    const bathroomMatch = matchesRoomCount(unit, "bathroom", bathroomFilter) || (Boolean(parentProperty) && getRoomCountNumber(unit, "bathroom") === null && matchesRoomCount(parentProperty, "bathroom", bathroomFilter));
+    const furnishingMatch = matchesFurnishing(unit) || (Boolean(parentProperty) && extractAmenities(unit).length === 0 && matchesFurnishing(parentProperty));
 
     return (!normalizedSearch || haystack.includes(normalizedSearch))
       && (!locationFilter || unitLocation.toLowerCase().includes(locationFilter.toLowerCase()))
       && matchesPropertyTypeFilter(unitType, true, parentProperty)
       && (minPrice === 0 || rentAmount >= minPrice)
       && rentAmount <= maxPrice
-      && matchesRoomCount(parentProperty || unit, "bedroom", bedroomFilter)
-      && matchesRoomCount(parentProperty || unit, "bathroom", bathroomFilter)
-      && matchesFurnishing(parentProperty || unit);
+      && bedroomMatch
+      && bathroomMatch
+      && furnishingMatch;
   };
 
   const filteredProperties = properties.filter((property: any) => matchesPropertyFilters(property));
@@ -1851,9 +2081,8 @@ export default function LandingPage() {
                 {displayListings.map((item, i) => {
                   if (item.kind === "property") {
                     const property = item.property;
-                    const location = property.location || "Cebu, Manila, Butuan, Davao";
-                    const propertyType = property.type === "condominium" ? "Condominium" : "Property";
                     const propertyUnits = units.filter((unit: any) => (unit.propertyId || unit.property_id) === property.id);
+                    const houseDetails = parseHouseDetails(property, propertyUnits);
                     const ownerPropertyImages = (
                       Array.isArray(property.imageUrls) && property.imageUrls.length > 0
                         ? property.imageUrls
@@ -1874,10 +2103,11 @@ export default function LandingPage() {
                     const img = propertyImages[0] || property.imageUrl || property.image_url || unitImages[i % unitImages.length];
                     const rents = propertyUnits.map((unit: any) => Number(unit.rentAmount ?? unit.rent_amount ?? 0)).filter(Boolean);
                     const price = rents.length ? Math.min(...rents) : Number(property.monthlyRevenue || property.monthly_revenue || property.rentAmount || property.rent_amount || 0);
-                    const isAvailable = propertyUnits.length === 0 || propertyUnits.some((unit: any) => (unit.status || "vacant") === "vacant");
-                    const bedrooms = getRoomCountDisplay(property, "bedroom");
-                    const bathrooms = getRoomCountDisplay(property, "bathroom");
                     const propDisplay = getPropertyDisplayType(property);
+                    const subdivisionLine = [
+                      houseDetails.subdivision && houseDetails.subdivision.toLowerCase() !== houseDetails.name.toLowerCase() ? houseDetails.subdivision : "",
+                      houseDetails.subdivisionSummary,
+                    ].filter(Boolean).join(" • ");
 
                     return (
                       <motion.div
@@ -1909,30 +2139,56 @@ export default function LandingPage() {
                                 <>₱0<span className="ml-1 text-sm font-medium text-slate-500">/mo</span></>
                               )}
                             </p>
-                            <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide", isAvailable ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-amber-50 text-amber-700 border border-amber-200")}>
-                              {isAvailable ? "Available" : "Occupied"}
+                            <span className={cn(
+                              "rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide",
+                              houseDetails.isAvailable
+                                ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                : houseDetails.isMaintenance
+                                  ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                  : "bg-amber-50 text-amber-700 border border-amber-200"
+                            )}>
+                              {houseDetails.availabilityLabel}
                             </span>
                           </div>
 
                           <h3
                             onClick={() => setSelectedProperty(property)}
                             className="mt-2 text-lg font-semibold leading-snug text-slate-950 transition-colors group-hover:text-blue-700 truncate cursor-pointer hover:underline"
-                            title={`Click to view ${property.name} building details`}
+                            title={`Click to view ${property.name} details`}
                           >
                             {property.name}
                           </h3>
 
-                          <p className="mb-4 mt-2 flex items-start gap-1 text-sm leading-5 text-slate-600">
-                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" />
-                            <span className="truncate">{location}</span>
-                          </p>
+                          {subdivisionLine && (
+                            <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                              <Home className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                              <span className="truncate">{subdivisionLine}</span>
+                            </div>
+                          )}
+
+                          {houseDetails.completeAddress && (
+                            <p className={cn("mb-4 flex items-start gap-1 text-sm leading-5 text-slate-600", subdivisionLine ? "mt-1.5" : "mt-2")}>
+                              <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" />
+                              <span className="truncate">{houseDetails.completeAddress}</span>
+                            </p>
+                          )}
 
                           <div className="flex items-center justify-between border-t border-slate-200 pt-4 text-xs text-slate-500">
                             <span className="flex items-center gap-2 text-sm text-slate-700">
-                              {bedrooms !== "Not specified" || bathrooms !== "Not specified" ? (
+                              {houseDetails.bedrooms || houseDetails.bathrooms ? (
                                 <>
-                                  <BedDouble className="h-4 w-4 text-blue-600" />{bedrooms}
-                                  <Bath className="ml-2 h-4 w-4 text-blue-600" />{bathrooms}
+                                  {houseDetails.bedrooms && (
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <BedDouble className="h-4 w-4 text-blue-600 shrink-0" />
+                                      <span>{houseDetails.bedrooms}</span>
+                                    </span>
+                                  )}
+                                  {houseDetails.bathrooms && (
+                                    <span className={cn("inline-flex items-center gap-1.5", houseDetails.bedrooms && "ml-2")}>
+                                      <Bath className="h-4 w-4 text-blue-600 shrink-0" />
+                                      <span>{houseDetails.bathrooms}</span>
+                                    </span>
+                                  )}
                                 </>
                               ) : isCondominiumProperty(property) ? (
                                 <>
@@ -1957,7 +2213,7 @@ export default function LandingPage() {
 
                   const unit = item.unit;
                   const parentProperty = properties.find((p) => p.id === (unit.propertyId || unit.property_id));
-                  const location = unit.address || parentProperty?.location || parentProperty?.city || parentProperty?.province || "Cebu, Manila, Butuan, Davao";
+                  const unitDetails = parseUnitDetails(unit, parentProperty);
                   const unitOwnerImages = (
                     Array.isArray(unit.imageUrls) && unit.imageUrls.length > 0
                       ? unit.imageUrls
@@ -1983,18 +2239,8 @@ export default function LandingPage() {
                       : [unitImages[i % unitImages.length]];
                   const fallbackImg = unitImagesList[0] || unit.imageUrl || unit.image_url || unitImages[i % unitImages.length];
                   const rent = Number(unit.rentAmount ?? unit.rent_amount ?? parentProperty?.rentAmount ?? 0);
-                  const isAvailable = (unit.status || "vacant").toLowerCase() === "vacant";
-                  const floorLabel = unit.floor ? `Floor ${unit.floor}` : null;
-                  const propName = parentProperty?.name || "ARC Towers Cebu";
-                  const rawUnitNum = String(unit.unitNumber || unit.unit_number || "").trim();
-                  const unitDisplayName = rawUnitNum.toLowerCase().startsWith("unit") ? rawUnitNum : `Unit ${rawUnitNum}`;
-                  const unitBedrooms = getRoomCountDisplay(unit, "bedroom") !== "Not specified"
-                    ? getRoomCountDisplay(unit, "bedroom")
-                    : getRoomCountDisplay(parentProperty, "bedroom");
-                  const unitBathrooms = getRoomCountDisplay(unit, "bathroom") !== "Not specified"
-                    ? getRoomCountDisplay(unit, "bathroom")
-                    : getRoomCountDisplay(parentProperty, "bathroom");
                   const unitDisplay = getUnitDisplayType(unit, parentProperty);
+                  const buildingLine = [unitDetails.condoName, unitDetails.towerInfo].filter(Boolean).join(" • ");
 
                   return (
                     <motion.div
@@ -2008,10 +2254,10 @@ export default function LandingPage() {
                     >
                       <div className="relative h-60 overflow-hidden bg-slate-100">
                         <motion.div className="relative h-full w-full" whileHover={{ scale: 1.04 }} transition={{ duration: 0.45, ease: "easeOut" }}>
-                          <UnitImageCarousel images={unitImagesList} fallbackImage={fallbackImg} alt={unitDisplayName} className="h-full w-full" imageClassName="object-cover" />
+                          <UnitImageCarousel images={unitImagesList} fallbackImage={fallbackImg} alt={unitDetails.unitLabel} className="h-full w-full" imageClassName="object-cover" />
                         </motion.div>
                         <div className="pointer-events-none absolute right-4 top-4 rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-bold text-slate-800 shadow-sm backdrop-blur-sm">
-                          {floorLabel || unitDisplay.label}
+                          {unitDetails.floorLabel ? `${unitDisplay.label} • ${unitDetails.floorLabel}` : unitDisplay.label}
                         </div>
                       </div>
 
@@ -2020,31 +2266,64 @@ export default function LandingPage() {
                           <p className="text-2xl font-bold tracking-tight text-slate-950">
                             ₱{rent.toLocaleString()}<span className="ml-1 text-sm font-medium text-slate-500">/mo</span>
                           </p>
-                          <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide", isAvailable ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-amber-50 text-amber-700 border border-amber-200")}>
-                            {isAvailable ? "Available" : "Occupied"}
+                          <span className={cn(
+                            "rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide",
+                            unitDetails.isAvailable
+                              ? "bg-blue-50 text-blue-700 border border-blue-200"
+                              : unitDetails.isMaintenance
+                                ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                : "bg-amber-50 text-amber-700 border border-amber-200"
+                          )}>
+                            {unitDetails.availabilityLabel}
                           </span>
                         </div>
 
-                        <h4 className="mt-2 text-lg font-semibold leading-snug text-slate-950 transition-colors group-hover:text-blue-700 truncate">
-                          {unitDisplayName} <span className="font-normal text-slate-500">— {propName}</span>
+                        <h4
+                          onClick={() => setSelectedUnit(unit)}
+                          className="mt-2 text-lg font-semibold leading-snug text-slate-950 transition-colors group-hover:text-blue-700 truncate cursor-pointer hover:underline"
+                          title={`Click to view ${unitDetails.unitLabel}${unitDetails.condoName ? ` – ${unitDetails.condoName}` : ""} details`}
+                        >
+                          {unitDetails.unitLabel}
+                          {unitDetails.condoName && <span className="font-normal text-slate-500"> – {unitDetails.condoName}</span>}
                         </h4>
 
-                        <div className="mt-2.5 flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                          <Building2 className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-                          <span className="truncate">{propName}</span>
-                        </div>
+                        {buildingLine && (
+                          <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                            <Building2 className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                            <span className="truncate">{buildingLine}</span>
+                          </div>
+                        )}
 
-                        <p className="mb-4 mt-1.5 flex items-start gap-1 text-sm leading-5 text-slate-600">
-                          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" />
-                          <span className="truncate">{location}</span>
-                        </p>
+                        {unitDetails.completeAddress && (
+                          <p className={cn("mb-4 flex items-start gap-1 text-sm leading-5 text-slate-600", buildingLine ? "mt-1.5" : "mt-2")}>
+                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" />
+                            <span className="truncate">{unitDetails.completeAddress}</span>
+                          </p>
+                        )}
 
                         <div className="flex items-center justify-between border-t border-slate-200 pt-4 text-xs text-slate-500">
                           <span className="flex items-center gap-2 text-sm text-slate-700">
-                            <BedDouble className="h-4 w-4 text-blue-600 shrink-0" />
-                            <span>{unitBedrooms}</span>
-                            <Bath className="ml-2 h-4 w-4 text-blue-600 shrink-0" />
-                            <span>{unitBathrooms}</span>
+                            {unitDetails.bedrooms || unitDetails.bathrooms ? (
+                              <>
+                                {unitDetails.bedrooms && (
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <BedDouble className="h-4 w-4 text-blue-600 shrink-0" />
+                                    <span>{unitDetails.bedrooms}</span>
+                                  </span>
+                                )}
+                                {unitDetails.bathrooms && (
+                                  <span className={cn("inline-flex items-center gap-1.5", unitDetails.bedrooms && "ml-2")}>
+                                    <Bath className="h-4 w-4 text-blue-600 shrink-0" />
+                                    <span>{unitDetails.bathrooms}</span>
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <Building2 className="h-4 w-4 text-blue-600 shrink-0" />
+                                <span>{unitDetails.floorLabel || unitDetails.unitTypeLabel}</span>
+                              </>
+                            )}
                           </span>
                           <motion.button whileHover={{ x: 4 }} onClick={() => setSelectedUnit(unit)} className="font-semibold text-blue-600 transition-colors hover:text-blue-800 flex items-center gap-1 cursor-pointer">
                             View Details <ArrowRight className="h-3.5 w-3.5" />
@@ -2397,66 +2676,124 @@ export default function LandingPage() {
                 </button>
               </div>
               <div className="space-y-6 p-6 sm:p-8">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">{getPropertyDisplayType(selectedProperty).label}</p>
-                  <h3 className="mt-2 text-2xl font-semibold leading-tight text-gray-950">{selectedProperty.name || selectedProperty.unitNumber || "Property Details"}</h3>
-                  <p className="mt-2 flex items-center gap-1.5 text-sm text-gray-600"><MapPin className="h-4 w-4 shrink-0" />{selectedProperty.location || selectedProperty.propertyName || "Location not specified"}</p>
-                </div>
                 {(() => {
-                  const selectedFeatures: string[] = Array.isArray(selectedProperty.features) ? selectedProperty.features : [];
-                  const featureCards = selectedFeatures.map((feature: string) => {
-                    const normalized = feature.toLowerCase();
-                    const icon = normalized.includes("bedroom") ? BedDouble
-                      : normalized.includes("bathroom") ? Bath
-                        : normalized.includes("parking") || normalized.includes("car") ? Car
-                          : normalized.includes("wi-fi") || normalized.includes("wifi") ? Wifi
-                            : normalized.includes("air conditioning") ? Snowflake
-                              : normalized.includes("furnished") ? Sofa
-                                : normalized.includes("kitchen") ? Utensils
-                                  : normalized.includes("laundry") ? WashingMachine
-                                    : normalized.includes("outdoor") ? TreePine
-                                      : normalized.includes("gated") ? LockKeyhole
-                                        : normalized.includes("floor area") || normalized.includes("sqm") || normalized.includes("m²") ? Grid2X2
-                                          : normalized.includes("lot area") ? Ruler
-                                            : Home;
-                    const label = normalized.includes("bedroom") ? "Bedrooms"
-                      : normalized.includes("bathroom") ? "Bathrooms"
-                        : normalized.includes("parking") || normalized.includes("car") ? "Car Parks"
-                          : normalized.includes("wi-fi") || normalized.includes("wifi") ? "Wi-Fi"
-                            : normalized.includes("air conditioning") ? "Air Conditioning"
-                              : normalized.includes("furnished") ? "Furnished"
-                                : normalized.includes("kitchen") ? "Kitchen"
-                                  : normalized.includes("laundry") ? "Laundry Area"
-                                    : normalized.includes("outdoor") ? "Outdoor Area"
-                                      : normalized.includes("gated") ? "Gated Property"
-                                        : feature.replace(/\d+/g, "").trim() || feature;
-                    const numericValue = feature.match(/\d+(?:\.\d+)?/)?.[0];
-                    const value = numericValue || (normalized.includes("parking") || normalized.includes("car") ? "1" : /^(yes|true)$/i.test(feature.trim()) ? "Yes" : feature.replace(/\d+/g, "").trim() === label ? "Yes" : feature.replace(new RegExp(label, "i"), "").trim() || "Yes");
-                    return { feature, icon, label, value };
-                  });
-                  return featureCards.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                      {featureCards.map((featureCard: { feature: string; icon: React.ElementType; label: string; value: string }, index: number) => (
-                        <div key={`${featureCard.feature}-${index}`} className="rounded-xl bg-gray-50 p-3 text-center sm:text-left">
-                          <featureCard.icon className="mx-auto h-5 w-5 text-gray-950 sm:mx-0" />
-                          <p className="mt-2 text-lg font-medium text-gray-950">{featureCard.value}</p>
-                          <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">{featureCard.label}</p>
+                  const propUnits = units.filter((u: any) => (u.propertyId || u.property_id) === selectedProperty.id);
+                  const houseDetails = parseHouseDetails(selectedProperty, propUnits);
+                  const propDisplay = getPropertyDisplayType(selectedProperty);
+                  const directRent = Number(selectedProperty.rentAmount || 0);
+                  const unitRents = propUnits.map((unit: any) => Number(unit.rentAmount ?? unit.rent_amount ?? 0)).filter((r: number) => r > 0);
+                  const displayPrice = directRent > 0 ? directRent : (unitRents.length ? Math.min(...unitRents) : Number(selectedProperty.monthlyRevenue || 0));
+
+                  const detailItems: { label: string; value: string; highlight?: boolean }[] = [
+                    { label: "Monthly Rent", value: `₱${displayPrice.toLocaleString()}/mo`, highlight: true },
+                    { label: "Availability", value: houseDetails.availabilityLabel },
+                  ];
+                  if (houseDetails.condition) detailItems.push({ label: "Condition", value: houseDetails.condition });
+                  if (houseDetails.subdivision) detailItems.push({ label: "Subdivision", value: houseDetails.subdivision });
+                  if (houseDetails.phase) detailItems.push({ label: "Phase", value: houseDetails.phase });
+                  if (houseDetails.block) detailItems.push({ label: "Block Number", value: houseDetails.block });
+                  if (houseDetails.lot) detailItems.push({ label: "Lot Number", value: houseDetails.lot });
+                  if (houseDetails.houseNumber) detailItems.push({ label: "House Number", value: houseDetails.houseNumber });
+                  if (houseDetails.streetAddress) detailItems.push({ label: "Street Address", value: houseDetails.streetAddress });
+                  if (houseDetails.cityProvince) detailItems.push({ label: "City & Province", value: houseDetails.cityProvince });
+                  if (houseDetails.bedrooms) detailItems.push({ label: "Bedrooms", value: houseDetails.bedrooms });
+                  if (houseDetails.bathrooms) detailItems.push({ label: "Bathrooms", value: houseDetails.bathrooms });
+                  if (houseDetails.furnishedStatus) detailItems.push({ label: "Furnished Status", value: houseDetails.furnishedStatus });
+
+                  return (
+                    <>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-blue-700">
+                            <Home className="h-3.5 w-3.5" /> {propDisplay.label}
+                          </span>
+                          {houseDetails.subdivision && houseDetails.subdivision.toLowerCase() !== houseDetails.name.toLowerCase() && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
+                              <Building2 className="h-3 w-3 text-slate-500" /> {houseDetails.subdivision}
+                            </span>
+                          )}
+                          <span className={cn(
+                            "rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide",
+                            houseDetails.isAvailable
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : houseDetails.isMaintenance
+                                ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                : "bg-amber-50 text-amber-700 border border-amber-200"
+                          )}>
+                            {houseDetails.availabilityLabel}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  ) : null;
+                        <h3 className="mt-2.5 text-2xl font-bold leading-tight text-gray-950">
+                          {selectedProperty.name || selectedProperty.unitNumber || "Property Details"}
+                        </h3>
+                        {houseDetails.subdivisionSummary && (
+                          <p className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-blue-700">
+                            <Home className="h-3.5 w-3.5 shrink-0" />
+                            <span>{houseDetails.subdivisionSummary}</span>
+                          </p>
+                        )}
+                        {houseDetails.completeAddress && (
+                          <p className="mt-1.5 flex items-center gap-1.5 text-sm text-gray-600">
+                            <MapPin className="h-4 w-4 shrink-0 text-blue-600" />
+                            <span>{houseDetails.completeAddress}</span>
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 border-y border-gray-200 py-4">
+                        {detailItems.map((item) => (
+                          <div key={item.label} className="rounded-xl bg-slate-50 border border-slate-100 p-3">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{item.label}</p>
+                            <p className={cn(
+                              "mt-1 text-sm font-bold break-words",
+                              item.highlight
+                                ? "text-base text-slate-950"
+                                : item.label === "Availability"
+                                  ? (houseDetails.isAvailable ? "text-emerald-700" : houseDetails.isMaintenance ? "text-rose-700" : "text-amber-700")
+                                  : "text-slate-900"
+                            )}>
+                              {item.value}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {houseDetails.amenities.length > 0 && (
+                        <div>
+                          <div className="mb-3 flex items-center justify-between">
+                            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Amenities &amp; Facilities</p>
+                            <span className="rounded-full bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">
+                              {houseDetails.amenities.length} {houseDetails.amenities.length === 1 ? "Feature" : "Features"}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                            {houseDetails.amenities.map((feature: string, index: number) => {
+                              const IconComponent = getAmenityIcon(feature);
+                              return (
+                                <div
+                                  key={`${feature}-${index}`}
+                                  className="flex items-center gap-2.5 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3.5 py-2.5 text-xs font-semibold text-slate-800 shadow-2xs"
+                                >
+                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                                    <IconComponent className="h-4 w-4" />
+                                  </span>
+                                  <span className="leading-snug">{feature}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedProperty.description && (
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Description</p>
+                          <p className="text-sm text-gray-700 leading-relaxed">{selectedProperty.description}</p>
+                        </div>
+                      )}
+                    </>
+                  );
                 })()}
-                <div className="grid grid-cols-2 gap-4 border-y border-gray-200 py-4">
-                  <div><p className="text-xs font-medium text-gray-500">Availability</p><p className="mt-1 text-sm font-semibold text-emerald-700">{selectedProperty.availabilityStatus || "Available"}</p></div>
-                  <div><p className="text-xs font-medium text-gray-500">Monthly Rent</p><p className="mt-1 text-lg font-bold text-gray-950">₱{(() => { const directRent = Number(selectedProperty.rentAmount || 0); if (directRent > 0) return directRent.toLocaleString(); const rents = units.filter((unit: any) => (unit.propertyId || unit.property_id) === selectedProperty.id).map((unit: any) => Number(unit.rentAmount ?? unit.rent_amount ?? 0)).filter((rent: number) => rent > 0); return (rents.length ? Math.min(...rents) : Number(selectedProperty.monthlyRevenue || 0)).toLocaleString(); })()}<span className="text-xs font-medium text-gray-500">/mo</span></p></div>
-                </div>
-                {selectedProperty.condition && <div><p className="text-xs font-medium text-gray-500">Condition</p><p className="mt-1 text-sm font-medium text-gray-950">{selectedProperty.condition}</p></div>}
-                {selectedProperty.description && (
-                  <div>
-                    <p className="text-xs text-gray-500 mb-2">Description</p>
-                    <p className="text-sm text-gray-700 leading-relaxed">{selectedProperty.description}</p>
-                  </div>
-                )}
 
                 {/* Available Units in this Property */}
                 {(() => {
@@ -2475,8 +2812,7 @@ export default function LandingPage() {
                       </div>
                       <div className="space-y-2.5">
                         {propUnits.map((u: any) => {
-                          const rawNum = String(u.unitNumber || u.unit_number || "").trim();
-                          const labelNum = rawNum.toLowerCase().startsWith("unit") ? rawNum : `Unit ${rawNum}`;
+                          const labelNum = formatUnitNumberLabel(u.unitNumber || u.unit_number);
                           const uRent = Number(u.rentAmount ?? u.rent_amount ?? 0);
                           const isVacant = (u.status || "vacant").toLowerCase() === "vacant";
                           return (
@@ -2735,7 +3071,8 @@ export default function LandingPage() {
                     : parentPropertyImages.length > 0
                       ? parentPropertyImages
                       : [];
-                  return <UnitImageCarousel images={images} alt={`Unit ${selectedUnit.unitNumber}`} className="h-full w-full" />;
+                  const uDetails = parseUnitDetails(selectedUnit, parentProperty);
+                  return <UnitImageCarousel images={images} alt={uDetails.condoName ? `${uDetails.unitLabel} – ${uDetails.condoName}` : uDetails.unitLabel} className="h-full w-full" />;
                 })()}
                 <button
                   type="button"
@@ -2754,79 +3091,112 @@ export default function LandingPage() {
                 {(() => {
                   const parentProperty = properties.find((p) => p.id === (selectedUnit.propertyId || selectedUnit.property_id));
                   const rent = Number(selectedUnit.rentAmount ?? selectedUnit.rent_amount ?? parentProperty?.rentAmount ?? 0);
-                  const isAvailable = (selectedUnit.status || "vacant").toLowerCase() === "vacant";
-                  const location = selectedUnit.address || parentProperty?.location || parentProperty?.city || parentProperty?.province || "Location not specified";
+                  const unitDetails = parseUnitDetails(selectedUnit, parentProperty);
+                  const cleanTitle = unitDetails.condoName
+                    ? `${unitDetails.unitLabel} – ${unitDetails.condoName}`
+                    : unitDetails.unitLabel;
+
+                  const unitDetailItems: { label: string; value: string; highlight?: boolean }[] = [
+                    { label: "Monthly Rent", value: `₱${rent.toLocaleString()}/mo`, highlight: true },
+                    { label: "Unit Number", value: unitDetails.unitLabel },
+                  ];
+                  if (unitDetails.condoName) unitDetailItems.push({ label: "Condominium", value: unitDetails.condoName });
+                  if (unitDetails.towerInfo) unitDetailItems.push({ label: "Tower / Building", value: unitDetails.towerInfo });
+                  if (unitDetails.floorLabel) unitDetailItems.push({ label: "Floor Level", value: unitDetails.floorLabel });
+                  if (unitDetails.bedrooms) unitDetailItems.push({ label: "Bedrooms", value: unitDetails.bedrooms });
+                  if (unitDetails.bathrooms) unitDetailItems.push({ label: "Bathrooms", value: unitDetails.bathrooms });
+                  if (unitDetails.condition) unitDetailItems.push({ label: "Unit Condition", value: unitDetails.condition });
+                  unitDetailItems.push({ label: "Availability", value: unitDetails.availabilityLabel });
+                  unitDetailItems.push({ label: "Unit Type", value: unitDetails.unitTypeLabel });
 
                   return (
                     <>
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-indigo-700">
-                            <DoorOpen className="h-3.5 w-3.5" /> Unit {selectedUnit.unitNumber}
+                            <DoorOpen className="h-3.5 w-3.5" /> {unitDetails.unitLabel}
                           </span>
-                          {parentProperty && (
+                          {unitDetails.condoName && (
                             <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
-                              <Building2 className="h-3 w-3 text-slate-500" /> {parentProperty.name}
+                              <Building2 className="h-3 w-3 text-slate-500" /> {unitDetails.condoName}
                             </span>
                           )}
-                          <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide", isAvailable ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-amber-50 text-amber-700 border border-amber-200")}>
-                            {isAvailable ? "Available for Rent" : "Currently Occupied"}
+                          {unitDetails.towerInfo && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
+                              {unitDetails.towerInfo}
+                            </span>
+                          )}
+                          <span className={cn(
+                            "rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide",
+                            unitDetails.isAvailable
+                              ? "bg-blue-50 text-blue-700 border border-blue-200"
+                              : unitDetails.isMaintenance
+                                ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                : "bg-amber-50 text-amber-700 border border-amber-200"
+                          )}>
+                            {unitDetails.availabilityBadgeLabel}
                           </span>
                         </div>
-                        <h3 className="mt-2 text-2xl font-bold leading-tight text-gray-950">
-                          Unit {selectedUnit.unitNumber} {parentProperty ? `— ${parentProperty.name}` : ""}
+                        <h3 className="mt-2.5 text-2xl font-bold leading-tight text-gray-950">
+                          {cleanTitle}
                         </h3>
-                        <p className="mt-2 flex items-center gap-1.5 text-sm text-gray-600">
-                          <MapPin className="h-4 w-4 shrink-0 text-blue-600" />{location}
-                        </p>
+                        {unitDetails.completeAddress && (
+                          <p className="mt-2 flex items-center gap-1.5 text-sm text-gray-600">
+                            <MapPin className="h-4 w-4 shrink-0 text-blue-600" />
+                            <span>{unitDetails.completeAddress}</span>
+                          </p>
+                        )}
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 border-y border-gray-200 py-4">
-                        <div className="rounded-xl bg-slate-50 p-2.5">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Monthly Rent</p>
-                          <p className="mt-1 text-base font-bold text-slate-900">₱{rent.toLocaleString()}<span className="text-xs font-normal text-slate-500">/mo</span></p>
-                        </div>
-                        <div className="rounded-xl bg-slate-50 p-2.5">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Floor Level</p>
-                          <p className="mt-1 text-base font-bold text-slate-900">{selectedUnit.floor ? `Floor ${selectedUnit.floor}` : "Ground Floor"}</p>
-                        </div>
-                        <div className="rounded-xl bg-slate-50 p-2.5">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Bedrooms</p>
-                          <p className="mt-1 text-base font-bold text-slate-900">{getRoomCountDisplay(selectedUnit, "bedroom") !== "Not specified" ? getRoomCountDisplay(selectedUnit, "bedroom") : getRoomCountDisplay(parentProperty, "bedroom")}</p>
-                        </div>
-                        <div className="rounded-xl bg-slate-50 p-2.5">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Bathrooms</p>
-                          <p className="mt-1 text-base font-bold text-slate-900">{getRoomCountDisplay(selectedUnit, "bathroom") !== "Not specified" ? getRoomCountDisplay(selectedUnit, "bathroom") : getRoomCountDisplay(parentProperty, "bathroom")}</p>
-                        </div>
-                        <div className="rounded-xl bg-slate-50 p-2.5">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Status</p>
-                          <p className="mt-1 text-base font-bold text-emerald-700">{isAvailable ? "Available" : "Occupied"}</p>
-                        </div>
-                        <div className="rounded-xl bg-slate-50 p-2.5">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Type</p>
-                          <p className="mt-1 text-base font-bold text-slate-900 capitalize">{getUnitDisplayType(selectedUnit, parentProperty).label}</p>
-                        </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 border-y border-gray-200 py-4">
+                        {unitDetailItems.map((item) => (
+                          <div key={item.label} className="rounded-xl bg-slate-50 border border-slate-100 p-3">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{item.label}</p>
+                            <p className={cn(
+                              "mt-1 text-sm font-bold break-words",
+                              item.highlight
+                                ? "text-base text-slate-950"
+                                : item.label === "Availability"
+                                  ? (unitDetails.isAvailable ? "text-emerald-700" : unitDetails.isMaintenance ? "text-rose-700" : "text-amber-700")
+                                  : "text-slate-900"
+                            )}>
+                              {item.value}
+                            </p>
+                          </div>
+                        ))}
                       </div>
 
-
-                      {parentProperty?.features && Array.isArray(parentProperty.features) && parentProperty.features.length > 0 && (
+                      {unitDetails.amenities.length > 0 && (
                         <div>
-                          <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Amenities & Building Features</p>
-                          <div className="flex flex-wrap gap-2">
-                            {parentProperty.features.map((feature: string, idx: number) => (
-                              <span key={idx} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700">
-                                <CheckCircle2 className="h-3.5 w-3.5 text-blue-600" />
-                                {feature}
-                              </span>
-                            ))}
+                          <div className="mb-3 flex items-center justify-between">
+                            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Amenities &amp; Facilities</p>
+                            <span className="rounded-full bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
+                              {unitDetails.amenities.length} {unitDetails.amenities.length === 1 ? "Feature" : "Features"}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                            {unitDetails.amenities.map((feature: string, idx: number) => {
+                              const IconComponent = getAmenityIcon(feature);
+                              return (
+                                <div
+                                  key={`${feature}-${idx}`}
+                                  className="flex items-center gap-2.5 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3.5 py-2.5 text-xs font-semibold text-slate-800 shadow-2xs"
+                                >
+                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                                    <IconComponent className="h-4 w-4" />
+                                  </span>
+                                  <span className="leading-snug">{feature}</span>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
 
                       {/* Matched Agents for Inquiry */}
                       {(() => {
-                        const propLocation = String(location).toLowerCase().trim();
-                        const propAgentId = parentProperty?.agentId || parentProperty?.agent_id;
+                        const propLocation = String(unitDetails.completeAddress || selectedUnit.city || selectedUnit.province || "").toLowerCase().trim();
+                        const propAgentId = selectedUnit.agentId || selectedUnit.agent_id || parentProperty?.agentId || parentProperty?.agent_id;
 
                         const REGIONS = [
                           { name: "Cebu", tokens: ["cebu", "mandaue", "lapu-lapu", "lapu lapu", "talisay", "consolacion", "minglanilla", "liloan", "cordova"] },
@@ -2872,12 +3242,14 @@ export default function LandingPage() {
                                 </span>
                                 <div>
                                   <h4 className="text-base font-bold text-slate-900 leading-snug">
-                                    Inquire for Unit {selectedUnit.unitNumber}
+                                    Inquire for {cleanTitle}
                                   </h4>
-                                  <p className="text-xs text-slate-600 flex items-center gap-1 mt-0.5">
-                                    <MapPin className="h-3 w-3 text-indigo-600 shrink-0" />
-                                    <span>{location}</span>
-                                  </p>
+                                  {unitDetails.completeAddress && (
+                                    <p className="text-xs text-slate-600 flex items-center gap-1 mt-0.5">
+                                      <MapPin className="h-3 w-3 text-indigo-600 shrink-0" />
+                                      <span>{unitDetails.completeAddress}</span>
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                               {sortedAgents.length > 0 && (
@@ -2932,7 +3304,7 @@ export default function LandingPage() {
                                           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
                                             <span className="flex items-center gap-1 text-slate-700 font-medium">
                                               <MapPin className="h-3 w-3 text-indigo-600 shrink-0" />
-                                              {agent.location || location || "Philippines"}
+                                              {agent.location || unitDetails.completeAddress || "Philippines"}
                                             </span>
                                             {agent.experience && (
                                               <span className="text-slate-500">
@@ -2945,7 +3317,7 @@ export default function LandingPage() {
 
                                       <div className="flex items-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 shrink-0">
                                         <Link
-                                          href={`/agents/${encodeURIComponent(agent.id)}?propertyId=${encodeURIComponent(parentProperty?.id || "")}&propertyName=${encodeURIComponent(parentProperty?.name || `Unit ${selectedUnit.unitNumber}`)}#message`}
+                                          href={`/agents/${encodeURIComponent(agent.id)}?propertyId=${encodeURIComponent(parentProperty?.id || selectedUnit.id || "")}&propertyName=${encodeURIComponent(cleanTitle)}#message`}
                                           className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 active:scale-[0.98] transition-all"
                                         >
                                           <MessageCircle className="h-4 w-4" />
@@ -2965,7 +3337,7 @@ export default function LandingPage() {
                                     Inquire with our registered agents
                                   </p>
                                   <p className="mt-1 text-xs text-slate-500 max-w-md mx-auto">
-                                    Browse available agents to schedule a visit or ask questions about Unit {selectedUnit.unitNumber}.
+                                    Browse available agents to schedule a visit or ask questions about {cleanTitle}.
                                   </p>
                                   <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
                                     <Link
