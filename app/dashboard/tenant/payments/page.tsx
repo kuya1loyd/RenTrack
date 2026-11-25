@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
@@ -49,6 +50,14 @@ export default function TenantPaymentsPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [tenant, setTenant] = useState<TenantRecord | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "contract" | "payments">("payments");
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams?.get("tab") || "";
+
+  useEffect(() => {
+    if (requestedTab === "contract" || requestedTab === "overview" || requestedTab === "payments") {
+      setActiveTab(requestedTab);
+    }
+  }, [requestedTab]);
 
   // Payment Submission Modal
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);

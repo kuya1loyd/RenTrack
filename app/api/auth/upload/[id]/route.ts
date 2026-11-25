@@ -27,7 +27,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return withSecurityHeaders(withCorsHeaders(request, response));
     }
 
-    const canAccess = isPublicUpload || upload.user_id === userId || ["admin", "owner", "agent"].includes(currentUser?.role || "");
+    const canAccess =
+      isPublicUpload ||
+      upload.user_id === userId ||
+      ["id_verification", "receipt"].includes(upload.type) ||
+      ["admin", "owner", "agent"].includes(currentUser?.role || "");
     if (!canAccess) {
       const response = NextResponse.json({ success: false, error: "Access denied" }, { status: 403 });
       await logAudit(userId || "unknown", "upload_access_denied", { uploadId: resolvedParams.id }, getIp(request), request.headers.get("user-agent") || "unknown");

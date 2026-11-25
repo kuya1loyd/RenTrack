@@ -262,13 +262,13 @@ export default function TenantPropertiesPage() {
       {/* Management Banner matching tenant dashboard styling */}
       <ManagementBanner
         category="PROPERTY DIRECTORY"
-        title="My Properties"
-        description="Browse subdivision and house rental properties and view your assigned home."
+        title="Available Property"
+        description="Browse available subdivision and house rental properties in your area."
         icon={Building2}
       />
 
       {/* Tenant's Acquired / Assigned House Property */}
-      <MyRentalCard state={myRental} filter="property" />
+      <MyRentalCard state={myRental} filter="property" hideWhenEmpty />
 
       {/* Search & Filter Controls Bar (Exact match to screenshot 2) */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">

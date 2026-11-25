@@ -38,12 +38,46 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   refreshUser: () => Promise<void>;
-  setUser: (user: Omit<User, "password"> | null) => void;
+  setUser: (user: Omit<User, "password"> | null, sessionToken?: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const SESSION_KEY = "renttrack_session";
+const TAB_TOKEN_KEY = "renttrack_tab_token";
+
+function detectExpectedPortalRole(): string | null {
+  if (typeof window === "undefined") return null;
+  const path = window.location.pathname || "";
+  if (path.startsWith("/dashboard/owner")) return "owner";
+  if (path.startsWith("/dashboard/agent")) return "agent";
+  if (path.startsWith("/dashboard/tenant")) return "tenant";
+  if (path.startsWith("/dashboard/admin")) return "admin";
+  return null;
+}
+
+export function savePortalAuthToken(token?: string | null, role?: string | null) {
+  if (typeof window === "undefined" || !token) return;
+  try {
+    sessionStorage.setItem(TAB_TOKEN_KEY, token);
+    if (role) {
+      localStorage.setItem(`renttrack_token_${role.toLowerCase()}`, token);
+    }
+  } catch {}
+}
+
+export function getPortalAuthHeaders(roleHint?: string): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const targetRole = (roleHint || detectExpectedPortalRole() || "").toLowerCase();
+    const roleToken = targetRole ? localStorage.getItem(`renttrack_token_${targetRole}`) : null;
+    const tabToken = sessionStorage.getItem(TAB_TOKEN_KEY);
+    const token = roleToken || tabToken;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
 
 export { SESSION_KEY };
 
@@ -51,7 +85,7 @@ async function apiCall(url: string, body: Record<string, unknown>) {
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getPortalAuthHeaders() },
       credentials: "include",
       body: JSON.stringify(body),
     });
@@ -68,7 +102,7 @@ async function apiCall(url: string, body: Record<string, unknown>) {
 
 async function apiGet(url: string) {
   try {
-    const res = await fetch(url, { credentials: "include" });
+    const res = await fetch(url, { credentials: "include", headers: getPortalAuthHeaders() });
     const contentType = res.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       const data = await res.json();
@@ -84,10 +118,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<Omit<User, "password"> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const setUser = useCallback((user: Omit<User, "password"> | null) => {
+  const setUser = useCallback((user: Omit<User, "password"> | null, sessionToken?: string) => {
     setUserState(user);
     if (user) {
       localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+      if (user.role) {
+        localStorage.setItem(`renttrack_user_${user.role.toLowerCase()}`, JSON.stringify(user));
+      }
+      if (sessionToken) {
+        savePortalAuthToken(sessionToken, user.role);
+      }
     } else {
       localStorage.removeItem(SESSION_KEY);
     }
@@ -95,7 +135,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     (async () => {
-      if (!localStorage.getItem(SESSION_KEY)) {
+      const expectedRole = detectExpectedPortalRole();
+      const cachedRoleUser = expectedRole ? localStorage.getItem(`renttrack_user_${expectedRole}`) : null;
+      if (!localStorage.getItem(SESSION_KEY) && !cachedRoleUser) {
         setIsLoading(false);
         return;
       }
@@ -103,8 +145,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const result = await apiGet("/api/auth/me");
         if (result.success) {
+          if (result.sessionToken && result.user?.role) {
+            savePortalAuthToken(result.sessionToken, result.user.role);
+          }
           setUserState(result.user);
           localStorage.setItem(SESSION_KEY, JSON.stringify(result.user));
+          if (result.user?.role) {
+            localStorage.setItem(`renttrack_user_${result.user.role.toLowerCase()}`, JSON.stringify(result.user));
+          }
         } else if (result.status === 401) {
           setUserState(null);
           localStorage.removeItem(SESSION_KEY);
@@ -180,8 +228,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const result = await apiCall("/api/auth/login", { email, password });
         if (result.success) {
+          if (result.sessionToken) {
+            savePortalAuthToken(result.sessionToken, result.user?.role);
+          }
           setUserState(result.user);
           localStorage.setItem(SESSION_KEY, JSON.stringify(result.user));
+          if (result.user?.role) {
+            localStorage.setItem(`renttrack_user_${result.user.role.toLowerCase()}`, JSON.stringify(result.user));
+          }
           toast.success(`Welcome back, ${result.user.name}!`);
           return true;
         } else {

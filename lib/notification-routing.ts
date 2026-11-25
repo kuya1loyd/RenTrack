@@ -13,8 +13,15 @@ const defaultHref: Record<string, string> = {
   tenant: "/dashboard/tenant",
 };
 
+/** Contract notices are never maintenance/system alerts, even when saved with a generic type. */
+export function isContractNotification(notification: NotificationRoutingInput): boolean {
+  const text = `${notification.title || ""} ${notification.message || ""}`.toLowerCase();
+  return /\b(?:rental\s+contract|contract|lease\s+agreement)\b/.test(text);
+}
+
 /** Checks whether a notification is an informational system maintenance or platform alert. */
 export function isMaintenanceNotification(notification: NotificationRoutingInput): boolean {
+  if (isContractNotification(notification)) return false;
   const title = (notification.title || "").toLowerCase();
   const message = (notification.message || "").toLowerCase();
   const type = (notification.type || "").toLowerCase();
@@ -39,6 +46,14 @@ export function getNotificationDashboardHref(
   const isOwner = role === "owner";
   const isAgent = role === "agent";
   const isTenant = role === "tenant";
+
+  // Contract notices go straight to the contracts page for each role.
+  if (isContractNotification(notification)) {
+    if (isOwner) return "/dashboard/owner#contracts";
+    if (isAgent) return "/dashboard/agent#contracts";
+    if (isAdmin) return "/dashboard/admin?tab=overview";
+    if (isTenant) return "/dashboard/tenant/payments?tab=contract";
+  }
 
   // System maintenance and platform announcements evaluated first so that messages
   // containing maintenance updates (e.g. system upgrades or maintenance periods)
@@ -66,7 +81,7 @@ export function getNotificationDashboardHref(
   if (/contract|lease\s+agreement/.test(cleanText)) {
     if (isOwner) return "/dashboard/owner#contracts";
     if (isAgent) return "/dashboard/agent#contracts";
-    if (isTenant) return "/dashboard/tenant/units";
+    if (isTenant) return "/dashboard/tenant/payments?tab=contract";
   }
 
   if (

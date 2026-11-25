@@ -29,12 +29,20 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       if (!authorized && contract.property_id) {
         const { data: prop } = await admin.from("properties").select("created_by").eq("id", contract.property_id).maybeSingle();
         if (prop?.created_by === auth.userId) authorized = true;
+        if (!authorized) {
+          const { data: unit } = await admin.from("units").select("created_by").eq("id", contract.property_id).maybeSingle();
+          if (unit?.created_by === auth.userId) authorized = true;
+        }
       }
     } else if (!authorized && auth.user.role === "agent") {
       authorized = contract.agent_id === auth.userId;
       if (!authorized && contract.property_id) {
         const { data: prop } = await admin.from("properties").select("agent_id").eq("id", contract.property_id).maybeSingle();
         if (prop?.agent_id === auth.userId) authorized = true;
+        if (!authorized) {
+          const { data: unit } = await admin.from("units").select("agent_id").eq("id", contract.property_id).maybeSingle();
+          if (unit?.agent_id === auth.userId) authorized = true;
+        }
       }
     } else if (!authorized && auth.user.role === "tenant") {
       if (contract.tenant_id === auth.userId) {

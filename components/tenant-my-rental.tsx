@@ -403,7 +403,7 @@ export function MyInquiriesSection({
                   href={inq.kind === "unit" ? "/dashboard/tenant/units" : "/dashboard/tenant/properties-page"}
                   className="font-semibold text-blue-600 hover:underline"
                 >
-                  View in {inq.kind === "unit" ? "My Units" : "My Property"} →
+                  View in {inq.kind === "unit" ? "Available Unit" : "Available Property"} →
                 </Link>
               </div>
             </div>

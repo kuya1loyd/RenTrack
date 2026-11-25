@@ -15,6 +15,6 @@ export async function POST(request: NextRequest) {
     await logAudit(user.id, "logout", { email: user.email, name: user.name }, ip, userAgent);
   }
   const response = NextResponse.json({ success: true });
-  clearSessionCookie(response);
+  clearSessionCookie(response, user?.role);
   return response;
 }

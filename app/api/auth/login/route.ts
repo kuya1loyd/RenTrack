@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findUserByEmail, logAudit, updateUserPresence, initDatabase, ensureBuiltInAccount, createLoginOtp, getSystemConfig } from "@/lib/db";
-import { regenerateSession } from "@/lib/security";
+import { regenerateSession, createSessionToken } from "@/lib/security";
 import { clearRateLimit } from "@/lib/auth-security";
 import { validateApiRequest } from "@/lib/api-security";
 import bcrypt from "bcryptjs";
@@ -136,7 +136,8 @@ export async function POST(request: NextRequest) {
 
     const safeUser = { ...user };
     delete safeUser.password;
-    const response = NextResponse.json({ success: true, user: safeUser });
+    const sessionToken = createSessionToken(user.id, user.role);
+    const response = NextResponse.json({ success: true, user: safeUser, sessionToken });
     regenerateSession(response, user.id, user.role);
     return withSecurityHeaders(withCorsHeaders(request, response));
   } catch (error: any) {

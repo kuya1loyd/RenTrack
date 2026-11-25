@@ -332,13 +332,13 @@ export default function TenantUnitsPage() {
       {/* Management Banner matching tenant properties styling */}
       <ManagementBanner
         category="UNIT DIRECTORY"
-        title="Available & Assigned Units"
-        description="Browse available condominium units and view your assigned unit."
+        title="Available Unit"
+        description="Browse available condominium units ready for rent in your area."
         icon={Building2}
       />
 
       {/* Tenant's Acquired / Assigned Condominium Unit */}
-      <MyRentalCard state={myRental} filter="unit" />
+      <MyRentalCard state={myRental} filter="unit" hideWhenEmpty />
 
       {/* Search & Filter Controls Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">

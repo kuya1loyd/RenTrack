@@ -284,7 +284,7 @@ export interface AuditLog {
   createdAt: string;
 }
 
-// ─── API Helper ────────────────────────────────────────────────────────────
+import { getPortalAuthHeaders } from "@/lib/auth";
 
 export async function safeParseJson(res: Response) {
   try {
@@ -301,7 +301,7 @@ export async function safeParseJson(res: Response) {
 
 async function apiGet(url: string) {
   try {
-    const res = await fetch(url, { credentials: "include", cache: "no-store", next: { revalidate: 0 } });
+    const res = await fetch(url, { credentials: "include", headers: getPortalAuthHeaders(), cache: "no-store", next: { revalidate: 0 } });
     if (!res.ok) {
       return { success: false, error: `Request failed with status ${res.status}` };
     }
@@ -315,7 +315,7 @@ async function apiPost(url: string, body: any) {
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getPortalAuthHeaders() },
       body: JSON.stringify(body),
       credentials: "include",
     });
@@ -329,6 +329,7 @@ async function apiPostForm(url: string, formData: FormData) {
   try {
     const res = await fetch(url, {
       method: "POST",
+      headers: getPortalAuthHeaders(),
       body: formData,
       credentials: "include",
     });
@@ -342,7 +343,7 @@ async function apiPatch(url: string, body: any) {
   try {
     const res = await fetch(url, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getPortalAuthHeaders() },
       body: JSON.stringify(body),
       credentials: "include",
     });
@@ -356,7 +357,7 @@ async function apiDelete(url: string, body: any) {
   try {
     const res = await fetch(url, {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getPortalAuthHeaders() },
       body: JSON.stringify(body),
       credentials: "include",
     });

@@ -176,6 +176,31 @@ textarea {
   cursor: text !important;
 }
 
+/* Ensure autofilled inputs always render legible dark text on light backgrounds */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: #0f172a !important;
+  caret-color: #0f172a;
+  -webkit-box-shadow: 0 0 0px 1000px #ffffff inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus,
+.dark input:-webkit-autofill:active {
+  -webkit-text-fill-color: #f1f5f9 !important;
+  caret-color: #f1f5f9;
+  -webkit-box-shadow: 0 0 0px 1000px #1e293b inset !important;
+}
+
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}
+
 /* Disabled clickable elements show not-allowed cursor */
 button:disabled,
 button[disabled],

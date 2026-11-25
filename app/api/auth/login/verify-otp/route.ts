@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyLoginOtp, initDatabase, findUserById, logAudit } from "@/lib/db";
-import { regenerateSession } from "@/lib/security";
+import { regenerateSession, createSessionToken } from "@/lib/security";
 import { withSecurityHeaders, withCorsHeaders, getClientIp } from "@/lib/security-headers";
 
 export async function POST(request: NextRequest) {
@@ -22,9 +22,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
     }
 
+    const sessionToken = createSessionToken(user.id, user.role);
     const response = NextResponse.json({
       success: true,
       message: "Login verified successfully",
+      sessionToken,
       user: {
         id: user.id,
         name: user.name,

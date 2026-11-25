@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findUserById, updateUserPresence, initDatabase } from "@/lib/db";
-import { getSessionUserId } from "@/lib/security";
+import { createSessionToken, getSessionUserId } from "@/lib/security";
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,9 +20,17 @@ export async function GET(request: NextRequest) {
 
     const safeUser = { ...user };
     delete safeUser.password;
-    const response = NextResponse.json({ success: true, user: safeUser });
+    const sessionToken = createSessionToken(userId, user.role);
+    const response = NextResponse.json({ success: true, user: safeUser, sessionToken });
     if (user.role) {
-      response.cookies.set("renttrack_role", user.role, { path: "/", httpOnly: false, sameSite: "lax", maxAge: 60 * 60 * 8 });
+      const normalizedRole = String(user.role).toLowerCase();
+      response.cookies.set(`renttrack_session_${normalizedRole}`, sessionToken, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 60 * 8,
+      });
     }
     return response;
   } catch (error) {

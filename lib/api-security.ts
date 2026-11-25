@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUserId } from "@/lib/security";
+import { getSessionUserId, getSessionUserIdCandidates } from "@/lib/security";
 import { findUserById, logAudit } from "@/lib/db";
 import {
   withSecurityHeaders,
@@ -20,22 +20,42 @@ export interface SecureContext {
   userAgent: string;
 }
 
-export async function requireAuth(request: NextRequest): Promise<SecureContext | NextResponse> {
-  const userId = getSessionUserId(request);
-  if (!userId) {
+export async function requireAuth(request: NextRequest, preferredRoles?: string[]): Promise<SecureContext | NextResponse> {
+  const candidateIds = getSessionUserIdCandidates(request, preferredRoles);
+  if (!candidateIds.length) {
     const response = NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
     return withSecurityHeaders(withCorsHeaders(request, response));
   }
 
-  const user = await findUserById(userId);
-  if (!user) {
+  const normalizedPreferred = preferredRoles?.map((r) => r.toLowerCase());
+  let fallbackUser: Awaited<ReturnType<typeof findUserById>> = null;
+  let fallbackId = "";
+
+  for (const candidateId of candidateIds) {
+    const u = await findUserById(candidateId);
+    if (!u) continue;
+    if (!fallbackUser) {
+      fallbackUser = u;
+      fallbackId = candidateId;
+    }
+    if (!normalizedPreferred || normalizedPreferred.includes(String(u.role || "").toLowerCase())) {
+      return {
+        userId: candidateId,
+        user: u,
+        ip: getClientIp(request),
+        userAgent: getUserAgent(request),
+      };
+    }
+  }
+
+  if (!fallbackUser) {
     const response = NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
     return withSecurityHeaders(withCorsHeaders(request, response));
   }
 
   return {
-    userId,
-    user,
+    userId: fallbackId,
+    user: fallbackUser,
     ip: getClientIp(request),
     userAgent: getUserAgent(request),
   };
@@ -45,12 +65,23 @@ export async function requireRole(
   request: NextRequest,
   allowedRoles: string[]
 ): Promise<SecureContext | NextResponse> {
-  const auth = await requireAuth(request);
+  const auth = await requireAuth(request, allowedRoles);
   if (auth instanceof NextResponse) return auth;
 
-  if (!allowedRoles.includes(auth.user.role)) {
+  const actualRole = String(auth.user.role || "").toLowerCase();
+  const normalizedAllowed = allowedRoles.map((r) => r.toLowerCase());
+  if (!normalizedAllowed.includes(actualRole)) {
     await logAudit(auth.userId, "access_denied", { route: request.nextUrl.pathname, allowedRoles, actualRole: auth.user.role }, auth.ip, auth.userAgent);
-    const response = NextResponse.json({ success: false, error: "Insufficient permissions" }, { status: 403 });
+    const response = NextResponse.json(
+      {
+        success: false,
+        code: "ROLE_MISMATCH",
+        currentRole: actualRole,
+        requiredRoles: normalizedAllowed,
+        error: "Your session in this browser was switched to another account. Please confirm your login to continue.",
+      },
+      { status: 403 }
+    );
     return withSecurityHeaders(withCorsHeaders(request, response));
   }
 

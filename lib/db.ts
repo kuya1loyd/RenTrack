@@ -264,6 +264,8 @@ export async function initDatabase() {
     updated_at TIMESTAMPTZ DEFAULT NOW()
   )`);
     statements.push(`ALTER TABLE rental_contracts ALTER COLUMN agent_id DROP NOT NULL`);
+    statements.push(`ALTER TABLE rental_contracts DROP CONSTRAINT IF EXISTS rental_contracts_property_id_fkey`);
+    statements.push(`ALTER TABLE rental_contracts DROP CONSTRAINT IF EXISTS rental_contracts_tenant_id_fkey`);
     statements.push(`CREATE INDEX IF NOT EXISTS rental_contracts_owner_created_idx ON rental_contracts(owner_id, created_at DESC)`);
     statements.push(`CREATE INDEX IF NOT EXISTS rental_contracts_agent_created_idx ON rental_contracts(agent_id, created_at DESC)`);
     statements.push(`CREATE INDEX IF NOT EXISTS rental_contracts_tenant_created_idx ON rental_contracts(tenant_id, created_at DESC)`);
@@ -691,6 +693,11 @@ export async function ensureRentalContractsSchema(): Promise<void> {
         .limit(0);
 
       if (!probeError) {
+        try {
+          await (admin.rpc as any)("exec_sql", {
+            sql: "ALTER TABLE public.rental_contracts DROP CONSTRAINT IF EXISTS rental_contracts_property_id_fkey; ALTER TABLE public.rental_contracts DROP CONSTRAINT IF EXISTS rental_contracts_tenant_id_fkey;",
+          });
+        } catch {}
         await ensureUploadsTable().catch(() => false);
         return;
       }
@@ -715,6 +722,8 @@ export async function ensureRentalContractsSchema(): Promise<void> {
           updated_at TIMESTAMPTZ DEFAULT NOW()
         )`,
         "ALTER TABLE public.rental_contracts ALTER COLUMN agent_id DROP NOT NULL",
+        "ALTER TABLE public.rental_contracts DROP CONSTRAINT IF EXISTS rental_contracts_property_id_fkey",
+        "ALTER TABLE public.rental_contracts DROP CONSTRAINT IF EXISTS rental_contracts_tenant_id_fkey",
         "ALTER TABLE public.rental_contracts DROP CONSTRAINT IF EXISTS rental_contracts_status_check",
         "ALTER TABLE public.rental_contracts ADD CONSTRAINT rental_contracts_status_check CHECK (status IN ('requested', 'sent', 'rejected'))",
         "ALTER TABLE public.uploads DROP CONSTRAINT IF EXISTS uploads_type_check",

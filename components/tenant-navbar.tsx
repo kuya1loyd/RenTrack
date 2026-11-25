@@ -16,6 +16,7 @@ import {
   Clock,
   CreditCard,
   DoorOpen,
+  FileText,
   HelpCircle,
   Home,
   Info,
@@ -37,7 +38,7 @@ import {
   markAllNotificationsRead,
   Notification,
 } from "@/lib/data";
-import { getNotificationDashboardHref, isMaintenanceNotification } from "@/lib/notification-routing";
+import { getNotificationDashboardHref, isMaintenanceNotification, isContractNotification } from "@/lib/notification-routing";
 
 export default function TenantNavbar() {
   const pathname = usePathname();
@@ -146,6 +147,7 @@ export default function TenantNavbar() {
   };
 
   const getActionLabel = (href: string) => {
+    if (href.includes("tab=contract")) return "View Rental Contract";
     if (href.includes("/payments")) return "Go to Payments";
     if (href.includes("/units")) return "View My Unit";
     if (href.includes("/properties-page") || href.includes("/properties")) return "Browse Properties";
@@ -232,7 +234,7 @@ export default function TenantNavbar() {
                 aria-haspopup="true"
               >
                 <Building2 className={cn("h-4 w-4", (isActive("/dashboard/tenant/properties-page") || isActive("/dashboard/tenant/units") || isActive("/dashboard/tenant/inquiries") || propertyOpen) ? "text-blue-600" : "text-slate-600")} />
-                <span>My Property</span>
+                <span>Available Rentals</span>
                 <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200 text-slate-500", propertyOpen && "rotate-180 text-blue-600")} />
               </button>
 
@@ -243,7 +245,7 @@ export default function TenantNavbar() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 6, scale: 0.98 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute left-0 mt-2 min-w-[190px] rounded-xl border border-slate-200 bg-white p-1.5 text-slate-700 shadow-xl z-50"
+                    className="absolute left-0 mt-2 min-w-[205px] rounded-xl border border-slate-200 bg-white p-1.5 text-slate-700 shadow-xl z-50"
                   >
                     <Link
                       href="/dashboard/tenant/properties-page"
@@ -256,7 +258,7 @@ export default function TenantNavbar() {
                       )}
                     >
                       <Building2 className="h-4 w-4 text-blue-600" />
-                      <span>My Property</span>
+                      <span>Available Property</span>
                     </Link>
                     <Link
                       href="/dashboard/tenant/units"
@@ -269,7 +271,7 @@ export default function TenantNavbar() {
                       )}
                     >
                       <Layers className="h-4 w-4 text-blue-600" />
-                      <span>My Units</span>
+                      <span>Available Unit</span>
                     </Link>
                     <Link
                       href="/dashboard/tenant/inquiries"
@@ -508,7 +510,7 @@ export default function TenantNavbar() {
                         const isMaint = isMaintenanceNotification(n);
                         const type = (n.type || "").toLowerCase();
                         const cleanText = `${n.title || ""} ${n.message || ""}`.replace(/renttrack/gi, " ");
-                        const isSystem = isMaint || type === "system";
+                        const isSystem = !isContractNotification(n) && (isMaint || type === "system");
                         const isPayment = !isSystem && (type === "payment" || /\b(?:payment|payments|receipt|receipts|balance|billing|invoice|paid|due\s+date|monthly\s+rent)\b/i.test(cleanText) || (/\brent\b/i.test(cleanText) && /\b(?:paid|due|amount|balance|fee|deposit|invoice|pay|overdue|receipt)\b/i.test(cleanText)));
                         const isProperty = !isSystem && !isPayment && (type === "property" || /\b(?:property|properties|rental\s+unit|apartment|condo)\b/i.test(cleanText));
                         const isTenant = !isSystem && !isPayment && !isProperty && (type === "tenant" || /\b(?:assignment|assigned|assigned\s+unit|lease|tenancy)\b/i.test(cleanText));
@@ -783,7 +785,7 @@ export default function TenantNavbar() {
                   >
                     <div className="flex items-center gap-3">
                       <Building2 className="h-4 w-4" />
-                      <span>My Property</span>
+                      <span>Available Rentals</span>
                     </div>
                     <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", mobilePropertyOpen && "rotate-180")} />
                   </button>
@@ -800,7 +802,7 @@ export default function TenantNavbar() {
                         )}
                       >
                         <Building2 className="h-3.5 w-3.5 text-slate-500" />
-                        <span>My Property</span>
+                        <span>Available Property</span>
                       </Link>
                       <Link
                         href="/dashboard/tenant/units"
@@ -813,7 +815,7 @@ export default function TenantNavbar() {
                         )}
                       >
                         <Layers className="h-3.5 w-3.5 text-slate-500" />
-                        <span>My Units</span>
+                        <span>Available Unit</span>
                       </Link>
                       <Link
                         href="/dashboard/tenant/inquiries"
@@ -897,7 +899,8 @@ export default function TenantNavbar() {
           const isMaint = isMaintenanceNotification(selectedNotification);
           const type = (selectedNotification.type || "").toLowerCase();
           const cleanText = `${selectedNotification.title || ""} ${selectedNotification.message || ""}`.replace(/renttrack/gi, " ");
-          const isSystem = isMaint || type === "system";
+          const isContract = isContractNotification(selectedNotification);
+          const isSystem = !isContract && (isMaint || type === "system");
           const isPayment = !isSystem && (type === "payment" || /\b(?:payment|payments|receipt|receipts|balance|billing|invoice|paid|due\s+date|monthly\s+rent)\b/i.test(cleanText) || (/\brent\b/i.test(cleanText) && /\b(?:paid|due|amount|balance|fee|deposit|invoice|pay|overdue|receipt)\b/i.test(cleanText)));
           const isProperty = !isSystem && !isPayment && (type === "property" || /\b(?:property|properties|rental\s+unit|apartment|condo)\b/i.test(cleanText));
           const isTenant = !isSystem && !isPayment && !isProperty && (type === "tenant" || /\b(?:assignment|assigned|assigned\s+unit|lease|tenancy)\b/i.test(cleanText));
@@ -914,6 +917,12 @@ export default function TenantNavbar() {
             iconBg = "bg-gradient-to-br from-purple-500 to-indigo-600 text-white shadow-purple-500/25";
             accentGradient = "from-purple-500/10 via-indigo-500/5 to-transparent";
             IconComponent = Settings;
+          } else if (isContract) {
+            category = "Rental Contract";
+            badgeClass = "bg-indigo-50 text-indigo-700 border-indigo-200/80";
+            iconBg = "bg-gradient-to-br from-indigo-500 to-blue-600 text-white shadow-indigo-500/25";
+            accentGradient = "from-indigo-500/10 via-blue-500/5 to-transparent";
+            IconComponent = FileText;
           } else if (isPayment) {
             category = "Payment & Billing";
             badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200/80";

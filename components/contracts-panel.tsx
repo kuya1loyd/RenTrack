@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Download, FileText, Loader2, Search, Send, UploadCloud, XCircle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, Download, Eye, EyeOff, FileText, Loader2, Search, Send, UploadCloud, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { useAuth } from "@/lib/auth";
+import { useAuth, getPortalAuthHeaders, savePortalAuthToken } from "@/lib/auth";
 import { getAgents, getProperties, getTenants, getUnits, safeParseJson, Property, TenantRecord, Unit, UserRecord } from "@/lib/data";
 import { cn, formatDate } from "@/lib/utils";
 import { downloadExcelReport } from "@/lib/report-downloads";
@@ -48,7 +48,7 @@ function ContractsPagination({ page, total, onPageChange }: { page: number; tota
 }
 
 export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -60,6 +60,8 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
   const [recipientType, setRecipientType] = useState<"agent" | "tenant">("agent");
   const [title, setTitle] = useState("Rental contract");
   const [file, setFile] = useState<File | null>(null);
+  const [preparingFile, setPreparingFile] = useState(false);
+  const [uploadingContractId, setUploadingContractId] = useState<string | null>(null);
   const [requestMessage, setRequestMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [showOwnerSendModal, setShowOwnerSendModal] = useState(false);
@@ -70,16 +72,41 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
   const [contractUnit, setContractUnit] = useState("all");
   const [contractPage, setContractPage] = useState(1);
   const [showRequestModal, setShowRequestModal] = useState(false);
+  const [reauthOpen, setReauthOpen] = useState(false);
+  const [reauthEmail, setReauthEmail] = useState("");
+  const [reauthPassword, setReauthPassword] = useState("");
+  const [showReauthPassword, setShowReauthPassword] = useState(false);
+  const [reauthLoading, setReauthLoading] = useState(false);
+  const reauthPasswordRef = useRef<HTMLInputElement | null>(null);
+  const [pendingUpload, setPendingUpload] = useState<{ form: FormData; successMessage: string; closeOwnerModal?: boolean } | null>(null);
 
   const visibleProperties = useMemo(() => {
     if (mode !== "agent") return properties;
     const assigned = properties.filter((property) => property.agentId === user?.id || (property as any).agent_id === user?.id);
     return assigned.length > 0 ? assigned : properties;
   }, [mode, properties, user?.id]);
+
+  const visibleCondoUnits = useMemo(() => {
+    const condoOnly = units.filter((u) => !["house", "villa", "residential"].includes((u.type || "").toLowerCase()));
+    if (mode !== "agent") return condoOnly;
+    const assigned = condoOnly.filter((u) => (u as any).agentId === user?.id || (u as any).agent_id === user?.id);
+    return assigned.length > 0 ? assigned : condoOnly;
+  }, [mode, units, user?.id]);
+
+  const hasSelectableTargets = visibleProperties.length > 0 || visibleCondoUnits.length > 0;
+
+  const formatCondoUnitOption = (u: Unit) => {
+    const parentProp = u.propertyId ? properties.find((p) => p.id === u.propertyId) : undefined;
+    const cleanNum = String(u.unitNumber || "").replace(/^unit\s*#?\s*/i, "").trim();
+    const building = String(u.name || parentProp?.name || "").trim();
+    const base = cleanNum && building ? `Unit ${cleanNum} – ${building}` : cleanNum ? `Unit ${cleanNum}` : building || "Condominium Unit";
+    return u.tenantName ? `${base} (${u.tenantName})` : base;
+  };
+
   const propertyUnits = useMemo(() => units.filter((unit) => (unit.propertyId || (unit as any).property_id) === propertyId), [units, propertyId]);
   const eligibleTenants = useMemo(() => {
     return (tenants || []).filter((tenant) => {
-      if (tenant.status !== "active") return false;
+      if (tenant.status === "archived" || tenant.status === "inactive") return false;
       if ((tenant as any).isArchived || (tenant as any).deleted) return false;
       return true;
     });
@@ -89,19 +116,45 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
     if (!propertyId) {
       return eligibleTenants;
     }
+    const normUnit = (v: unknown) => String(v || "").replace(/^unit\s*#?\s*/i, "").trim().toLowerCase();
+    const selectedCondo = units.find((u) => u.id === propertyId);
+    if (selectedCondo) {
+      const targetNum = normUnit(selectedCondo.unitNumber);
+      const targetName = String(selectedCondo.name || "").trim().toLowerCase();
+      return eligibleTenants.filter((tenant) => {
+        if (tenant.unitId === selectedCondo.id) return true;
+        if (selectedCondo.tenantId && selectedCondo.tenantId === tenant.id) return true;
+        if (selectedCondo.tenantName && tenant.name.trim().toLowerCase() === selectedCondo.tenantName.trim().toLowerCase()) return true;
+        if (targetNum && normUnit(tenant.unitNumber) === targetNum) {
+          if (!targetName || !tenant.propertyName) return true;
+          const tProp = tenant.propertyName.trim().toLowerCase();
+          if (tProp === targetName || tProp.includes(targetName) || targetName.includes(tProp)) return true;
+        }
+        return false;
+      });
+    }
+
     const matched = eligibleTenants.filter((tenant) => {
       if (propertyUnits.some((unit) => unit.id === tenant.unitId)) return true;
       const prop = properties.find((p) => p.id === propertyId);
-      if (prop && tenant.propertyName && prop.name.toLowerCase() === tenant.propertyName.toLowerCase()) return true;
+      if (prop && tenant.propertyName) {
+        const pName = prop.name.trim().toLowerCase();
+        const tProp = tenant.propertyName.trim().toLowerCase();
+        if (pName === tProp || pName.includes(tProp) || tProp.includes(pName)) return true;
+      }
       if ((tenant as any).propertyId === propertyId || (tenant as any).property_id === propertyId) return true;
       return false;
     });
     return matched;
-  }, [eligibleTenants, propertyUnits, propertyId, properties]);
+  }, [eligibleTenants, propertyUnits, propertyId, properties, units]);
   const visibleAgents = useMemo(() => {
     const property = properties.find((item) => item.id === propertyId);
-    return property?.agentId ? agents.filter((agent) => agent.id === property.agentId) : agents;
-  }, [agents, properties, propertyId]);
+    const condo = units.find((item) => item.id === propertyId);
+    const targetAgentId = property?.agentId || (condo as any)?.agentId || (condo as any)?.agent_id;
+    if (!targetAgentId) return agents;
+    const matched = agents.filter((agent) => agent.id === targetAgentId);
+    return matched.length > 0 ? matched : agents;
+  }, [agents, properties, units, propertyId]);
   const filteredContracts = useMemo(() => contracts.filter((contract) => {
     const tenant = tenants.find((item) => item.id === contract.tenantId);
     const unit = units.find((item) => item.id === tenant?.unitId);
@@ -118,12 +171,15 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
     setLoading(true);
     try {
       const [contractResponse, nextProperties, nextUnits, nextTenants, nextAgents] = await Promise.all([
-        fetch("/api/data/contracts", { credentials: "include", cache: "no-store" }),
+        fetch("/api/data/contracts", { credentials: "include", headers: getPortalAuthHeaders(mode), cache: "no-store" }),
         getProperties(user), getUnits(user), getTenants(user), mode === "owner" ? getAgents() : Promise.resolve([]),
       ]);
       const contractData = await safeParseJson(contractResponse);
-      if (!contractResponse.ok || !contractData.success) throw new Error(contractData.error || "Could not load contracts");
-      setContracts(contractData.contracts || []);
+      if (contractResponse.ok && contractData.success) {
+        setContracts(contractData.contracts || []);
+      } else if (contractResponse.status !== 401 && contractResponse.status !== 403) {
+        throw new Error(contractData.error || "Could not load contracts");
+      }
       setProperties(nextProperties);
       setUnits(nextUnits);
       setTenants(nextTenants);
@@ -171,12 +227,38 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
   }, []);
   useEffect(() => { setContractPage(1); }, [contractSearch, contractStatus, contractProperty, contractUnit]);
 
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files?.[0] || null;
+    if (!selected) {
+      setFile(null);
+      return;
+    }
+    if (selected.size > 15 * 1024 * 1024) {
+      toast.error("Contract file exceeds maximum size of 15 MB");
+      event.target.value = "";
+      return;
+    }
+    setPreparingFile(true);
+    try {
+      await Promise.all([
+        selected.slice(0, 64 * 1024).arrayBuffer(),
+        new Promise((resolve) => setTimeout(resolve, 350)),
+      ]);
+      setFile(selected);
+    } catch {
+      toast.error("Could not read the selected file");
+      setFile(null);
+    } finally {
+      setPreparingFile(false);
+    }
+  };
+
   const submitOwnerContract = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!propertyId || !file || (recipientType === "agent" && !agentId) || (recipientType === "tenant" && !tenantId)) {
       toast.error(recipientType === "tenant"
-        ? "Choose a property, tenant, and contract file"
-        : "Choose a property, agent, and contract file");
+        ? "Choose a property or unit, tenant, and contract file"
+        : "Choose a property or unit, agent, and contract file");
       return;
     }
     if (recipientType === "tenant" && (!tenantId || !propertyTenants.some((t) => t.id === tenantId))) {
@@ -191,30 +273,107 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
     form.set("tenantId", tenantId);
     form.set("title", title.trim() || file.name);
     form.set("file", file);
-    await submitFile(form, recipientType === "tenant" ? "Contract sent to tenant" : "Contract sent to agent");
-    setFile(null);
-    setTitle("Rental contract");
-    setTenantId("");
-    setShowOwnerSendModal(false);
+    const ok = await submitFile(form, recipientType === "tenant" ? "Contract sent to tenant" : "Contract sent to agent", true);
+    if (ok) {
+      setFile(null);
+      setTitle("Rental contract");
+      setTenantId("");
+      setShowOwnerSendModal(false);
+    }
   };
 
-  const submitFile = async (form: FormData, successMessage: string) => {
+  const openSessionRestore = (form: FormData, successMessage: string, closeOwnerModal?: boolean) => {
+    let defaultEmail = user?.role === mode ? (user?.email || "") : "";
+    if (!defaultEmail && typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem(`renttrack_user_${mode}`);
+        if (cached) defaultEmail = JSON.parse(cached)?.email || "";
+      } catch {}
+    }
+    if (!defaultEmail && mode === "owner") {
+      defaultEmail = "renttrackowner@gmail.com";
+    }
+    setReauthEmail(defaultEmail);
+    setReauthPassword("");
+    setPendingUpload({ form, successMessage, closeOwnerModal });
+    setReauthOpen(true);
+  };
+
+  const submitFile = async (form: FormData, successMessage: string, closeOwnerModal?: boolean, overrideHeaders?: Record<string, string>): Promise<boolean> => {
     setSending(true);
     try {
-      const response = await fetch("/api/data/contracts", { method: "POST", credentials: "include", body: form });
+      const response = await fetch("/api/data/contracts", {
+        method: "POST",
+        credentials: "include",
+        headers: overrideHeaders || getPortalAuthHeaders(mode),
+        body: form,
+      });
       const result = await safeParseJson(response);
+      if (response.status === 401 || response.status === 403) {
+        openSessionRestore(form, successMessage, closeOwnerModal);
+        return false;
+      }
       if (!response.ok || !result.success) throw new Error(result.error || "Could not send contract");
       toast.success(successMessage);
       await load();
+      return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not send contract");
+      return false;
     } finally {
       setSending(false);
+      setUploadingContractId(null);
+    }
+  };
+
+  const handleReauthAndSend = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const effectivePassword = reauthPassword || reauthPasswordRef.current?.value || "";
+    if (!reauthEmail.trim() || !effectivePassword) {
+      toast.error("Enter your email and password");
+      return;
+    }
+    setReauthLoading(true);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: reauthEmail.trim(), password: effectivePassword }),
+      });
+      const data = await safeParseJson(res);
+      if (!res.ok || !data.success || !data.user) {
+        throw new Error(data.error || "Invalid email or password");
+      }
+      if (data.sessionToken) {
+        savePortalAuthToken(data.sessionToken, data.user.role);
+      }
+      setUser(data.user, data.sessionToken);
+      setReauthOpen(false);
+      setReauthPassword("");
+
+      if (pendingUpload) {
+        const { form, successMessage, closeOwnerModal } = pendingUpload;
+        setPendingUpload(null);
+        const headers = data.sessionToken ? { Authorization: `Bearer ${data.sessionToken}` } : getPortalAuthHeaders(mode);
+        const ok = await submitFile(form, successMessage, closeOwnerModal, headers);
+        if (ok && closeOwnerModal) {
+          setFile(null);
+          setTitle("Rental contract");
+          setTenantId("");
+          setShowOwnerSendModal(false);
+        }
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not verify session");
+    } finally {
+      setReauthLoading(false);
     }
   };
 
   const sendRequestedContract = (contract: Contract, selectedFile: File | null) => {
     if (!selectedFile) return;
+    setUploadingContractId(contract.id);
     const form = new FormData();
     form.set("action", "send");
     form.set("contractId", contract.id);
@@ -231,7 +390,7 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
     setSending(true);
     try {
       const response = await fetch("/api/data/contracts", {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json", ...getPortalAuthHeaders(mode) },
         body: JSON.stringify({ action: "request", propertyId, tenantId, title: `Contract for ${propertyTenants.find((tenant) => tenant.id === tenantId)?.name || "tenant"}`, message: requestMessage.trim() }),
       });
       const result = await safeParseJson(response);
@@ -250,7 +409,7 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
   const rejectRequest = async (contract: Contract) => {
     try {
       const response = await fetch("/api/data/contracts", {
-        method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" },
+        method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json", ...getPortalAuthHeaders(mode) },
         body: JSON.stringify({ id: contract.id, action: "reject" }),
       });
       const result = await safeParseJson(response);
@@ -306,7 +465,7 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
               type="button"
               variant="outline"
               onClick={() => setShowRequestModal(true)}
-              disabled={visibleProperties.length === 0}
+              disabled={!hasSelectableTargets}
               className="h-9 gap-1.5 rounded-lg border-blue-200 text-blue-700 hover:bg-blue-50 px-4 text-xs font-semibold shadow-sm disabled:opacity-50"
             >
               <Send className="h-4 w-4" />
@@ -318,7 +477,7 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
                 setRecipientType("tenant");
                 setShowOwnerSendModal(true);
               }}
-              disabled={visibleProperties.length === 0}
+              disabled={!hasSelectableTargets}
               className="h-9 gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 px-4 text-xs font-semibold text-white shadow-sm disabled:opacity-50"
             >
               <UploadCloud className="h-4 w-4" />
@@ -341,8 +500,10 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
           <select value={contractStatus} onChange={(event) => setContractStatus(event.target.value)} aria-label="Filter contracts by status" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700">
             <option value="all">All Status</option><option value="requested">Requested</option><option value="sent">Sent</option><option value="rejected">Declined</option>
           </select>
-          <select value={contractProperty} onChange={(event) => { setContractProperty(event.target.value); setContractUnit("all"); }} aria-label="Filter contracts by property" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700">
-            <option value="all">All properties</option>{visibleProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+          <select value={contractProperty} onChange={(event) => { setContractProperty(event.target.value); setContractUnit("all"); }} aria-label="Filter contracts by property or unit" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700">
+            <option value="all">All properties &amp; units</option>
+            {visibleProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+            {visibleCondoUnits.map((unit) => <option key={unit.id} value={unit.id}>{formatCondoUnitOption(unit)}</option>)}
           </select>
           <select value={contractUnit} onChange={(event) => setContractUnit(event.target.value)} aria-label="Filter contracts by unit" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700">
             <option value="all">All units</option>{units.filter((unit) => contractProperty === "all" || unit.propertyId === contractProperty).map((unit) => <option key={unit.id} value={unit.id}>{unit.unitNumber}</option>)}
@@ -362,7 +523,7 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
               <tbody className="divide-y divide-slate-100">
                 {visibleContracts.map((contract) => {
                   const tenant = tenants.find((item) => item.id === contract.tenantId);
-                  const unit = units.find((item) => item.id === tenant?.unitId);
+                  const unit = units.find((item) => item.id === contract.propertyId || item.id === tenant?.unitId);
                   return <tr key={contract.id} className="align-middle text-xs text-slate-700 transition-colors hover:bg-blue-50/40">
                     <td className="max-w-56 px-4 py-3"><p className="truncate font-semibold text-slate-900">{contract.title}</p><p className="mt-0.5 truncate text-[10px] text-slate-500">{contract.id}</p>{contract.message && <p className="mt-1 line-clamp-1 text-[10px] text-slate-500">{contract.message}</p>}</td>
                     <td className="px-4 py-3 font-medium text-slate-800">{contract.tenantName || "—"}</td>
@@ -372,7 +533,14 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
                     <td className="px-4 py-3"><div className="flex justify-end gap-2">
                       {contract.status === "sent" && <a href={`/api/data/contracts/${contract.id}/file`} className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-2.5 text-xs font-medium hover:bg-slate-50"><Download className="mr-1.5 h-3.5 w-3.5" />Download</a>}
                       {contract.status === "requested" && <>
-                        <label className="inline-flex h-8 cursor-pointer items-center rounded-lg bg-blue-600 px-2.5 text-xs font-medium text-white hover:bg-blue-700"><UploadCloud className="mr-1.5 h-3.5 w-3.5" />Attach<input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" disabled={sending} onChange={(event) => sendRequestedContract(contract, event.target.files?.[0] || null)} /></label>
+                        <label className={cn("inline-flex h-8 cursor-pointer items-center rounded-lg bg-blue-600 px-2.5 text-xs font-medium text-white hover:bg-blue-700", sending && "opacity-70 pointer-events-none")}>
+                          {uploadingContractId === contract.id ? (
+                            <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Uploading...</>
+                          ) : (
+                            <><UploadCloud className="mr-1.5 h-3.5 w-3.5" />Attach</>
+                          )}
+                          <input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" disabled={sending} onChange={(event) => sendRequestedContract(contract, event.target.files?.[0] || null)} />
+                        </label>
                         <Button variant="outline" size="sm" className="h-8" onClick={() => void rejectRequest(contract)} disabled={sending}><XCircle className="mr-1 h-3.5 w-3.5" />Decline</Button>
                       </>}
                       {contract.status !== "sent" && contract.status !== "requested" && <span className="text-slate-400">—</span>}
@@ -387,18 +555,28 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
       </Card>
       {mode === "agent" && (
         <>
-          {visibleProperties.length === 0 && <p className="text-right text-sm text-amber-700">No properties are assigned to your account yet.</p>}
+          {!hasSelectableTargets && <p className="text-right text-sm text-amber-700">No properties or condominium units are available yet.</p>}
           <Modal
             isOpen={showRequestModal}
             onClose={() => setShowRequestModal(false)}
             title="Request a contract"
-            description="Select the property and tenant. The owner will be notified and can attach the contract here."
+            description="Select the property or condominium unit and tenant. The owner will be notified and can attach the contract here."
           >
             <form onSubmit={requestContract} className="grid gap-3 w-full min-w-0">
               <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 min-w-0 w-full">
-                <span>Assigned property</span>
+                <span>Property / Condo Unit</span>
                 <select required value={propertyId} onChange={(event) => { setPropertyId(event.target.value); setTenantId(""); }} className="h-11 w-full min-w-0 max-w-full rounded-xl border border-border bg-white px-3 text-sm truncate">
-                  <option value="">Select assigned property</option>{visibleProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+                  <option value="">Select property or condo unit</option>
+                  {visibleProperties.length > 0 && (
+                    <optgroup label="Housing Properties">
+                      {visibleProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+                    </optgroup>
+                  )}
+                  {visibleCondoUnits.length > 0 && (
+                    <optgroup label="Condominium Units">
+                      {visibleCondoUnits.map((unit) => <option key={unit.id} value={unit.id}>{formatCondoUnitOption(unit)}</option>)}
+                    </optgroup>
+                  )}
                 </select>
               </label>
               <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 min-w-0 w-full">
@@ -448,15 +626,24 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
       >
         <form onSubmit={submitOwnerContract} className="grid gap-3.5 md:grid-cols-2 w-full min-w-0 max-w-full box-border">
           <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700 min-w-0 w-full">
-            <span>Property</span>
+            <span>Property / Condo Unit</span>
             <select
               required
               value={propertyId}
               onChange={(event) => { setPropertyId(event.target.value); setAgentId(""); setTenantId(""); }}
               className="h-11 w-full min-w-0 max-w-full box-border rounded-xl border border-border bg-white px-3 pr-8 text-sm truncate"
             >
-              <option value="">Select property</option>
-              {visibleProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+              <option value="">Select property or condo unit</option>
+              {visibleProperties.length > 0 && (
+                <optgroup label="Housing Properties">
+                  {visibleProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
+                </optgroup>
+              )}
+              {visibleCondoUnits.length > 0 && (
+                <optgroup label="Condominium Units">
+                  {visibleCondoUnits.map((unit) => <option key={unit.id} value={unit.id}>{formatCondoUnitOption(unit)}</option>)}
+                </optgroup>
+              )}
             </select>
           </label>
           {mode === "owner" ? (
@@ -565,23 +752,141 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
               className="h-11 w-full min-w-0 max-w-full rounded-xl border border-border bg-white px-3 text-sm"
             />
           </label>
-          <label className="flex h-11 w-full min-w-0 max-w-full cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border px-3 text-sm text-text-secondary md:col-span-2">
-            <UploadCloud className="h-4 w-4 shrink-0" />
-            <span className="min-w-0 flex-1 truncate">{file?.name || "Choose PDF or Word contract (max 15 MB)"}</span>
-            <input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="sr-only" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+          <label
+            className={cn(
+              "flex min-h-12 w-full min-w-0 max-w-full cursor-pointer flex-col justify-center gap-2 rounded-xl border border-dashed px-3.5 py-2.5 text-sm transition-colors md:col-span-2",
+              preparingFile || sending
+                ? "border-blue-300 bg-blue-50/70 text-blue-800 pointer-events-none"
+                : file
+                  ? "border-emerald-300 bg-emerald-50/50 text-emerald-800 hover:bg-emerald-50"
+                  : "border-border text-text-secondary hover:border-blue-300 hover:bg-slate-50"
+            )}
+          >
+            {preparingFile ? (
+              <div className="flex items-center gap-2.5">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600" />
+                <span className="min-w-0 flex-1 truncate font-medium">Loading selected contract file...</span>
+              </div>
+            ) : sending ? (
+              <div className="w-full space-y-1.5">
+                <div className="flex items-center justify-between gap-2 text-xs font-semibold text-blue-800">
+                  <span className="flex min-w-0 items-center gap-2 truncate">
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600" />
+                    <span className="truncate">Uploading {file?.name || "contract"}...</span>
+                  </span>
+                  <span className="shrink-0">Please wait</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-100">
+                  <div className="h-full w-2/3 animate-pulse rounded-full bg-blue-600" />
+                </div>
+              </div>
+            ) : file ? (
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                <span className="min-w-0 flex-1 truncate font-medium">
+                  {file.name} <span className="text-xs font-normal opacity-80">({(file.size / (1024 * 1024)).toFixed(2)} MB · Click to change)</span>
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2.5">
+                <UploadCloud className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">Choose PDF or Word contract (max 15 MB)</span>
+              </div>
+            )}
+            <input
+              type="file"
+              disabled={preparingFile || sending}
+              accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="sr-only"
+              onChange={handleFileChange}
+            />
           </label>
           <div className="flex justify-end gap-2 pt-1 md:col-span-2">
-            <Button type="button" variant="outline" onClick={() => setShowOwnerSendModal(false)}>Cancel</Button>
+            <Button type="button" variant="outline" disabled={sending} onClick={() => setShowOwnerSendModal(false)}>Cancel</Button>
             <Button
               type="submit"
               disabled={
+                preparingFile ||
                 sending ||
-                !visibleProperties.length ||
+                !file ||
+                !hasSelectableTargets ||
                 (recipientType === "agent" && !visibleAgents.length) ||
                 (recipientType === "tenant" && (!tenantId || propertyTenants.length === 0))
               }
             >
-              <Send className="mr-2 h-4 w-4" />{sending ? "Sending..." : recipientType === "tenant" ? "Send to tenant" : "Send to agent"}
+              {sending ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading contract...</>
+              ) : (
+                <><Send className="mr-2 h-4 w-4" />{recipientType === "tenant" ? "Send to tenant" : "Send to agent"}</>
+              )}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={reauthOpen}
+        onClose={() => { if (!reauthLoading) setReauthOpen(false); }}
+        title={`Confirm ${mode === "owner" ? "Owner" : "Agent"} Session`}
+        description="Another tab signed in as a different role earlier. Confirm your password once to lock in multi-tab access and send this contract immediately."
+        className="max-w-md"
+      >
+        <form onSubmit={handleReauthAndSend} className="space-y-3.5">
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700">
+            <span>{mode === "owner" ? "Owner" : "Agent"} Email</span>
+            <input
+              type="email"
+              required
+              value={reauthEmail}
+              onChange={(e) => setReauthEmail(e.target.value)}
+              style={{ color: "#0f172a", colorScheme: "light" }}
+              className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900"
+              placeholder={mode === "owner" ? "renttrackowner@gmail.com" : "agent@email.com"}
+            />
+          </label>
+          <div className="flex flex-col gap-1.5 text-sm font-medium text-slate-700">
+            <label htmlFor="reauth-password-input">Password</label>
+            <div className="relative">
+              <input
+                ref={reauthPasswordRef}
+                id="reauth-password-input"
+                type={showReauthPassword ? "text" : "password"}
+                autoComplete="new-password"
+                required
+                autoFocus
+                value={reauthPassword}
+                onChange={(e) => setReauthPassword(e.target.value)}
+                onInput={(e) => setReauthPassword((e.target as HTMLInputElement).value)}
+                style={{ color: "#0f172a", WebkitTextFillColor: "#0f172a", colorScheme: "light" }}
+                className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-3 pr-10 text-sm font-medium text-slate-900 placeholder:text-slate-400"
+                placeholder="Enter your password"
+              />
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (reauthPasswordRef.current?.value && !reauthPassword) {
+                    setReauthPassword(reauthPasswordRef.current.value);
+                  }
+                  setShowReauthPassword((prev) => !prev);
+                }}
+                aria-label={showReauthPassword ? "Hide password" : "Show password"}
+                className="absolute inset-y-0 right-0 z-10 flex w-10 items-center justify-center text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+              >
+                {showReauthPassword ? <Eye className="h-4 w-4 text-blue-600" /> : <EyeOff className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" disabled={reauthLoading} onClick={() => setReauthOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={reauthLoading}>
+              {reauthLoading ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Verifying &amp; sending...</>
+              ) : (
+                <><Send className="mr-2 h-4 w-4" />Verify &amp; Send Contract</>
+              )}
             </Button>
           </div>
         </form>
