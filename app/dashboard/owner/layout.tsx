@@ -296,18 +296,33 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
 
   const handleNotificationClick = async (notification: Notification) => {
     setShowNotifications(false);
-    const isAccountCreationRequest = notification.title === "Account Creation Request";
+    const isAccountCreationRequest = /account creation request/i.test(notification.title || "");
     if (isAccountCreationRequest) {
-      const loadedRequest = accountRequests.find((conv) => conv.lastMessage?.body === notification.message)
-        || accountRequests[0];
+      let loadedRequest: Conversation | null =
+        accountRequests.find((conv) => conv.lastMessage?.body === notification.message) ||
+        accountRequests[0] ||
+        null;
+      if (!loadedRequest) {
+        try {
+          const convs = await getConversations();
+          loadedRequest =
+            convs.find(
+              (conv) =>
+                conv.lastMessage?.subject === "Account Creation Request" &&
+                conv.lastMessage.body === notification.message
+            ) ||
+            convs.find((conv) => conv.lastMessage?.subject === "Account Creation Request") ||
+            convs.find((conv) => /account creation request/i.test(conv.lastMessage?.subject || "")) ||
+            null;
+        } catch {
+          // ignore — fall through to messages fallback below
+        }
+      }
       if (loadedRequest) {
         setSelectedAccountRequest(loadedRequest);
       } else {
-        void getConversations().then((convs) => {
-          const request = convs.find((conv) => conv.lastMessage?.subject === "Account Creation Request" && conv.lastMessage.body === notification.message)
-            || convs.find((conv) => conv.lastMessage?.subject === "Account Creation Request");
-          if (request) setSelectedAccountRequest(request);
-        }).catch(() => undefined);
+        // No reviewable request found — open Messages so the owner can still act.
+        setShowMessages(true);
       }
     }
     setShowNotifications(false);
