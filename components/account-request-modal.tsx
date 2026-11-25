@@ -6,7 +6,7 @@ import { X, UserPlus, Mail, Phone, MapPin, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { notifyAdmins, getUsers, sendMessage } from "@/lib/data";
+import { notifyAdmins, getUsers, sendMessage, createAccountRequest } from "@/lib/data";
 
 interface AccountRequestModalProps {
   isOpen: boolean;
@@ -33,31 +33,23 @@ export default function AccountRequestModal({ isOpen, onClose, agentName }: Acco
     }
     setSubmitting(true);
     try {
-      const messageBody = `${agentName} is requesting to create a new tenant account:\n\nName: ${formData.name}\nEmail: ${formData.email}\nPhone: ${formData.phone || "N/A"}\nAddress: ${formData.address || "N/A"}\nReason: ${formData.reason || "No reason provided"}`;
-      await notifyAdmins({
-        title: "Account Creation Request",
-        message: messageBody,
-        type: "tenant",
-        read: false,
+      const res = await createAccountRequest({
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone || undefined,
+        address: formData.address || undefined,
         recipientRole: formData.recipientRole,
+        reason: formData.reason || undefined,
+        agentName,
       });
-      try {
-        const users = await getUsers();
-        const recipients = users.filter((u) => u.role === formData.recipientRole);
-        await Promise.allSettled(
-          recipients.map((recipient) =>
-            sendMessage({
-              receiverId: recipient.id,
-              subject: "Account Creation Request",
-              body: messageBody,
-            })
-          )
-        );
-      } catch {
-        // ignore message send failures; notification already delivered
+
+      if (!res.success) {
+        toast.error(res.error || "Failed to send request");
+        return;
       }
+
       toast.success(`Account creation request sent to ${formData.recipientRole === "owner" ? "Owner" : "Admin"}!`);
-      setFormData({ name: "", email: "", phone: "", address: "", recipientRole: "admin", reason: "" });
+      setFormData({ name: "", email: "", phone: "", address: "", recipientRole: "owner", reason: "" });
       onClose();
     } catch {
       toast.error("Failed to send request");

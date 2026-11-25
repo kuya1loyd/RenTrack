@@ -5,7 +5,7 @@ import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
-import { getNotifications, markNotificationRead, markAllNotificationsRead, markAllMessagesRead, getUnreadCount, getConversations, getUnreadMessageCount, getProperties, getUnits, Notification, Conversation, Property, Unit } from "@/lib/data";
+import { getNotifications, markNotificationRead, markAllNotificationsRead, markAllMessagesRead, getUnreadCount, getConversations, getUnreadMessageCount, getProperties, getUnits, Notification, Conversation, Property, Unit, AccountCreationRequest, safeParseJson } from "@/lib/data";
 import AdminSidebar from "@/components/admin-sidebar";
 import AccountRequestReviewModal from "@/components/account-request-review-modal";
 import MessagingPanel from "@/components/messaging-panel";
@@ -29,7 +29,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [accountRequests, setAccountRequests] = useState<Conversation[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedAccountRequest, setSelectedAccountRequest] = useState<Conversation | null>(null);
+  const [selectedAccountRequest, setSelectedAccountRequest] = useState<AccountCreationRequest | Conversation | any | null>(null);
 
   // Messaging Modal State
   const [showMessages, setShowMessages] = useState(false);
@@ -160,18 +160,52 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const handleNotificationClick = async (notification: Notification) => {
     setShowNotifications(false);
-    const isAccountCreationRequest = notification.title === "Account Creation Request";
+    const isAccountCreationRequest = /account creation request/i.test(notification.title || "");
     if (isAccountCreationRequest) {
-      const loadedRequest = accountRequests.find((conv) => conv.lastMessage?.body === notification.message)
-        || accountRequests[0];
+      let loadedRequest: any = null;
+
+      try {
+        const queryParams = new URLSearchParams();
+        if (notification.requestId) queryParams.set("requestId", notification.requestId);
+        if (notification.id) queryParams.set("notificationId", notification.id);
+        if (notification.message) queryParams.set("message", notification.message);
+
+        const res = await fetch(`/api/data/account-requests?${queryParams.toString()}&_t=${Date.now()}`, {
+          credentials: "include",
+        });
+        const json = await safeParseJson(res);
+        if (json.success && json.request) {
+          loadedRequest = json.request;
+        }
+      } catch (err) {
+        console.warn("Failed to fetch request details from database:", err);
+      }
+
+      if (!loadedRequest) {
+        loadedRequest =
+          accountRequests.find((conv) => conv.lastMessage?.body === notification.message) ||
+          accountRequests[0] ||
+          null;
+        if (!loadedRequest) {
+          try {
+            const convs = await getConversations();
+            loadedRequest =
+              convs.find(
+                (conv) =>
+                  conv.lastMessage?.subject === "Account Creation Request" &&
+                  conv.lastMessage.body === notification.message
+              ) ||
+              convs.find((conv) => conv.lastMessage?.subject === "Account Creation Request") ||
+              convs.find((conv) => /account creation request/i.test(conv.lastMessage?.subject || "")) ||
+              null;
+          } catch {
+            // ignore
+          }
+        }
+      }
+
       if (loadedRequest) {
         setSelectedAccountRequest(loadedRequest);
-      } else {
-        void getConversations().then((convs) => {
-          const request = convs.find((conv) => conv.lastMessage?.subject === "Account Creation Request" && conv.lastMessage.body === notification.message)
-            || convs.find((conv) => conv.lastMessage?.subject === "Account Creation Request");
-          if (request) setSelectedAccountRequest(request);
-        }).catch(() => undefined);
       }
     }
 

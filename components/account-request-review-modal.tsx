@@ -2,18 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { motion, useDragControls } from "framer-motion";
-import { X, UserPlus, Mail, Phone, MapPin, CalendarDays, KeyRound, Home, PhilippinePeso } from "lucide-react";
+import { X, UserPlus, Mail, Phone, MapPin, CalendarDays, KeyRound, Home, PhilippinePeso, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Conversation, sendMessage, markAllMessagesRead, safeParseJson } from "@/lib/data";
+import { Conversation, AccountCreationRequest, sendMessage, markAllMessagesRead, safeParseJson } from "@/lib/data";
 
 interface AccountRequestReviewModalProps {
-  request: Conversation | null;
+  request: AccountCreationRequest | Conversation | any | null;
   onClose: () => void;
   onCreated: () => void;
 }
 
 type RequestDetails = {
+  id?: string;
   name: string;
   email: string;
   phone: string;
@@ -24,15 +25,19 @@ type RequestDetails = {
   contractStart: string;
   contractEnd: string;
   reason: string;
+  agentId?: string;
 };
 
 function parseRequest(body: string): RequestDetails {
   const value = (label: string, fallback = "") => {
-    const match = body.match(new RegExp(`^${label}:\\s*(.*)$`, "mi"));
+    const match = body.match(new RegExp(`^(?:\\*\\*)?${label}(?:\\*\\*)?:\\s*(.*)$`, "mi"));
     return match?.[1]?.trim() || fallback;
   };
 
+  const idMatch = body.match(/\[Request ID:\s*([a-zA-Z0-9_-]+)\]/i);
+
   return {
+    id: idMatch?.[1] || "",
     name: value("Name"),
     email: value("Email"),
     phone: value("Phone", "N/A"),
@@ -48,9 +53,40 @@ function parseRequest(body: string): RequestDetails {
 
 export default function AccountRequestReviewModal({ request, onClose, onCreated }: AccountRequestReviewModalProps) {
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [creating, setCreating] = useState(false);
   const dragControls = useDragControls();
-  const details = useMemo(() => (request ? parseRequest(request.lastMessage.body) : null), [request]);
+
+  const details = useMemo<RequestDetails | null>(() => {
+    if (!request) return null;
+    // 1. If request is already an AccountCreationRequest or has direct name/email fields
+    if (request.name || request.email) {
+      return {
+        id: request.id || "",
+        name: request.name || "",
+        email: request.email || "",
+        phone: request.phone && request.phone !== "N/A" ? request.phone : "N/A",
+        address: request.address && request.address !== "N/A" ? request.address : "N/A",
+        propertyName: request.propertyName || request.property_name || "N/A",
+        unitNumber: request.unitNumber || request.unit_number || "N/A",
+        monthlyRent: request.monthlyRent || request.monthly_rent || "N/A",
+        contractStart: request.contractStart || request.contract_start || "N/A",
+        contractEnd: request.contractEnd || request.contract_end || "N/A",
+        reason: request.reason || "No reason provided",
+        agentId: request.agentId || request.agent_id || "",
+      };
+    }
+    // 2. If it's a Conversation with lastMessage
+    if (request.lastMessage?.body) {
+      const parsed = parseRequest(request.lastMessage.body);
+      return {
+        ...parsed,
+        id: parsed.id || request.id || "",
+        agentId: request.otherUser?.id || request.userId || "",
+      };
+    }
+    return null;
+  }, [request]);
 
   if (!request || !details) return null;
 
@@ -62,17 +98,20 @@ export default function AccountRequestReviewModal({ request, onClose, onCreated 
 
     setCreating(true);
     try {
-      const response = await fetch("/api/auth/users", {
+      const response = await fetch("/api/data/account-requests/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
+          requestId: details.id,
           name: details.name,
           email: details.email,
           password,
-          role: "tenant",
           phone: details.phone === "N/A" ? "" : details.phone,
           address: details.address === "N/A" ? "" : details.address,
+          propertyName: details.propertyName === "N/A" ? "" : details.propertyName,
+          unitNumber: details.unitNumber === "N/A" ? "" : details.unitNumber,
+          agentId: details.agentId,
         }),
       });
       const result = await safeParseJson(response);
@@ -81,17 +120,19 @@ export default function AccountRequestReviewModal({ request, onClose, onCreated 
         return;
       }
 
-      await Promise.allSettled([
-        markAllMessagesRead(request.userId),
-        sendMessage({
-          receiverId: request.userId,
-          subject: "Account Creation Request Approved",
-          body: `The tenant account request for ${details.name} was approved. The account is ready for email verification and login.`,
-        }),
-      ]);
-      toast.success(result.emailSent
-        ? `Tenant account created. Login details were emailed to ${details.email}.`
-        : `Tenant account created, but the credentials email could not be sent`);
+      if (request.userId) {
+        await markAllMessagesRead(request.userId).catch(() => {});
+      }
+
+      if (result.alreadyApproved) {
+        toast.info("This tenant account request was already approved.");
+      } else {
+        toast.success(
+          result.emailSent
+            ? `Tenant account created. Login details were emailed to ${details.email}.`
+            : `Tenant account created successfully for ${details.name}.`
+        );
+      }
       setPassword("");
       onCreated();
       onClose();
@@ -158,7 +199,25 @@ export default function AccountRequestReviewModal({ request, onClose, onCreated 
             <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-gray-700" htmlFor="request-password">
               <KeyRound className="h-3.5 w-3.5" /> Temporary password
             </label>
-            <input id="request-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Set a password for the tenant" className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" autoComplete="new-password" />
+            <div className="relative">
+              <input
+                id="request-password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Set a password for the tenant"
+                className="w-full rounded-lg border border-gray-300 px-3 py-1.5 pr-8 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </button>
+            </div>
             <p className="mt-1 text-[10px] text-gray-500">Give this password to the tenant securely. They can change it after signing in.</p>
           </div>
         </div>

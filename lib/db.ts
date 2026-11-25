@@ -448,6 +448,31 @@ export async function initDatabase() {
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
 
+    statements.push(`CREATE TABLE IF NOT EXISTS account_creation_requests (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    agent_name TEXT,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    phone TEXT,
+    address TEXT,
+    property_id TEXT REFERENCES properties(id) ON DELETE SET NULL,
+    property_name TEXT,
+    unit_id TEXT REFERENCES units(id) ON DELETE SET NULL,
+    unit_number TEXT,
+    reason TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    reviewed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+    statements.push(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS request_id TEXT`);
+    statements.push(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS metadata JSONB`);
+    statements.push(`CREATE INDEX IF NOT EXISTS account_creation_requests_status_idx ON account_creation_requests(status)`);
+    statements.push(`CREATE INDEX IF NOT EXISTS account_creation_requests_email_idx ON account_creation_requests(email)`);
+    statements.push(`CREATE INDEX IF NOT EXISTS account_creation_requests_agent_idx ON account_creation_requests(agent_id)`);
+
     statements.push(`ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_payment_method_check`);
     statements.push(`ALTER TABLE payments ADD CONSTRAINT payments_payment_method_check CHECK (payment_method IN ('cash', 'upload_receipt'))`);
     statements.push(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_method_note TEXT`);
@@ -626,13 +651,17 @@ export async function ensureNotificationsSchema(): Promise<void> {
     notificationsSchemaPromise = (async () => {
       await initDatabase();
       const admin = getAdminSupabase();
-      const { error } = await admin.rpc("exec_sql", {
-        sql: "ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS user_type TEXT NOT NULL DEFAULT 'user'",
-      });
-      if (error) throw new Error(`Could not add notification recipient type: ${error.message}`);
+      try {
+        await admin.rpc("exec_sql", {
+          sql: "ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS user_type TEXT NOT NULL DEFAULT 'user'; ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS request_id TEXT; ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS metadata JSONB;",
+        });
+      } catch {
+        // exec_sql may fail if not enabled, continue
+      }
 
-      const { error: reloadError } = await admin.rpc("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
-      if (reloadError) throw new Error(`Could not refresh the notifications schema: ${reloadError.message}`);
+      try {
+        await admin.rpc("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
+      } catch {}
 
       for (let attempt = 0; attempt < 5; attempt += 1) {
         const { error: schemaError } = await admin.from("notifications").select("id, user_type").limit(0);
@@ -647,6 +676,63 @@ export async function ensureNotificationsSchema(): Promise<void> {
   }
 
   return notificationsSchemaPromise;
+}
+
+let accountCreationSchemaPromise: Promise<void> | null = null;
+
+export async function ensureAccountCreationRequestsSchema(): Promise<void> {
+  if (!accountCreationSchemaPromise) {
+    accountCreationSchemaPromise = (async () => {
+      const admin = getAdminSupabase();
+      const { error: probeError } = await admin
+        .from("account_creation_requests")
+        .select("id, status")
+        .limit(0);
+      if (!probeError) return;
+
+      await initDatabase().catch(() => undefined);
+      const statements = [
+        `CREATE TABLE IF NOT EXISTS public.account_creation_requests (
+          id TEXT PRIMARY KEY,
+          agent_id TEXT,
+          agent_name TEXT,
+          name TEXT NOT NULL,
+          email TEXT NOT NULL,
+          phone TEXT,
+          address TEXT,
+          property_id TEXT,
+          property_name TEXT,
+          unit_id TEXT,
+          unit_number TEXT,
+          reason TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          reviewed_by TEXT,
+          reviewed_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        )`,
+        "ALTER TABLE public.account_creation_requests DROP CONSTRAINT IF EXISTS account_creation_requests_status_check",
+        "ALTER TABLE public.account_creation_requests ADD CONSTRAINT account_creation_requests_status_check CHECK (status IN ('pending', 'approved', 'rejected'))",
+        "ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS request_id TEXT",
+        "ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS metadata JSONB",
+        "CREATE INDEX IF NOT EXISTS account_creation_requests_agent_idx ON public.account_creation_requests(agent_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS account_creation_requests_status_idx ON public.account_creation_requests(status, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS account_creation_requests_email_idx ON public.account_creation_requests(email)"
+      ];
+      for (const sql of statements) {
+        try {
+          await (admin.rpc as any)("exec_sql", { sql });
+        } catch {}
+      }
+      try {
+        await (admin.rpc as any)("exec_sql", { sql: "NOTIFY pgrst, 'reload schema'" });
+      } catch {}
+    })().catch((err) => {
+      accountCreationSchemaPromise = null;
+      console.warn("ensureAccountCreationRequestsSchema error:", err);
+    });
+  }
+  return accountCreationSchemaPromise;
 }
 
 let agentApplicationsSchemaPromise: Promise<void> | null = null;
@@ -2209,12 +2295,20 @@ export async function createNotification(data: any) {
     read: false,
     created_at: new Date().toISOString(),
   };
+  if (data.requestId || data.request_id) {
+    payload.request_id = data.requestId || data.request_id;
+  }
+  if (data.metadata) {
+    payload.metadata = data.metadata;
+  }
   if (recipient && ["admin", "owner", "agent"].includes(recipient.role)) {
     payload.user_type = recipient.role;
   }
   let { error } = await getAdminSupabase().from("notifications").insert(payload);
-  if (error && /Could not find the 'user_type' column/i.test(error.message)) {
-    delete payload.user_type;
+  if (error && (/Could not find the 'user_type' column/i.test(error.message) || /Could not find the 'request_id' column/i.test(error.message) || /Could not find the 'metadata' column/i.test(error.message))) {
+    if (/user_type/i.test(error.message)) delete payload.user_type;
+    if (/request_id/i.test(error.message)) delete payload.request_id;
+    if (/metadata/i.test(error.message)) delete payload.metadata;
     ({ error } = await getAdminSupabase().from("notifications").insert(payload));
   }
   if (error) throw error;
@@ -3260,4 +3354,352 @@ export async function getAllSystemConfig() {
 
 export async function setSystemConfig(key: string, value: string) {
   return updateSystemConfig(key, value);
+}
+
+// ─── Account Creation Requests ──────────────────────────────────────────────────
+
+export async function createAccountCreationRequest(data: {
+  id?: string;
+  agentId?: string;
+  agentName?: string;
+  name: string;
+  email: string;
+  phone?: string;
+  address?: string;
+  propertyId?: string;
+  propertyName?: string;
+  unitId?: string;
+  unitNumber?: string;
+  reason?: string;
+}) {
+  await ensureAccountCreationRequestsSchema().catch(() => {});
+  const id = data.id || `acct_req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const now = new Date().toISOString();
+  const row = {
+    id,
+    agent_id: data.agentId || null,
+    agent_name: data.agentName || null,
+    name: data.name.trim(),
+    email: data.email.trim().toLowerCase(),
+    phone: data.phone?.trim() || null,
+    address: data.address?.trim() || null,
+    property_id: data.propertyId || null,
+    property_name: data.propertyName || null,
+    unit_id: data.unitId || null,
+    unit_number: data.unitNumber || null,
+    reason: data.reason?.trim() || null,
+    status: "pending",
+    created_at: now,
+    updated_at: now,
+  };
+  const { data: inserted, error } = await getAdminSupabase()
+    .from("account_creation_requests")
+    .insert(row)
+    .select("*")
+    .single();
+  if (error) {
+    console.error("createAccountCreationRequest error:", error);
+    throw error;
+  }
+  return snakeToCamel(inserted);
+}
+
+export async function getAccountCreationRequestById(id: string) {
+  await ensureAccountCreationRequestsSchema().catch(() => {});
+  const { data, error } = await getAdminSupabase()
+    .from("account_creation_requests")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data) return null;
+  return snakeToCamel(data);
+}
+
+export async function getAccountCreationRequests(filter?: { status?: string; agentId?: string; email?: string }) {
+  await ensureAccountCreationRequestsSchema().catch(() => {});
+  let query = getAdminSupabase()
+    .from("account_creation_requests")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (filter?.status) query = query.eq("status", filter.status);
+  if (filter?.agentId) query = query.eq("agent_id", filter.agentId);
+  if (filter?.email) query = query.eq("email", filter.email.toLowerCase());
+  const { data, error } = await query;
+  if (error) {
+    console.warn("getAccountCreationRequests error:", error);
+    return [];
+  }
+  return (data || []).map((row: any) => snakeToCamel(row));
+}
+
+export async function findAccountCreationRequestForNotification(notificationId?: string, message?: string, requestIdParam?: string) {
+  await ensureAccountCreationRequestsSchema().catch(() => {});
+  const admin = getAdminSupabase();
+
+  if (requestIdParam) {
+    const direct = await getAccountCreationRequestById(requestIdParam);
+    if (direct) return direct;
+  }
+
+  if (notificationId) {
+    try {
+      const { data: notif } = await admin
+        .from("notifications")
+        .select("id, request_id, message, metadata")
+        .eq("id", notificationId)
+        .maybeSingle();
+      if (notif) {
+        if (notif.request_id) {
+          const req = await getAccountCreationRequestById(notif.request_id);
+          if (req) return req;
+        }
+        if (notif.metadata?.requestId) {
+          const req = await getAccountCreationRequestById(notif.metadata.requestId);
+          if (req) return req;
+        }
+        if (!message && notif.message) message = notif.message;
+      }
+    } catch {}
+  }
+
+  if (message) {
+    const idMatch = message.match(/\b(acct_req_[a-zA-Z0-9_-]+|req_[a-zA-Z0-9_-]+)\b/);
+    if (idMatch && idMatch[1]) {
+      const req = await getAccountCreationRequestById(idMatch[1]);
+      if (req) return req;
+    }
+
+    const emailMatch = message.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+    if (emailMatch && emailMatch[1]) {
+      const email = emailMatch[1].toLowerCase();
+      const requests = await getAccountCreationRequests({ email });
+      if (requests.length > 0) {
+        const pending = requests.find((r) => r.status === "pending") || requests[0];
+        return pending;
+      }
+    }
+
+    const nameMatch = message.match(/(?:Name|account for):\s*([^\n\r,()]+)/i) || message.match(/create (?:a new )?tenant account for ([^(\n\r]+)/i);
+    const parsedName = nameMatch ? nameMatch[1].trim() : "";
+    const parsedEmail = emailMatch ? emailMatch[1].trim() : "";
+    const phoneMatch = message.match(/Phone:\s*([^\n\r]+)/i);
+    const parsedPhone = phoneMatch ? phoneMatch[1].trim() : "";
+    const addressMatch = message.match(/Address:\s*([^\n\r]+)/i);
+    const parsedAddress = addressMatch ? addressMatch[1].trim() : "";
+    const reasonMatch = message.match(/Reason:\s*([^\n\r]+)/i);
+    const parsedReason = reasonMatch ? reasonMatch[1].trim() : "";
+
+    if (parsedName || parsedEmail) {
+      try {
+        const created = await createAccountCreationRequest({
+          name: parsedName || "Tenant Applicant",
+          email: parsedEmail || `tenant_${Date.now()}@renttrack.local`,
+          phone: parsedPhone && parsedPhone !== "N/A" ? parsedPhone : undefined,
+          address: parsedAddress && parsedAddress !== "N/A" ? parsedAddress : undefined,
+          reason: parsedReason && parsedReason !== "No reason provided" ? parsedReason : undefined,
+        });
+        if (notificationId) {
+          try {
+            await admin.from("notifications").update({ request_id: created.id }).eq("id", notificationId);
+          } catch {}
+        }
+        return created;
+      } catch (err) {
+        console.warn("Backfill account request failed:", err);
+      }
+    }
+  }
+
+  const pendingRequests = await getAccountCreationRequests({ status: "pending" });
+  if (pendingRequests.length > 0) return pendingRequests[0];
+
+  try {
+    const { data: convMsgs } = await admin
+      .from("messages")
+      .select("*")
+      .ilike("subject", "%account creation request%")
+      .order("created_at", { ascending: false })
+      .limit(5);
+    if (convMsgs && convMsgs.length > 0) {
+      for (const m of convMsgs) {
+        const nameMatch = m.body.match(/Name:\s*([^\n\r]+)/i);
+        const emailMatch = m.body.match(/Email:\s*([^\n\r]+)/i);
+        if (nameMatch || emailMatch) {
+          const parsedName = nameMatch ? nameMatch[1].trim() : "";
+          const parsedEmail = emailMatch ? emailMatch[1].trim() : "";
+          const phoneMatch = m.body.match(/Phone:\s*([^\n\r]+)/i);
+          const addressMatch = m.body.match(/Address:\s*([^\n\r]+)/i);
+          const reasonMatch = m.body.match(/Reason:\s*([^\n\r]+)/i);
+          const created = await createAccountCreationRequest({
+            name: parsedName || "Tenant Applicant",
+            email: parsedEmail || `tenant_${Date.now()}@renttrack.local`,
+            phone: phoneMatch ? phoneMatch[1].trim() : undefined,
+            address: addressMatch ? addressMatch[1].trim() : undefined,
+            reason: reasonMatch ? reasonMatch[1].trim() : undefined,
+            agentId: m.sender_id,
+          });
+          return created;
+        }
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+export async function approveAccountCreationRequest(data: {
+  requestId?: string;
+  reviewerId: string;
+  password: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  propertyName?: string;
+  unitNumber?: string;
+  unitId?: string;
+  agentId?: string;
+}) {
+  const admin = getAdminSupabase();
+  let requestRecord: any = null;
+  if (data.requestId) {
+    requestRecord = await getAccountCreationRequestById(data.requestId);
+  }
+
+  const name = String(data.name || requestRecord?.name || "").trim();
+  const email = String(data.email || requestRecord?.email || "").trim().toLowerCase();
+  const phone = String(data.phone || requestRecord?.phone || "").trim();
+  const address = String(data.address || requestRecord?.address || "").trim();
+  const agentId = data.agentId || requestRecord?.agentId || null;
+  const propertyName = data.propertyName || requestRecord?.propertyName || null;
+  const unitNumber = data.unitNumber || requestRecord?.unitNumber || null;
+  const unitId = data.unitId || requestRecord?.unitId || null;
+
+  if (!name || !email) {
+    throw new Error("Tenant name and email are required for approval");
+  }
+
+  if (requestRecord && requestRecord.status === "approved") {
+    return {
+      success: true,
+      alreadyApproved: true,
+      message: "This account request has already been approved.",
+      request: requestRecord,
+    };
+  }
+
+  let user = await findUserByEmail(email);
+  if (!user) {
+    user = await createUser(name, email, data.password, "tenant", phone || undefined, undefined, address || undefined, true, data.reviewerId);
+    try {
+      await admin.from("users").update({
+        email_verified: true,
+        id_verification_status: "approved",
+      }).eq("id", user.id);
+    } catch {}
+  } else {
+    if (data.password) {
+      const hashedPassword = await bcrypt.hash(data.password, 10);
+      try {
+        await admin.from("users").update({
+          password: hashedPassword,
+          role: "tenant",
+          email_verified: true,
+          id_verification_status: "approved",
+        }).eq("id", user.id);
+      } catch {}
+    }
+  }
+
+  const tenantData: any = {
+    id: user.id,
+    name,
+    email,
+    phone: phone || null,
+    address: address || null,
+    assigned_agent_id: agentId || null,
+    property_name: propertyName || null,
+    unit_id: unitId || null,
+    unit_number: unitNumber || null,
+    status: "active",
+    created_by: data.reviewerId,
+  };
+  try {
+    await admin.from("tenants").upsert(tenantData, { onConflict: "id" });
+  } catch {
+    delete tenantData.assigned_agent_id;
+    try {
+      await admin.from("tenants").upsert(tenantData, { onConflict: "id" });
+    } catch {}
+  }
+
+  if (unitId) {
+    try {
+      await admin.from("units").update({
+        status: "occupied",
+        tenant_id: user.id,
+        tenant_name: name,
+      }).eq("id", unitId);
+    } catch {}
+  }
+
+  if (data.requestId || requestRecord?.id) {
+    const idToUpdate = data.requestId || requestRecord.id;
+    const now = new Date().toISOString();
+    try {
+      await admin.from("account_creation_requests").update({
+        status: "approved",
+        reviewed_by: data.reviewerId,
+        reviewed_at: now,
+        updated_at: now,
+      }).eq("id", idToUpdate);
+    } catch {}
+  }
+
+  try {
+    const matchQueries = [];
+    if (data.requestId || requestRecord?.id) {
+      matchQueries.push(admin.from("notifications").update({ read: true }).eq("request_id", data.requestId || requestRecord.id));
+    }
+    await Promise.allSettled(matchQueries);
+
+    const { data: matchingNotifs } = await admin
+      .from("notifications")
+      .select("id, message")
+      .ilike("title", "%account creation%")
+      .eq("read", false);
+    if (matchingNotifs && matchingNotifs.length > 0) {
+      const idsToMark = matchingNotifs
+        .filter((n: any) => n.message && (n.message.toLowerCase().includes(email) || n.message.includes(name)))
+        .map((n: any) => n.id);
+      if (idsToMark.length > 0) {
+        await admin.from("notifications").update({ read: true }).in("id", idsToMark);
+      }
+    }
+  } catch {}
+
+  if (agentId) {
+    try {
+      await createNotification({
+        userId: agentId,
+        title: "Account Creation Request Approved",
+        message: `The tenant account request for ${name} (${email}) was approved. The account is ready for login.`,
+        type: "tenant",
+      });
+      await sendMessage(data.reviewerId, agentId, "Account Creation Request Approved", `The tenant account request for ${name} (${email}) was approved. The account is ready for login.`);
+    } catch {}
+  }
+
+  await logAudit(data.reviewerId, "account_request_approved", {
+    requestId: data.requestId || requestRecord?.id,
+    tenantId: user.id,
+    name,
+    email,
+  });
+
+  return {
+    success: true,
+    user,
+    message: `Tenant account created successfully for ${name}`,
+  };
 }

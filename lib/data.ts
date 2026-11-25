@@ -257,6 +257,28 @@ export interface Notification {
   type: "payment" | "tenant" | "property" | "system" | "id_verification";
   read: boolean;
   createdAt: string;
+  requestId?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface AccountCreationRequest {
+  id: string;
+  agentId?: string;
+  agentName?: string;
+  name: string;
+  email: string;
+  phone?: string;
+  address?: string;
+  propertyName?: string;
+  unitNumber?: string;
+  unitId?: string;
+  propertyId?: string;
+  reason?: string;
+  status: "pending" | "approved" | "rejected";
+  reviewedBy?: string;
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface AgentApplication {
@@ -597,6 +619,45 @@ export async function markAllNotificationsUnread(userId: string): Promise<void> 
 export async function getUnreadCount(userId: string): Promise<number> {
   const result = await apiGet(`/api/data/notifications?userId=${userId}&count=true&_t=${Date.now()}`);
   return result.success ? result.count : 0;
+}
+
+export async function createAccountRequest(data: {
+  name: string;
+  email: string;
+  phone?: string;
+  address?: string;
+  recipientRole?: string;
+  reason?: string;
+  propertyId?: string;
+  propertyName?: string;
+  unitId?: string;
+  unitNumber?: string;
+  agentName?: string;
+}): Promise<{ success: boolean; request?: AccountCreationRequest; error?: string }> {
+  return await apiPost("/api/data/account-requests", data);
+}
+
+export async function getAccountRequest(idOrParams: string | { id?: string; notificationId?: string; message?: string; requestId?: string }): Promise<AccountCreationRequest | null> {
+  const query = typeof idOrParams === "string"
+    ? `id=${encodeURIComponent(idOrParams)}`
+    : new URLSearchParams(Object.entries(idOrParams).filter(([_, v]) => Boolean(v)) as [string, string][]).toString();
+  const res = await apiGet(`/api/data/account-requests?${query}&_t=${Date.now()}`);
+  return res.success && res.request ? res.request : null;
+}
+
+export async function approveAccountRequest(data: {
+  requestId?: string;
+  password: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  propertyName?: string;
+  unitNumber?: string;
+  unitId?: string;
+  agentId?: string;
+}): Promise<{ success: boolean; user?: any; message?: string; error?: string; alreadyApproved?: boolean }> {
+  return await apiPost("/api/data/account-requests/approve", data);
 }
 
 export interface Message {
