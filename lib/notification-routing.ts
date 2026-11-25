@@ -65,7 +65,7 @@ export function getNotificationDashboardHref(
     if (isAdmin) return "/dashboard/admin?tab=overview";
     if (isOwner) return "/dashboard/owner#overview";
     if (isAgent) return "/dashboard/agent#overview";
-    if (isTenant) return "/dashboard/tenant/news";
+    if (isTenant) return "/dashboard/tenant";
   }
 
   // Account creation requests open the existing review modal in the admin/owner layouts.
@@ -75,7 +75,7 @@ export function getNotificationDashboardHref(
     if (isOwner) return "/dashboard/owner#move-out-requests";
     if (isAdmin) return "/dashboard/admin?tab=overview";
     if (isAgent) return "/dashboard/agent#overview";
-    if (isTenant) return "/dashboard/tenant";
+    if (isTenant) return "/dashboard/tenant/move-out";
   }
 
   if (/contract|lease\s+agreement/.test(cleanText)) {
