@@ -14,7 +14,7 @@ import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { cn, getInitials } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { getNotifications, getAgentApplications, markNotificationRead, markAllNotificationsRead, markAllMessagesRead, getUnreadCount, getPendingPaymentsCount, getConversations, getProperties, getUnits, Notification, Conversation, Property, Unit } from "@/lib/data";
+import { getNotifications, getAgentApplications, markNotificationRead, markAllNotificationsRead, markAllMessagesRead, getUnreadCount, getUnreadMessageCount, getPendingPaymentsCount, getConversations, getProperties, getUnits, Notification, Conversation, Property, Unit } from "@/lib/data";
 import { getTenants } from "@/lib/data";
 import Link from "next/link";
 import MessagingPanel from "@/components/messaging-panel";
@@ -111,6 +111,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [pendingAssignmentsCount, setPendingAssignmentsCount] = useState(0);
   const [pendingPaymentsCount, setPendingPaymentsCount] = useState(0);
   const [pendingAgentApplicationsCount, setPendingAgentApplicationsCount] = useState(0);
@@ -232,6 +233,29 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
   }, [user]);
 
   useEffect(() => {
+    if (!user) {
+      setUnreadMessageCount(0);
+      return;
+    }
+    let active = true;
+    const refresh = () => {
+      getUnreadMessageCount()
+        .then((count) => { if (active) setUnreadMessageCount(count); })
+        .catch(() => { if (active) setUnreadMessageCount(0); });
+    };
+    refresh();
+    const interval = window.setInterval(refresh, 30_000);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("renttrack-notifications-updated", refresh);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("renttrack-notifications-updated", refresh);
+    };
+  }, [user]);
+
+  useEffect(() => {
     const handleRefresh = () => {
       if (!user) return;
       getNotifications(user.id)
@@ -321,7 +345,8 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
       if (loadedRequest) {
         setSelectedAccountRequest(loadedRequest);
       } else {
-        // No reviewable request found — open Messages so the owner can still act.
+        // No reviewable request found — navigate to Messages so the owner can still act.
+        router.push("/dashboard/owner#messages");
         setShowMessages(true);
       }
     }
@@ -876,7 +901,14 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
                   onClick={() => setShowUserMenu(!showUserMenu)}
                   className="flex items-center gap-2.5 p-1.5 pl-2 rounded-xl hover:bg-slate-100 transition-all border border-transparent hover:border-slate-200"
                 >
-                  <Avatar src={user.avatarUrl} fallback={getInitials(user.name)} size="sm" className="ring-1 ring-slate-200" />
+                  <span className="relative inline-flex">
+                    <Avatar src={user.avatarUrl} fallback={getInitials(user.name)} size="sm" className="ring-1 ring-slate-200" />
+                    {unreadMessageCount > 0 && (
+                      <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold text-white ring-2 ring-white">
+                        {unreadMessageCount > 99 ? "99+" : unreadMessageCount}
+                      </span>
+                    )}
+                  </span>
                   <span className="hidden sm:block text-xs font-semibold text-slate-800">{user.name?.split(' ')[0] || "Owner"}</span>
                   <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`} />
                 </button>
