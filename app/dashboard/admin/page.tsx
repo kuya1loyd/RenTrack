@@ -10,7 +10,7 @@ import {
   LayoutDashboard, MapPinned, HeartPulse, SlidersHorizontal,
   Eye, Pencil, KeyRound, Copy, Mail, MessageSquare, Phone,
   Shield, ShieldOff, RotateCcw, Download, ChevronDown, MoreHorizontal, ShieldCheck,
-  Calendar, Check, Sparkles, Filter, UserCheck, MapPin, Clock, ExternalLink, Briefcase, AlertCircle, X, User, Camera, Wrench,
+  Calendar, Check, Sparkles, Filter, UserCheck, MapPin, Clock, ExternalLink, Briefcase, AlertCircle, X, User, Camera, Wrench, Loader2, EyeOff,
 } from "lucide-react";
 import PropertyLocationMap from "@/components/property-location-map-loader";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -294,6 +294,8 @@ export default function AdminDashboard() {
   const [editForm, setEditForm] = useState({ name: "", email: "" });
   const [resettingPassword, setResettingPassword] = useState<UserRecord | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [showCreateTenant, setShowCreateTenant] = useState(false);
   const [isCreatingTenant, setIsCreatingTenant] = useState(false);
   const [complaintReply, setComplaintReply] = useState("");
@@ -953,18 +955,22 @@ export default function AdminDashboard() {
   };
 
   const handleResetPassword = async () => {
-    if (!resettingPassword || !newPassword) return;
+    if (!resettingPassword || !newPassword || isResettingPassword) return;
     if (newPassword.length < 8) {
       toast.error("Password must be at least 8 characters");
       return;
     }
+    setIsResettingPassword(true);
     try {
       await adminResetUserPassword(resettingPassword.id, newPassword);
       toast.success("Password reset successfully");
       setResettingPassword(null);
       setNewPassword("");
+      setShowResetPassword(false);
     } catch {
       toast.error("Failed to reset password");
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -4795,22 +4801,87 @@ export default function AdminDashboard() {
       {/* Reset Password Modal */}
       {resettingPassword && (
         <div className="fixed inset-0 z-9999 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => { setResettingPassword(null); setNewPassword(""); }} />
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => {
+              if (isResettingPassword) return;
+              setResettingPassword(null);
+              setNewPassword("");
+              setShowResetPassword(false);
+            }}
+          />
           <div className="relative w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Reset Password</h3>
-              <button onClick={() => { setResettingPassword(null); setNewPassword(""); }} className="p-1 rounded-lg hover:bg-gray-100 transition-colors">
+              <button
+                type="button"
+                disabled={isResettingPassword}
+                onClick={() => {
+                  setResettingPassword(null);
+                  setNewPassword("");
+                  setShowResetPassword(false);
+                }}
+                className="p-1 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
+              >
                 <XCircle className="h-5 w-5 text-gray-400" />
               </button>
             </div>
-            <p className="text-sm text-gray-500 mb-4">Set a new password for <strong>{resettingPassword.name}</strong> ({resettingPassword.email})</p>
+            <p className="text-sm text-gray-500 mb-4">
+              Set a new password for <strong>{resettingPassword.name}</strong> ({resettingPassword.email})
+            </p>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">New Password</label>
-              <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Min. 8 characters" className="h-10 rounded-xl border-gray-200" />
+              <div className="relative">
+                <Input
+                  type={showResetPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Min. 8 characters"
+                  className="h-10 rounded-xl border-gray-200 pr-10"
+                  disabled={isResettingPassword}
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  disabled={isResettingPassword}
+                  onClick={() => setShowResetPassword(!showResetPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                  aria-label={showResetPassword ? "Hide password" : "Show password"}
+                >
+                  {showResetPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
             <div className="flex gap-3 mt-6">
-              <Button variant="outline" className="flex-1" onClick={() => { setResettingPassword(null); setNewPassword(""); }}>Cancel</Button>
-              <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" onClick={handleResetPassword} disabled={!newPassword || newPassword.length < 8}>Reset Password</Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                disabled={isResettingPassword}
+                onClick={() => {
+                  setResettingPassword(null);
+                  setNewPassword("");
+                  setShowResetPassword(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                onClick={handleResetPassword}
+                disabled={!newPassword || newPassword.length < 8 || isResettingPassword}
+              >
+                {isResettingPassword ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Resetting...
+                  </>
+                ) : (
+                  "Reset Password"
+                )}
+              </Button>
             </div>
           </div>
         </div>

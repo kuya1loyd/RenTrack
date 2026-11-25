@@ -41,42 +41,6 @@ interface ReceiptModalProps {
   };
 }
 
-function ThermalBarcode({ code }: { code: string }) {
-  const pattern = [
-    2, 1, 1, 2, 3, 1, 2, 2, 1, 3, 1, 2, 3, 1, 2, 1, 1, 3, 2, 1,
-    3, 2, 1, 2, 2, 1, 3, 1, 2, 1, 1, 3, 2, 1, 3, 2, 1, 2, 1, 3,
-    2, 1, 1, 3, 2, 1, 3, 1, 2, 2, 1, 3, 1, 2, 2, 1, 3, 2, 1, 1,
-    2, 1, 3, 1, 2, 2, 1, 1, 3, 2
-  ];
-  let curX = 0;
-  const rects: { x: number; width: number }[] = [];
-  for (let i = 0; i < pattern.length; i++) {
-    const w = pattern[i];
-    if (i % 2 === 0) {
-      rects.push({ x: curX, width: w });
-    }
-    curX += w;
-  }
-
-  return (
-    <div className="flex flex-col items-center justify-center pt-2">
-      <svg
-        className="w-48 sm:w-56 h-12"
-        viewBox={`0 0 ${curX} 40`}
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        {rects.map((r, idx) => (
-          <rect key={idx} x={r.x} y={0} width={r.width} height={40} fill="#000000" />
-        ))}
-      </svg>
-      <span className="font-mono text-[10px] tracking-widest text-slate-700 mt-1 uppercase">
-        {code}
-      </span>
-    </div>
-  );
-}
-
 export default function ReceiptModal({ isOpen, onClose, receiptUrl, payment }: ReceiptModalProps) {
   const [activeView, setActiveView] = useState<"receipt" | "attachment">("receipt");
 
@@ -476,9 +440,6 @@ export default function ReceiptModal({ isOpen, onClose, receiptUrl, payment }: R
 
                 {/* Short Dotted Divider */}
                 <div className="w-3/5 mx-auto border-b-2 border-dotted border-slate-400 my-4" />
-
-                {/* Barcode Section */}
-                <ThermalBarcode code={orNumber} />
 
                 {/* Tiny Footer Note */}
                 <p className="text-[9px] text-center text-slate-400 mt-2">

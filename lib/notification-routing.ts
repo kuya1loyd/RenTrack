@@ -15,8 +15,16 @@ const defaultHref: Record<string, string> = {
 
 /** Contract notices are never maintenance/system alerts, even when saved with a generic type. */
 export function isContractNotification(notification: NotificationRoutingInput): boolean {
+  const type = (notification.type || "").toLowerCase();
+  if (type === "contract" || type === "rental_contract") return true;
   const text = `${notification.title || ""} ${notification.message || ""}`.toLowerCase();
-  return /\b(?:rental\s+contract|contract|lease\s+agreement)\b/.test(text);
+  return (
+    /\b(?:rental\s+contract|contract|lease\s+agreement)\b/.test(text) ||
+    text.includes("rental contract") ||
+    text.includes("contract received") ||
+    text.includes("contract issued") ||
+    text.includes("contract requested")
+  );
 }
 
 /** Checks whether a notification is an informational system maintenance or platform alert. */

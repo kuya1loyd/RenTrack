@@ -2701,26 +2701,33 @@ export async function createUpload(data: { userId: string; userType?: string; ty
 
   const admin = getAdminSupabase();
 
-  // 2. Attempt saving to Supabase Storage bucket
+  // 2. Attempt saving to Supabase Storage bucket (with fast timeout so uploads never hang)
   try {
     const ext = data.mimeType.split("/")[1] || "jpg";
     const storagePath = `${data.type}/${id}.${ext}`;
-    let { error: storageError } = await admin.storage
+    const uploadPromise = admin.storage
       .from("renttrack-uploads")
       .upload(storagePath, data.buffer, {
         contentType: data.mimeType,
         upsert: true,
       });
+    const timeoutPromise = new Promise<{ error: any }>((resolve) =>
+      setTimeout(() => resolve({ error: new Error("Storage upload timeout") }), 3500)
+    );
+    let { error: storageError } = await Promise.race([uploadPromise, timeoutPromise]);
 
     if (storageError?.message?.toLowerCase().includes("bucket not found")) {
       const { error: bucketError } = await admin.storage.createBucket("renttrack-uploads", { public: true });
       if (!bucketError || bucketError.message?.toLowerCase().includes("already exists")) {
-        await admin.storage
-          .from("renttrack-uploads")
-          .upload(storagePath, data.buffer, {
-            contentType: data.mimeType,
-            upsert: true,
-          });
+        await Promise.race([
+          admin.storage
+            .from("renttrack-uploads")
+            .upload(storagePath, data.buffer, {
+              contentType: data.mimeType,
+              upsert: true,
+            }),
+          timeoutPromise,
+        ]);
       }
     }
   } catch (storageErr) {

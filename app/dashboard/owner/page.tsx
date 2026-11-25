@@ -12,7 +12,7 @@ import {
   Shield, ShieldOff, LogOut, MoreVertical, Search, Building2, RotateCcw,
   Copy, MoreHorizontal, Mail, MessageSquare, Phone, MapPinned, MapPin, DoorOpen, Bed,
   LayoutGrid, List, Wallet, History as HistoryIcon,
-  CalendarDays, Check, AlertCircle, XCircle, Wrench,
+  CalendarDays, Check, AlertCircle, XCircle, Wrench, Loader2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -193,6 +193,8 @@ export default function OwnerDashboard() {
   const [assignmentSearch, setAssignmentSearch] = useState("");
   const [assignmentPropertyFilter, setAssignmentPropertyFilter] = useState("all");
   const [viewingReceipt, setViewingReceipt] = useState<Payment | null>(null);
+  const [confirmingAssignmentId, setConfirmingAssignmentId] = useState<string | null>(null);
+  const [confirmingPaymentId, setConfirmingPaymentId] = useState<string | null>(null);
   const [viewingReport, setViewingReport] = useState<"rental" | "property" | null>(null);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
@@ -451,6 +453,8 @@ export default function OwnerDashboard() {
   };
 
   const handleConfirmAssignment = async (tenantId: string) => {
+    if (confirmingAssignmentId) return;
+    setConfirmingAssignmentId(tenantId);
     try {
       const targetTenant = tenants.find((t) => t.id === tenantId) || reviewAssignment;
       const updated = await updateTenantAssignment(tenantId, {
@@ -483,6 +487,8 @@ export default function OwnerDashboard() {
       }
     } catch {
       toast.error("Failed to confirm assignment");
+    } finally {
+      setConfirmingAssignmentId(null);
     }
   };
 
@@ -2487,11 +2493,15 @@ export default function OwnerDashboard() {
 
                           <Button
                             size="sm"
+                            disabled={confirmingAssignmentId === tenant.id}
                             onClick={() => handleConfirmAssignment(tenant.id)}
-                            className="h-9 gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 shadow-sm shadow-emerald-500/20"
+                            className="h-9 gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 shadow-sm shadow-emerald-500/20 disabled:opacity-75"
                           >
-                            <Check className="h-3.5 w-3.5 stroke-[2.5]" />
-                            Approve
+                            {confirmingAssignmentId === tenant.id ? (
+                              <><Loader2 className="h-3.5 w-3.5 animate-spin" />Approving...</>
+                            ) : (
+                              <><Check className="h-3.5 w-3.5 stroke-[2.5]" />Approve</>
+                            )}
                           </Button>
                         </div>
                       </div>
@@ -2896,7 +2906,35 @@ export default function OwnerDashboard() {
                         <Badge variant={payment.status === "paid" ? "success" : payment.status === "pending" ? "warning" : payment.status === "overdue" ? "destructive" : "outline"} className="text-sm font-semibold capitalize">{payment.status}</Badge>
                         <div className="mt-2 flex justify-end gap-2">
                           {payment.receiptUrl && <Button size="sm" variant="outline" onClick={() => setViewingReceipt(payment)}>View Receipt</Button>}
-                          {payment.status === "pending" && <Button size="sm" onClick={async () => { const updated = await verifyPayment(payment, user?.id || "", "paid"); if (updated) { setPayments((current) => current.map((item) => item.id === payment.id ? updated : item)); toast.success("Payment confirmed"); window.dispatchEvent(new Event("payment-confirmed")); } }}>Confirm</Button>}
+                          {payment.status === "pending" && (
+                            <Button
+                              size="sm"
+                              disabled={confirmingPaymentId === payment.id}
+                              onClick={async () => {
+                                setConfirmingPaymentId(payment.id);
+                                try {
+                                  const updated = await verifyPayment(payment, user?.id || "", "paid");
+                                  if (updated) {
+                                    setPayments((current) => current.map((item) => item.id === payment.id ? updated : item));
+                                    toast.success("Payment confirmed");
+                                    window.dispatchEvent(new Event("payment-confirmed"));
+                                  } else {
+                                    toast.error("Unable to confirm this payment");
+                                  }
+                                } catch {
+                                  toast.error("Unable to confirm this payment");
+                                } finally {
+                                  setConfirmingPaymentId(null);
+                                }
+                              }}
+                            >
+                              {confirmingPaymentId === payment.id ? (
+                                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Confirming...</>
+                              ) : (
+                                "Confirm"
+                              )}
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -3117,13 +3155,35 @@ export default function OwnerDashboard() {
                           <td><PaymentStatus status={payment.status} /></td><td className="max-w-44 truncate" title={payment.id}>{payment.id}</td>
                           <td><span className={management.actions}>
                             {payment.receiptUrl && <Button size="sm" variant="outline" onClick={() => setViewingReceipt(payment)}>Receipt</Button>}
-                            {payment.status === "pending" && <Button size="sm" onClick={async () => {
-                              try {
-                                const updated = await verifyPayment(payment, user?.id || "", "paid");
-                                if (updated) { setPayments((current) => current.map((item) => item.id === payment.id ? updated : item)); toast.success("Payment confirmed"); window.dispatchEvent(new Event("payment-confirmed")); }
-                                else toast.error("Unable to confirm this payment");
-                              } catch { toast.error("Unable to confirm this payment"); }
-                            }}>Confirm</Button>}
+                            {payment.status === "pending" && (
+                              <Button
+                                size="sm"
+                                disabled={confirmingPaymentId === payment.id}
+                                onClick={async () => {
+                                  setConfirmingPaymentId(payment.id);
+                                  try {
+                                    const updated = await verifyPayment(payment, user?.id || "", "paid");
+                                    if (updated) {
+                                      setPayments((current) => current.map((item) => item.id === payment.id ? updated : item));
+                                      toast.success("Payment confirmed");
+                                      window.dispatchEvent(new Event("payment-confirmed"));
+                                    } else {
+                                      toast.error("Unable to confirm this payment");
+                                    }
+                                  } catch {
+                                    toast.error("Unable to confirm this payment");
+                                  } finally {
+                                    setConfirmingPaymentId(null);
+                                  }
+                                }}
+                              >
+                                {confirmingPaymentId === payment.id ? (
+                                  <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Confirming...</>
+                                ) : (
+                                  "Confirm"
+                                )}
+                              </Button>
+                            )}
                             {!payment.receiptUrl && payment.status !== "pending" && <span>–</span>}
                           </span></td>
                         </tr>;
@@ -3956,11 +4016,15 @@ export default function OwnerDashboard() {
               </Button>
 
               <Button
+                disabled={confirmingAssignmentId === reviewAssignment.id}
                 onClick={() => handleConfirmAssignment(reviewAssignment.id)}
-                className="h-10 gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold px-5 rounded-xl shadow-md shadow-emerald-500/20"
+                className="h-10 gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold px-5 rounded-xl shadow-md shadow-emerald-500/20 disabled:opacity-75"
               >
-                <CheckCircle2 className="h-4 w-4" />
-                Confirm & Approve Assignment
+                {confirmingAssignmentId === reviewAssignment.id ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />Approving...</>
+                ) : (
+                  <><CheckCircle2 className="h-4 w-4" />Confirm &amp; Approve Assignment</>
+                )}
               </Button>
             </div>
           </div>

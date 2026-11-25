@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock,
+  FileText,
   Home,
   Layers,
   MapPin,
@@ -197,9 +198,18 @@ export function MyRentalCard({
           </span>
         </div>
         <div className="flex-1 p-5">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-blue-600">
-            {kind === "unit" ? "My Assigned Condominium Unit" : "My Assigned House / Property"}
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-600">
+              {kind === "unit" ? "My Assigned Condominium Unit" : "My Assigned House / Property"}
+            </p>
+            <Link
+              href="/dashboard/tenant/payments?tab=contract"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/80 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors shadow-2xs"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span>Rental Contract</span>
+            </Link>
+          </div>
           <h3 className="mt-1 text-lg font-extrabold text-slate-900">{title}</h3>
           {address && (
             <p className="mt-1 flex items-start gap-1.5 text-xs text-slate-500">

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate } from "@/lib/utils";
 import { safeParseJson } from "@/lib/data";
+import { getPortalAuthHeaders } from "@/lib/auth";
 
 type TenantContract = {
   id: string;
@@ -23,7 +24,7 @@ export default function TenantContracts() {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/data/contracts", { credentials: "include", cache: "no-store" })
+    fetch("/api/data/contracts", { credentials: "include", cache: "no-store", headers: getPortalAuthHeaders("tenant") })
       .then(async (response) => {
         const result = await safeParseJson(response);
         if (!response.ok || !result.success) throw new Error(result.error || "Could not load contracts");

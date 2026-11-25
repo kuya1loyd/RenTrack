@@ -130,7 +130,7 @@ async function resolveContractTenant(admin: ReturnType<typeof getAdminSupabase>,
   };
 }
 
-async function notify(userId: string, userType: "owner" | "agent" | "tenant", title: string, message: string) {
+async function notify(userId: string, userType: "owner" | "agent" | "tenant", title: string, message: string, notifType: string = "contract") {
   try {
     const { data: user } = await getAdminSupabase().schema("public").from("users").select("id").eq("id", userId).maybeSingle();
     if (!user) {
@@ -143,7 +143,7 @@ async function notify(userId: string, userType: "owner" | "agent" | "tenant", ti
       user_type: userType,
       title,
       message,
-      type: "property",
+      type: notifType,
       read: false,
       created_at: new Date().toISOString(),
     });
@@ -181,13 +181,23 @@ export async function GET(request: NextRequest) {
         query = query.eq("agent_id", auth.userId);
       }
     } else {
-      const { data: tenantRecords } = await admin.from("tenants").select("id").or(`id.eq.${auth.userId},email.ilike.${auth.user.email}`);
+      const { data: tenantRecords } = await admin
+        .from("tenants")
+        .select("id, unit_id")
+        .or(`id.eq.${auth.userId},email.ilike.${auth.user.email}`);
       const tenantIds = Array.from(new Set([auth.userId, ...(tenantRecords || []).map((t: any) => t.id)].filter(Boolean)));
+      const unitIds = Array.from(new Set((tenantRecords || []).map((t: any) => t.unit_id).filter(Boolean)));
+
+      const filterParts: string[] = [];
       if (tenantIds.length > 0) {
-        query = query.in("tenant_id", tenantIds);
+        filterParts.push(`tenant_id.in.(${tenantIds.join(",")})`);
       } else {
-        query = query.eq("tenant_id", auth.userId);
+        filterParts.push(`tenant_id.eq.${auth.userId}`);
       }
+      if (unitIds.length > 0) {
+        filterParts.push(`property_id.in.(${unitIds.join(",")})`);
+      }
+      query = query.or(filterParts.join(","));
     }
 
     const { data, error } = await query;
@@ -410,14 +420,14 @@ export async function POST(request: NextRequest) {
 
     // Send notifications
     if (result.data.agent_id && result.data.agent_id !== auth.userId) {
-      await notify(result.data.agent_id, "agent", "Contract received", `${auth.user.name} sent “${result.data.title}” for ${result.data.property_name}.`);
+      await notify(result.data.agent_id, "agent", "Contract received", `${auth.user.name} sent “${result.data.title}” for ${result.data.property_name}.`, "contract");
     }
-    const tenantTargetUserId = deliverToTenant || auth.user.role === "agent" ? (recipientTenantUserId || result.data.tenant_id) : null;
+    const tenantTargetUserId = deliverToTenant ? (recipientTenantUserId || result.data.tenant_id) : null;
     if (tenantTargetUserId && tenantTargetUserId !== auth.userId && !contractId) {
-      await notify(tenantTargetUserId, "tenant", "Rental contract received", `${auth.user.name} sent “${result.data.title}” for ${result.data.property_name}.`);
+      await notify(tenantTargetUserId, "tenant", "Rental contract received", `${auth.user.name} sent “${result.data.title}” for ${result.data.property_name}.`, "contract");
     }
     if (result.data.owner_id && result.data.owner_id !== auth.userId && auth.user.role === "agent") {
-      await notify(result.data.owner_id, "owner", "Contract issued", `${auth.user.name} issued contract “${result.data.title}” for ${result.data.property_name}.`);
+      await notify(result.data.owner_id, "owner", "Contract issued", `${auth.user.name} issued contract “${result.data.title}” for ${result.data.property_name}.`, "contract");
     }
 
     return NextResponse.json({ success: true, contract: mapContract(result.data) }, { status: contractId ? 200 : 201 });
@@ -440,8 +450,51 @@ export async function PATCH(request: NextRequest) {
     await ensureRentalContractsSchema();
     const body = await request.json();
     const id = String(body.id || "");
-    if (!id || body.action !== "reject") return NextResponse.json({ success: false, error: "Invalid contract request update" }, { status: 400 });
+    const action = String(body.action || "");
+    if (!id || (action !== "reject" && action !== "forward_to_tenant")) {
+      return NextResponse.json({ success: false, error: "Invalid contract request update" }, { status: 400 });
+    }
     const admin = getAdminSupabase();
+
+    if (action === "forward_to_tenant") {
+      const targetTenantId = String(body.tenantId || "");
+      if (!targetTenantId) {
+        return NextResponse.json({ success: false, error: "Choose a tenant to receive the contract" }, { status: 400 });
+      }
+      const resolvedTenant = await resolveContractTenant(admin, targetTenantId);
+      if (!resolvedTenant) {
+        return NextResponse.json({ success: false, error: "Selected tenant not found" }, { status: 404 });
+      }
+
+      const lookupQuery = admin.from("rental_contracts").select("*").eq("id", id);
+      if (auth.user.role === "owner") {
+        lookupQuery.eq("owner_id", auth.userId);
+      } else if (auth.user.role === "agent") {
+        lookupQuery.or(`agent_id.eq.${auth.userId},agent_id.is.null`);
+      }
+      const { data: existing, error: lookupError } = await lookupQuery.maybeSingle();
+      if (lookupError) throw lookupError;
+      if (!existing) return NextResponse.json({ success: false, error: "This contract is no longer available" }, { status: 404 });
+
+      const now = new Date().toISOString();
+      const { data, error } = await admin
+        .from("rental_contracts")
+        .update({
+          tenant_id: resolvedTenant.effectiveId,
+          tenant_name: resolvedTenant.name,
+          updated_at: now,
+        })
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error) throw error;
+
+      const tenantTargetUserId = resolvedTenant.userId || resolvedTenant.effectiveId;
+      if (tenantTargetUserId && tenantTargetUserId !== auth.userId) {
+        await notify(tenantTargetUserId, "tenant", "Rental contract received", `${auth.user.name} sent “${data.title}” for ${data.property_name}.`, "contract");
+      }
+      return NextResponse.json({ success: true, contract: mapContract(data) });
+    }
 
     const lookupQuery = admin.from("rental_contracts").select("*").eq("id", id);
     if (auth.user.role === "owner") {
@@ -457,7 +510,7 @@ export async function PATCH(request: NextRequest) {
     if (error) throw error;
 
     if (data.agent_id && data.agent_id !== auth.userId) {
-      await notify(data.agent_id, "agent", "Contract request declined", `Your request for ${data.tenant_name || "a tenant"} at ${data.property_name} was declined.`);
+      await notify(data.agent_id, "agent", "Contract request declined", `Your request for ${data.tenant_name || "a tenant"} at ${data.property_name} was declined.`, "contract");
     }
     return NextResponse.json({ success: true, contract: mapContract(data) });
   } catch (error) {

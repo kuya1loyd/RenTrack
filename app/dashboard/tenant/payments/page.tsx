@@ -105,10 +105,27 @@ export default function TenantPaymentsPage() {
       });
 
     getTenants()
-      .then((records) => {
+      .then(async (records) => {
         if (!isMounted) return;
-        const found = records.find((t) => t.id === user.id);
+        const found = records.find(
+          (t) =>
+            t.id === user.id ||
+            (t.email && user.email && t.email.toLowerCase() === user.email.toLowerCase()) ||
+            (t as any).userId === user.id
+        );
         setTenant(found || null);
+
+        // Also check /api/data/tenants/me to get the unit/property assigned agent if not directly on tenant
+        try {
+          const res = await fetch("/api/data/tenants/me", { credentials: "include", cache: "no-store" });
+          const meData = await safeParseJson(res);
+          if (meData?.success && isMounted) {
+            const unitAgentId = meData.unit?.agentId || meData.property?.agentId;
+            if (unitAgentId) {
+              setTenant((prev) => (prev ? { ...prev, assignedAgentId: unitAgentId } : prev));
+            }
+          }
+        } catch {}
       })
       .catch(() => {
         if (isMounted) setTenant(null);
@@ -156,7 +173,9 @@ export default function TenantPaymentsPage() {
   const myPayments = payments;
   const latestPayment = myPayments.length > 0 ? myPayments[0] : null;
   const rentAmount = tenant?.rentAmount && tenant.rentAmount > 0 ? tenant.rentAmount : (latestPayment?.amountDue && latestPayment.amountDue > 0 ? latestPayment.amountDue : 0);
-  const assignedAgent = agents.find((a) => a.id === tenant?.assignedAgentId) || (agents.length > 0 ? agents[0] : null);
+  const assignedAgent = tenant?.assignedAgentId
+    ? agents.find((a) => a.id === tenant.assignedAgentId || a.id === (tenant as any)?.agentId) || null
+    : null;
 
   const openPaymentModal = (type: "regular" | "partial" | "advance" | "outstanding" = "regular") => {
     setPaymentType(type);
@@ -170,6 +189,7 @@ export default function TenantPaymentsPage() {
       setPaymentAmount(displayBalance > 0 ? String(displayBalance) : "0.00");
     }
     setPaymentMethod("gcash");
+    setRecipientType(assignedAgent ? "agent" : "owner");
     setGcashRefNumber("");
     setReceiptFile(null);
     setIsScanningReceipt(false);
@@ -214,30 +234,11 @@ export default function TenantPaymentsPage() {
     if (paymentMethod === "gcash" && isImageFile) {
       setIsScanningReceipt(true);
 
-      // 1. Try instant client-side scan with tesseract.js in browser Web Worker
+      // 1. Fast server API OCR scan
+      let detectedRef: string | null = null;
       try {
-        const { createWorker } = await import("tesseract.js");
-        const worker = await createWorker("eng");
-        const ret = await worker.recognize(file);
-        await worker.terminate();
-        const text = ret?.data?.text || "";
-        const extracted = parseGcashReference(text);
-        if (extracted) {
-          setGcashRefNumber(extracted);
-          setOcrDetected(true);
-          toast.success(`GCash Reference Number detected: ${extracted}`);
-          setIsScanningReceipt(false);
-          return;
-        }
-      } catch (clientOcrErr) {
-        console.warn("Client-side OCR notice, falling back to server:", clientOcrErr);
-      }
-
-      // 2. Server API fallback
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
         const ocrFormData = new FormData();
         ocrFormData.append("file", file);
         const res = await fetch("/api/ocr/extract-reference", {
@@ -248,19 +249,35 @@ export default function TenantPaymentsPage() {
         clearTimeout(timeoutId);
         const data = await safeParseJson(res);
         if (data.success && data.referenceNumber) {
-          setGcashRefNumber(data.referenceNumber);
-          setOcrDetected(true);
-          toast.success(`GCash Reference Number detected: ${data.referenceNumber}`);
-        } else {
-          setOcrDetected(false);
-          toast.info("Receipt attached. You can confirm or enter the Reference Number below.");
+          detectedRef = data.referenceNumber;
         }
-      } catch {
-        clearTimeout(timeoutId);
-        setOcrDetected(false);
-      } finally {
-        setIsScanningReceipt(false);
+      } catch (err) {
+        console.warn("Server OCR fetch note:", err);
       }
+
+      // 2. Client-side fallback if server did not find reference
+      if (!detectedRef) {
+        try {
+          const { createWorker } = await import("tesseract.js");
+          const worker = await createWorker("eng");
+          const ret = await worker.recognize(file);
+          await worker.terminate();
+          const text = ret?.data?.text || "";
+          detectedRef = parseGcashReference(text);
+        } catch (clientOcrErr) {
+          console.warn("Client-side OCR notice:", clientOcrErr);
+        }
+      }
+
+      if (detectedRef) {
+        setGcashRefNumber(detectedRef);
+        setOcrDetected(true);
+        toast.success(`GCash Reference Number detected: ${detectedRef}`);
+      } else {
+        setOcrDetected(false);
+        toast.info("Receipt attached. You can confirm or enter the Reference Number below.");
+      }
+      setIsScanningReceipt(false);
     }
   };
 
@@ -643,15 +660,27 @@ export default function TenantPaymentsPage() {
                           <div className="font-semibold text-slate-900">{formatCurrency(p.amountPaid || 0)}</div>
                           <div>
                             <span
-                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
                                 isPaid
-                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-300"
                                   : isPending
-                                  ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                  ? "bg-amber-50 text-amber-700 border border-amber-300"
                                   : "bg-slate-100 text-slate-700 border border-slate-200"
                               }`}
                             >
-                              {p.status || "pending"}
+                              {isPaid ? (
+                                <>
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 stroke-[2.5]" />
+                                  <span>Approved</span>
+                                </>
+                              ) : isPending ? (
+                                <>
+                                  <Clock className="h-3.5 w-3.5 text-amber-600" />
+                                  <span>Pending Approval</span>
+                                </>
+                              ) : (
+                                p.status || "pending"
+                              )}
                             </span>
                           </div>
                           <div className="text-right">
@@ -925,20 +954,29 @@ export default function TenantPaymentsPage() {
                     {/* Agent Option */}
                     <button
                       type="button"
-                      onClick={() => setRecipientType("agent")}
+                      onClick={() => {
+                        if (assignedAgent) {
+                          setRecipientType("agent");
+                        } else {
+                          toast.info("No agent assigned to your rental. Please pay directly to the Property Owner.");
+                          setRecipientType("owner");
+                        }
+                      }}
                       className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2 cursor-pointer ${
-                        recipientType === "agent"
+                        recipientType === "agent" && assignedAgent
                           ? "border-blue-600 bg-blue-50/80 text-blue-900 ring-2 ring-blue-600/20 shadow-xs"
+                          : !assignedAgent
+                          ? "border-slate-200 bg-slate-50/60 text-slate-400 opacity-60 cursor-not-allowed"
                           : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                       }`}
                     >
-                      <UserCheck className="h-5 w-5 text-blue-600 shrink-0" />
+                      <UserCheck className={`h-5 w-5 shrink-0 ${assignedAgent ? "text-blue-600" : "text-slate-400"}`} />
                       <div className="min-w-0">
                         <div className="text-xs font-bold text-slate-900 truncate">
                           Property Agent
                         </div>
                         <p className="text-[10px] text-slate-500 truncate">
-                          {assignedAgent?.name || "Assigned Agent"}
+                          {assignedAgent ? `Agent ${assignedAgent.name}` : "No agent assigned"}
                         </p>
                       </div>
                     </button>
@@ -1358,13 +1396,20 @@ export default function TenantPaymentsPage() {
                             <div className="font-semibold text-slate-900">{formatCurrency(p.amountPaid || 0)}</div>
                             <div>
                               <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
                                   p.status === "paid"
-                                    ? "bg-emerald-50 text-emerald-700"
-                                    : "bg-amber-50 text-amber-700"
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-300"
+                                    : "bg-amber-50 text-amber-700 border border-amber-300"
                                 }`}
                               >
-                                {p.status || "pending"}
+                                {p.status === "paid" ? (
+                                  <>
+                                    <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                                    <span>Approved</span>
+                                  </>
+                                ) : (
+                                  p.status || "pending"
+                                )}
                               </span>
                             </div>
                             <div className="text-right">

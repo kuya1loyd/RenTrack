@@ -80,6 +80,10 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
   const reauthPasswordRef = useRef<HTMLInputElement | null>(null);
   const [pendingUpload, setPendingUpload] = useState<{ form: FormData; successMessage: string; closeOwnerModal?: boolean } | null>(null);
 
+  const [forwardContract, setForwardContract] = useState<Contract | null>(null);
+  const [forwardTenantId, setForwardTenantId] = useState("");
+  const [forwarding, setForwarding] = useState(false);
+
   const visibleProperties = useMemo(() => {
     if (mode !== "agent") return properties;
     const assigned = properties.filter((property) => property.agentId === user?.id || (property as any).agent_id === user?.id);
@@ -326,6 +330,46 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
     }
   };
 
+  const forwardTenants = useMemo(() => {
+    if (!forwardContract) return [];
+    const targetId = forwardContract.propertyId;
+    const filtered = tenants.filter((t) => (t as any).propertyId === targetId || t.unitId === targetId || (t.propertyName && forwardContract.propertyName && t.propertyName.toLowerCase() === forwardContract.propertyName.toLowerCase()));
+    return filtered.length > 0 ? filtered : tenants;
+  }, [forwardContract, tenants]);
+
+  const handleForwardToTenant = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!forwardContract || !forwardTenantId) {
+      toast.error("Please choose a tenant");
+      return;
+    }
+    setForwarding(true);
+    try {
+      const res = await fetch("/api/data/contracts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getPortalAuthHeaders(mode) },
+        credentials: "include",
+        body: JSON.stringify({
+          id: forwardContract.id,
+          action: "forward_to_tenant",
+          tenantId: forwardTenantId,
+        }),
+      });
+      const data = await safeParseJson(res);
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to forward contract to tenant");
+      }
+      toast.success("Contract successfully sent to tenant!");
+      setForwardContract(null);
+      setForwardTenantId("");
+      await load();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to forward contract");
+    } finally {
+      setForwarding(false);
+    }
+  };
+
   const handleReauthAndSend = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const effectivePassword = reauthPassword || reauthPasswordRef.current?.value || "";
@@ -531,7 +575,24 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDate(contract.createdAt)}</td>
                     <td className="px-4 py-3"><Badge variant={statusVariant(contract.status)} className={cn("text-[10px] capitalize", contract.status === "rejected" && "text-slate-600")}>{contract.status === "rejected" ? "Declined" : contract.status}</Badge></td>
                     <td className="px-4 py-3"><div className="flex justify-end gap-2">
-                      {contract.status === "sent" && <a href={`/api/data/contracts/${contract.id}/file`} className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-2.5 text-xs font-medium hover:bg-slate-50"><Download className="mr-1.5 h-3.5 w-3.5" />Download</a>}
+                      {contract.status === "sent" && (
+                        <>
+                          <a href={`/api/data/contracts/${contract.id}/file`} className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-2.5 text-xs font-medium hover:bg-slate-50"><Download className="mr-1.5 h-3.5 w-3.5" />Download</a>
+                          {(mode === "agent" || mode === "owner") && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setForwardContract(contract);
+                                setForwardTenantId(contract.tenantId || "");
+                              }}
+                              className="inline-flex h-8 items-center rounded-lg bg-blue-50 border border-blue-200 px-2.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer"
+                            >
+                              <Send className="mr-1.5 h-3.5 w-3.5" />
+                              {contract.tenantId ? "Forward" : "Send to Tenant"}
+                            </button>
+                          )}
+                        </>
+                      )}
                       {contract.status === "requested" && <>
                         <label className={cn("inline-flex h-8 cursor-pointer items-center rounded-lg bg-blue-600 px-2.5 text-xs font-medium text-white hover:bg-blue-700", sending && "opacity-70 pointer-events-none")}>
                           {uploadingContractId === contract.id ? (
@@ -863,17 +924,15 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
               />
               <button
                 type="button"
-                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  if (reauthPasswordRef.current?.value && !reauthPassword) {
-                    setReauthPassword(reauthPasswordRef.current.value);
-                  }
+                  const currentVal = reauthPasswordRef.current?.value || reauthPassword;
+                  if (currentVal) setReauthPassword(currentVal);
                   setShowReauthPassword((prev) => !prev);
                 }}
                 aria-label={showReauthPassword ? "Hide password" : "Show password"}
                 className="absolute inset-y-0 right-0 z-10 flex w-10 items-center justify-center text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
               >
-                {showReauthPassword ? <Eye className="h-4 w-4 text-blue-600" /> : <EyeOff className="h-4 w-4" />}
+                {showReauthPassword ? <EyeOff className="h-4 w-4 text-blue-600" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
           </div>
@@ -886,6 +945,64 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Verifying &amp; sending...</>
               ) : (
                 <><Send className="mr-2 h-4 w-4" />Verify &amp; Send Contract</>
+              )}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Forward Contract to Tenant Modal */}
+      <Modal
+        isOpen={!!forwardContract}
+        onClose={() => { if (!forwarding) setForwardContract(null); }}
+        title="Send Contract to Tenant"
+        description={forwardContract ? `Deliver "${forwardContract.title}" directly to the tenant's portal.` : ""}
+        className="max-w-md"
+      >
+        <form onSubmit={handleForwardToTenant} className="space-y-4">
+          <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600 space-y-1">
+            <p><span className="font-semibold text-slate-800">Property:</span> {forwardContract?.propertyName}</p>
+            <p><span className="font-semibold text-slate-800">File:</span> {forwardContract?.fileName || "Rental Contract Document"}</p>
+          </div>
+
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700">
+            <span>Choose Tenant</span>
+            <select
+              required
+              value={forwardTenantId}
+              onChange={(e) => setForwardTenantId(e.target.value)}
+              disabled={forwardTenants.length === 0}
+              className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900"
+            >
+              <option value="">Select tenant to receive contract</option>
+              {forwardTenants.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} {t.unitNumber ? `· Unit ${t.unitNumber}` : ""} ({t.email})
+                </option>
+              ))}
+            </select>
+            {forwardTenants.length === 0 && (
+              <span className="text-xs text-amber-600">No active tenants found for this property.</span>
+            )}
+          </label>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={forwarding}
+              onClick={() => setForwardContract(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={forwarding || !forwardTenantId || forwardTenants.length === 0}
+            >
+              {forwarding ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending to tenant...</>
+              ) : (
+                <><Send className="mr-2 h-4 w-4" />Send to Tenant</>
               )}
             </Button>
           </div>

@@ -209,6 +209,17 @@ export default function TenantNavbar() {
               <span>My Payments</span>
             </Link>
 
+            <Link
+              href="/dashboard/tenant/payments?tab=contract"
+              className={cn(
+                "flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                "text-slate-700 hover:bg-slate-100/90 hover:text-slate-950 font-medium"
+              )}
+            >
+              <FileText className="h-4 w-4 text-blue-600" />
+              <span>Rental Contract</span>
+            </Link>
+
             {/* My Property Dropdown */}
             <div
               className="relative"
@@ -510,10 +521,11 @@ export default function TenantNavbar() {
                         const isMaint = isMaintenanceNotification(n);
                         const type = (n.type || "").toLowerCase();
                         const cleanText = `${n.title || ""} ${n.message || ""}`.replace(/renttrack/gi, " ");
-                        const isSystem = !isContractNotification(n) && (isMaint || type === "system");
+                        const isContract = isContractNotification(n) || type === "contract";
+                        const isSystem = !isContract && (isMaint || type === "system");
                         const isPayment = !isSystem && (type === "payment" || /\b(?:payment|payments|receipt|receipts|balance|billing|invoice|paid|due\s+date|monthly\s+rent)\b/i.test(cleanText) || (/\brent\b/i.test(cleanText) && /\b(?:paid|due|amount|balance|fee|deposit|invoice|pay|overdue|receipt)\b/i.test(cleanText)));
-                        const isProperty = !isSystem && !isPayment && (type === "property" || /\b(?:property|properties|rental\s+unit|apartment|condo)\b/i.test(cleanText));
-                        const isTenant = !isSystem && !isPayment && !isProperty && (type === "tenant" || /\b(?:assignment|assigned|assigned\s+unit|lease|tenancy)\b/i.test(cleanText));
+                        const isProperty = !isSystem && !isPayment && !isContract && (type === "property" || /\b(?:property|properties|rental\s+unit|apartment|condo)\b/i.test(cleanText));
+                        const isTenant = !isSystem && !isPayment && !isProperty && !isContract && (type === "tenant" || /\b(?:assignment|assigned|assigned\s+unit|lease|tenancy)\b/i.test(cleanText));
 
                         return (
                           <button
@@ -529,17 +541,19 @@ export default function TenantNavbar() {
                               className={cn(
                                 "flex h-8 w-8 items-center justify-center rounded-lg shrink-0 mt-0.5",
                                 isPayment && "bg-emerald-50 text-emerald-600",
+                                isContract && "bg-indigo-50 text-indigo-600",
                                 isProperty && "bg-amber-50 text-amber-600",
                                 isSystem && "bg-purple-50 text-purple-600",
                                 isTenant && "bg-blue-50 text-blue-600",
-                                !isPayment && !isProperty && !isSystem && !isTenant && "bg-slate-100 text-slate-600"
+                                !isPayment && !isContract && !isProperty && !isSystem && !isTenant && "bg-slate-100 text-slate-600"
                               )}
                             >
                               {isPayment && <CreditCard className="h-4 w-4" />}
+                              {isContract && <FileText className="h-4 w-4" />}
                               {isProperty && <Building2 className="h-4 w-4" />}
                               {isSystem && <Settings className="h-4 w-4" />}
                               {isTenant && <Home className="h-4 w-4" />}
-                              {!isPayment && !isProperty && !isSystem && !isTenant && <Bell className="h-4 w-4" />}
+                              {!isPayment && !isContract && !isProperty && !isSystem && !isTenant && <Bell className="h-4 w-4" />}
                             </div>
 
                             <div className="flex-1 min-w-0">
@@ -899,11 +913,11 @@ export default function TenantNavbar() {
           const isMaint = isMaintenanceNotification(selectedNotification);
           const type = (selectedNotification.type || "").toLowerCase();
           const cleanText = `${selectedNotification.title || ""} ${selectedNotification.message || ""}`.replace(/renttrack/gi, " ");
-          const isContract = isContractNotification(selectedNotification);
+          const isContract = isContractNotification(selectedNotification) || type === "contract";
           const isSystem = !isContract && (isMaint || type === "system");
-          const isPayment = !isSystem && (type === "payment" || /\b(?:payment|payments|receipt|receipts|balance|billing|invoice|paid|due\s+date|monthly\s+rent)\b/i.test(cleanText) || (/\brent\b/i.test(cleanText) && /\b(?:paid|due|amount|balance|fee|deposit|invoice|pay|overdue|receipt)\b/i.test(cleanText)));
-          const isProperty = !isSystem && !isPayment && (type === "property" || /\b(?:property|properties|rental\s+unit|apartment|condo)\b/i.test(cleanText));
-          const isTenant = !isSystem && !isPayment && !isProperty && (type === "tenant" || /\b(?:assignment|assigned|assigned\s+unit|lease|tenancy)\b/i.test(cleanText));
+          const isPayment = !isSystem && !isContract && (type === "payment" || /\b(?:payment|payments|receipt|receipts|balance|billing|invoice|paid|due\s+date|monthly\s+rent)\b/i.test(cleanText) || (/\brent\b/i.test(cleanText) && /\b(?:paid|due|amount|balance|fee|deposit|invoice|pay|overdue|receipt)\b/i.test(cleanText)));
+          const isProperty = !isSystem && !isPayment && !isContract && (type === "property" || /\b(?:property|properties|rental\s+unit|apartment|condo)\b/i.test(cleanText));
+          const isTenant = !isSystem && !isPayment && !isProperty && !isContract && (type === "tenant" || /\b(?:assignment|assigned|assigned\s+unit|lease|tenancy)\b/i.test(cleanText));
 
           let category = "General Notice";
           let badgeClass = "bg-slate-100 text-slate-700 border-slate-200";

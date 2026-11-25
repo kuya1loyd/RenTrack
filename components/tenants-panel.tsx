@@ -47,9 +47,6 @@ export default function TenantsPanel({
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editAddress, setEditAddress] = useState("");
-  const [editPropertyId, setEditPropertyId] = useState("");
-  const [editUnitId, setEditUnitId] = useState("");
-  const [editRent, setEditRent] = useState("");
   const [editContractStart, setEditContractStart] = useState("");
   const [editContractEnd, setEditContractEnd] = useState("");
 
@@ -102,14 +99,10 @@ export default function TenantsPanel({
   };
 
   const handleOpenEdit = (tenant: TenantRecord) => {
-    const matchedUnit = units.find((u) => u.id === tenant.unitId);
     setEditingTenant(tenant);
     setEditName(tenant.name || "");
     setEditPhone(tenant.phone || "");
     setEditAddress(tenant.address || "");
-    setEditPropertyId(matchedUnit?.propertyId || "");
-    setEditUnitId(tenant.unitId || "");
-    setEditRent(tenant.rentAmount != null ? String(tenant.rentAmount) : "");
     setEditContractStart(tenant.contractStart || "");
     setEditContractEnd(tenant.contractEnd || "");
   };
@@ -129,9 +122,6 @@ export default function TenantsPanel({
           name: editName,
           phone: editPhone,
           address: editAddress,
-          propertyId: editPropertyId || undefined,
-          unitId: editUnitId || undefined,
-          rentAmount: editRent ? Number(editRent) : undefined,
           contractStart: editContractStart || undefined,
           contractEnd: editContractEnd || undefined,
         }),
@@ -180,12 +170,6 @@ export default function TenantsPanel({
       setIsSubmitting(false);
     }
   };
-
-  const availableUnitsForProperty = useMemo(() => {
-    if (!editPropertyId) return [];
-    return units.filter((u) => u.propertyId === editPropertyId);
-  }, [units, editPropertyId]);
-
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
@@ -739,54 +723,6 @@ export default function TenantsPanel({
                     onChange={(e) => setEditAddress(e.target.value)}
                     className="h-9 text-xs"
                     placeholder="Tenant residential address"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block mb-1 font-semibold text-slate-700">Property</label>
-                    <select
-                      value={editPropertyId}
-                      onChange={(e) => {
-                        setEditPropertyId(e.target.value);
-                        setEditUnitId("");
-                      }}
-                      className="h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-xs text-slate-800"
-                    >
-                      <option value="">No property</option>
-                      {properties.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block mb-1 font-semibold text-slate-700">Unit</label>
-                    <select
-                      value={editUnitId}
-                      onChange={(e) => setEditUnitId(e.target.value)}
-                      className="h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-xs text-slate-800"
-                      disabled={!editPropertyId}
-                    >
-                      <option value="">No unit</option>
-                      {availableUnitsForProperty.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          Unit {u.unitNumber}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block mb-1 font-semibold text-slate-700">Monthly Rent (₱)</label>
-                  <Input
-                    type="number"
-                    value={editRent}
-                    onChange={(e) => setEditRent(e.target.value)}
-                    className="h-9 text-xs font-mono"
-                    placeholder="15000"
                   />
                 </div>
 

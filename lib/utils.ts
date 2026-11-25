@@ -134,24 +134,35 @@ export function parseGcashReference(text: string): string | null {
   const clean = text.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ");
 
   // 1. Matches "Ref No.", "Reference No.", "Ref. No.", "Ref:", "Reference #", "Transaction No.", etc.
-  // Also tolerate letter O or o mistranscribed for 0
-  const normalizedForDigits = clean.replace(/(?:ref(?:erence)?|trans(?:action)?)[^0-9a-z]*([0-9o\s.-]{7,28})/i, (match, p1) => {
-    return "REF_" + p1.replace(/[oO]/g, "0");
+  // Also tolerate letter O/o mistranscribed for 0, and I/l mistranscribed for 1
+  const normalizedForDigits = clean.replace(/(?:ref(?:erence)?|trans(?:action)?)[^0-9a-z]*([0-9oil\s.-]{7,32})/i, (match, p1) => {
+    return "REF_" + p1.replace(/[oO]/g, "0").replace(/[Il]/g, "1");
   });
 
-  const labeledRegex = /(?:REF_|ref(?:erence)?(?:\s*(?:no\.?|num(?:ber)?|#))?[:\s.-]*)([0-9][0-9\s.-]{7,25}[0-9])/i;
+  const labeledRegex = /(?:REF_|ref(?:erence)?(?:\s*(?:no\.?|num(?:ber)?|#))?[:\s.-]*)([0-9][0-9\s.-]{7,28}[0-9])/i;
   const match = normalizedForDigits.match(labeledRegex) || clean.match(labeledRegex);
   if (match && match[1]) {
     const digits = match[1].replace(/[^0-9]/g, "");
     if (digits.length >= 8 && digits.length <= 18) {
-      if (digits.length >= 12 && digits.length <= 15) {
+      if (digits.length === 13) {
+        return digits.slice(0, 4) + " " + digits.slice(4, 7) + " " + digits.slice(7);
+      }
+      if (digits.length >= 12 && digits.length <= 16) {
         return digits.slice(0, 4) + " " + digits.slice(4, 8) + " " + digits.slice(8);
       }
       return digits;
     }
   }
 
-  // 2. Common GCash 4-4-4 or 4-4-5 grouping: e.g. "1002 9841 8294" or "0012 8492 8421"
+  // 2. Common GCash 4-3-6 format: e.g. "9021 345 678901"
+  const gcash13Regex = /\b([0-9]{4}[\s-][0-9]{3}[\s-][0-9]{6})\b/;
+  const gcash13Match = clean.match(gcash13Regex);
+  if (gcash13Match && gcash13Match[1]) {
+    const raw = gcash13Match[1].replace(/[^0-9]/g, "");
+    return raw.slice(0, 4) + " " + raw.slice(4, 7) + " " + raw.slice(7);
+  }
+
+  // 3. Common GCash 4-4-4 or 4-4-5 grouping: e.g. "1002 9841 8294" or "0012 8492 8421"
   const groupedRegex = /\b([0-9]{4}[\s-][0-9]{4}[\s-][0-9]{4,5})\b/;
   const groupedMatch = clean.match(groupedRegex);
   if (groupedMatch && groupedMatch[1]) {
@@ -162,12 +173,15 @@ export function parseGcashReference(text: string): string | null {
     return groupedMatch[1].trim();
   }
 
-  // 3. Fallback: Any 11-16 digit standalone sequence (ignoring typical 09xxxxxxxxx phone numbers unless >11 digits)
+  // 4. Fallback: Any 11-16 digit standalone sequence (ignoring typical 09xxxxxxxxx phone numbers unless >11 digits)
   const digitsRegex = /\b([0-9]{11,16})\b/g;
   const allDigits = clean.match(digitsRegex);
   if (allDigits && allDigits.length > 0) {
     const nonMobile = allDigits.find((d) => !d.startsWith("09") || d.length > 11);
     const chosen = (nonMobile || allDigits[0]).replace(/[^0-9]/g, "");
+    if (chosen.length === 13) {
+      return chosen.slice(0, 4) + " " + chosen.slice(4, 7) + " " + chosen.slice(7);
+    }
     if (chosen.length >= 12 && chosen.length <= 15) {
       return chosen.slice(0, 4) + " " + chosen.slice(4, 8) + " " + chosen.slice(8);
     }
