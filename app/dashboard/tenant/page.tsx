@@ -39,7 +39,7 @@ import type { MoveOutTenancy } from "@/lib/move-out-policy";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import ReceiptModal from "@/components/receipt-modal";
-import { MyRentalCard, useMyRental } from "@/components/tenant-my-rental";
+import { MyInquiriesSection, MyRentalCard, useMyRental } from "@/components/tenant-my-rental";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -100,7 +100,12 @@ export default function TenantDashboard() {
   const displayContractEnd = assignment?.contractEnd || tenant?.contractEnd || null;
   const hasRental = Boolean(displayPropertyName || displayUnitNumber);
 
-  const monthlyRent = assignment?.rentAmount || tenant?.rentAmount || 0;
+  const monthlyRent =
+    assignment?.rentAmount ||
+    myRental.unit?.rentAmount ||
+    myRental.property?.monthlyRevenue ||
+    tenant?.rentAmount ||
+    0;
   const totalPaid = tenantPaymentSummary.totalPaid;
   const outstanding = tenantPaymentSummary.outstanding;
   const nextPayment = tenantPayments.find((payment) => payment.status === "pending" || payment.status === "overdue");
@@ -131,7 +136,7 @@ export default function TenantDashboard() {
     { label: "Lease Start Date", value: displayContractStart ? formatDate(displayContractStart) : "Not set", icon: Calendar },
     { label: "Lease End Date", value: displayContractEnd ? formatDate(displayContractEnd) : "Not set", icon: Calendar },
     { label: "Lease Status", value: displayStatus === "confirmed" ? "Active" : displayStatus === "pending" ? "Awaiting owner approval" : displayStatus || "Not assigned", icon: CheckCircle2 },
-  ].map((detail) => ({ ...detail, value: rentalLoading ? "Loading..." : rentalError ? "Unavailable" : detail.value }));
+  ].map((detail) => ({ ...detail, value: rentalLoading ? "Loading..." : detail.value }));
 
   return (
     <motion.div
@@ -195,6 +200,13 @@ export default function TenantDashboard() {
         <MyRentalCard state={myRental} />
       </motion.div>
 
+      {/* MY INQUIRIES - units or properties this tenant inquired about */}
+      {myRental.inquiries.length > 0 && (
+        <motion.div variants={itemVariants}>
+          <MyInquiriesSection state={myRental} compact />
+        </motion.div>
+      )}
+
       {/* Awaiting Payment Confirmation Alert */}
       {tenantPaymentSummary.hasAwaitingConfirmation && tenantPaymentSummary.waitingForConfirmation && (
         <motion.div
@@ -227,7 +239,7 @@ export default function TenantDashboard() {
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Monthly Rent</p>
             <p className="mt-1 text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900">
-              {rentalLoading ? "Loading…" : rentalError ? "Unavailable" : monthlyRent > 0 ? formatCurrency(monthlyRent) : "Not set"}
+              {rentalLoading ? "Loading…" : monthlyRent > 0 ? formatCurrency(monthlyRent) : "₱0.00"}
             </p>
             <p className="mt-1 truncate text-xs text-slate-500 flex items-center gap-1">
               <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />

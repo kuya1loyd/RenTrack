@@ -7,7 +7,7 @@ import {
 } from "@/lib/move-out-policy";
 
 const tenantColumns = "id, name, email, unit_id, property_name, unit_number, rent_amount, contract_start, contract_end, assignment_status, status";
-const unitColumns = "id, property_id, unit_number, rent_amount, status, tenant_id";
+const unitColumns = "id, name, property_id, unit_number, rent_amount, status, tenant_id";
 const issueMessages: Record<string, string> = {
   unassigned: "No current unit is assigned to your account. If you already live in a unit, ask your property manager to confirm the assignment before requesting a move-out.",
   unverified_email: "Your rental record could not be linked to this account. Ask your property manager to check your account and unit assignment.",
@@ -32,15 +32,17 @@ export async function loadMoveOutContext(auth: SecureContext) {
   };
   const { data: direct, error: directError } = await client.from("tenants").select(tenantColumns).eq("id", identity.userId).maybeSingle();
   if (directError) throw directError;
-  let candidates: MoveOutTenantRow[] = direct ? [direct] : [];
-  if (!direct && identity.emailVerified && identity.email) {
-    const { data, error } = await client.from("tenants").select(tenantColumns).ilike("email", exactEmailPattern(identity.email)).limit(2);
+  const candidates: MoveOutTenantRow[] = direct ? [direct] : [];
+  if (identity.email) {
+    const { data, error } = await client.from("tenants").select(tenantColumns).ilike("email", exactEmailPattern(identity.email)).limit(10);
     if (error) throw error;
-    candidates = data || [];
+    for (const row of data || []) {
+      if (!candidates.some((c) => c.id === row.id)) candidates.push(row);
+    }
   }
   const resolved = resolveMoveOutTenant(identity, candidates);
   const tenant = resolved.tenant;
-  const identityIds = Array.from(new Set([identity.userId, ...(tenant ? [tenant.id] : [])]));
+  const identityIds = Array.from(new Set([identity.userId, ...candidates.map((c) => c.id), ...(tenant ? [tenant.id] : [])]));
   let units: MoveOutUnitRow[] = [];
   if (tenant?.unit_id) {
     const { data, error } = await client.from("units").select(unitColumns).eq("id", tenant.unit_id).maybeSingle();
@@ -53,27 +55,28 @@ export async function loadMoveOutContext(auth: SecureContext) {
   }
   const assignment = tenant ? resolveMoveOutUnit(tenant, identityIds, units) : { unit: null, issue: resolved.issue };
   const unit = assignment.unit;
-  let propertyName = tenant?.property_name || null;
+  let propertyName = tenant?.property_name || unit?.name || null;
   if (unit?.property_id) {
     const { data, error } = await client.from("properties").select("name").eq("id", unit.property_id).maybeSingle();
     if (error) throw error;
     propertyName = data?.name || propertyName;
   }
-  const issue = assignment.issue;
+  const isPropertyConfirmed = !unit && Boolean(tenant?.property_name) && tenant?.assignment_status === "confirmed";
+  const issue = isPropertyConfirmed ? null : assignment.issue;
   const tenancy: MoveOutTenancy = {
-    eligible: !!unit,
+    eligible: Boolean(unit),
     issue,
     message: issue ? issueMessages[issue] || issueMessages.unassigned : "Your current tenancy is eligible for a move-out request.",
     tenant: tenant ? {
       id: tenant.id,
       name: tenant.name,
-      unitId: unit?.id || null,
-      unitNumber: unit?.unit_number || null,
-      propertyName: unit ? propertyName : null,
+      unitId: unit?.id || tenant.unit_id || null,
+      unitNumber: unit?.unit_number || tenant.unit_number || null,
+      propertyName: unit ? propertyName : (tenant.property_name || null),
       rentAmount: Number(unit?.rent_amount ?? tenant.rent_amount ?? 0),
       contractStart: tenant.contract_start || null,
       contractEnd: tenant.contract_end || null,
-      assignmentStatus: unit ? "confirmed" : tenant.assignment_status || "",
+      assignmentStatus: unit ? "confirmed" : (tenant.assignment_status || ""),
       status: tenant.status || "active",
     } : null,
   };
@@ -86,10 +89,15 @@ export async function getMoveOutManagementUnitIds(auth: SecureContext) {
   const { data: properties, error: propertyError } = await client.from("properties").select("id").eq(field, auth.userId);
   if (propertyError) throw propertyError;
   const propertyIds = (properties || []).map((property) => property.id);
-  if (!propertyIds.length) return [];
-  const { data: units, error: unitError } = await client.from("units").select("id").in("property_id", propertyIds);
-  if (unitError) throw unitError;
-  return (units || []).map((unit) => unit.id as string);
+  const unitIdSet = new Set<string>();
+  if (propertyIds.length) {
+    const { data: propUnits, error: unitError } = await client.from("units").select("id").in("property_id", propertyIds);
+    if (unitError) throw unitError;
+    for (const u of propUnits || []) unitIdSet.add(u.id as string);
+  }
+  const { data: directUnits } = await client.from("units").select("id").eq(field, auth.userId);
+  for (const u of directUnits || []) unitIdSet.add(u.id as string);
+  return Array.from(unitIdSet);
 }
 
 export async function getMoveOutReviewIdentityIds(tenant: MoveOutTenantRow) {

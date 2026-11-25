@@ -35,6 +35,7 @@ import {
   toggleFavoriteProperty,
 } from "@/lib/tenant-property-storage";
 import { ManagementBanner } from "@/components/management-panel";
+import { MyRentalCard, useMyRental } from "@/components/tenant-my-rental";
 
 type SortOption =
   | "price-asc"
@@ -62,7 +63,9 @@ export default function TenantUnitsPage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [selectedUnitModal, setSelectedUnitModal] = useState<Unit | null>(null);
   const [selectedUnitByProperty, setSelectedUnitByProperty] = useState<Record<string, string>>({});
+  const myRental = useMyRental(Boolean(user));
 
   // Filters state
   const [filterType, setFilterType] = useState<string>("all");
@@ -119,9 +122,12 @@ export default function TenantUnitsPage() {
   const isMyUnit = (unit: Unit) => {
     if (!user) return false;
     if (unit.tenantId === user.id) return true;
+    if (myRental.unit?.id && unit.id === myRental.unit.id) return true;
+    if (myRental.assignment?.unitId && unit.id === myRental.assignment.unitId) return true;
+    if (myRental.assignment?.tenantId && unit.tenantId === myRental.assignment.tenantId) return true;
     if (tenant?.id && unit.tenantId === tenant.id) return true;
     if (tenant?.unitId && unit.id === tenant.unitId) return true;
-    if (tenant?.unitNumber && unit.unitNumber.toLowerCase() === tenant.unitNumber.toLowerCase()) return true;
+    if (tenant?.unitNumber && unit.unitNumber.toLowerCase() === tenant.unitNumber.toLowerCase() && (!tenant.propertyName || (unit.name || "").toLowerCase() === tenant.propertyName.toLowerCase())) return true;
     return false;
   };
 
@@ -243,15 +249,69 @@ export default function TenantUnitsPage() {
   }, [properties, units, tenant, user, searchTerm, selectedSort, filterType, filterStatus, maxRent]);
 
   const filteredCondoUnits = useMemo(() => {
-    return filteredAndSortedProperties.flatMap((p) =>
-      units.filter((u) => {
-        if (u.propertyId !== p.id) return false;
-        if (filterStatus === "assigned") return isMyUnit(u);
-        if (filterStatus === "vacant") return u.status === "vacant";
-        return true;
-      })
-    );
-  }, [filteredAndSortedProperties, units, filterStatus]);
+    const q = searchTerm.trim().toLowerCase();
+    const list = units.filter((u) => {
+      const uType = (u.type || "").toLowerCase();
+      if (["house", "villa", "residential"].includes(uType)) return false;
+
+      const parentProperty = u.propertyId ? properties.find((p) => p.id === u.propertyId) : undefined;
+      if (parentProperty && ["house", "villa", "residential"].includes((parentProperty.type || "").toLowerCase())) {
+        return false;
+      }
+
+      if (filterType !== "all" && filterType !== "condominium" && filterType !== "condo") {
+        if (parentProperty) {
+          if ((parentProperty.type || "").toLowerCase() !== filterType.toLowerCase()) return false;
+        } else {
+          return false;
+        }
+      }
+
+      const haystack = [
+        u.unitNumber,
+        u.name,
+        u.address,
+        u.city,
+        u.province,
+        u.floor !== undefined && u.floor !== null ? String(u.floor) : "",
+        parentProperty?.name,
+        parentProperty?.location,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      if (q && !haystack.includes(q)) return false;
+
+      if (filterStatus === "assigned" && !isMyUnit(u)) return false;
+      if (filterStatus === "vacant" && u.status !== "vacant") return false;
+
+      if (maxRent && Number(maxRent) > 0 && (u.rentAmount || 0) > Number(maxRent)) return false;
+
+      return true;
+    });
+
+    list.sort((a, b) => {
+      const aMine = isMyUnit(a) ? 1 : 0;
+      const bMine = isMyUnit(b) ? 1 : 0;
+      if (aMine !== bMine) return bMine - aMine;
+
+      switch (selectedSort) {
+        case "price-asc":
+          return (a.rentAmount || 0) - (b.rentAmount || 0);
+        case "price-desc":
+          return (b.rentAmount || 0) - (a.rentAmount || 0);
+        case "name-asc":
+          return (a.name || a.unitNumber || "").localeCompare(b.name || b.unitNumber || "");
+        case "units-desc":
+          return Number(b.floor || 0) - Number(a.floor || 0);
+        default:
+          return 0;
+      }
+    });
+
+    return list;
+  }, [units, properties, tenant, user, myRental.unit, myRental.assignment, searchTerm, selectedSort, filterType, filterStatus, maxRent]);
 
   const handleResetSearch = () => {
     setSearchTerm("");
@@ -273,9 +333,12 @@ export default function TenantUnitsPage() {
       <ManagementBanner
         category="UNIT DIRECTORY"
         title="Available & Assigned Units"
-        description="Browse available rental properties and explore units in your area."
+        description="Browse available condominium units and view your assigned unit."
         icon={Building2}
       />
+
+      {/* Tenant's Acquired / Assigned Condominium Unit */}
+      <MyRentalCard state={myRental} filter="unit" />
 
       {/* Search & Filter Controls Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -367,9 +430,9 @@ export default function TenantUnitsPage() {
       {loading ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-16 text-center shadow-xs">
           <div className="h-9 w-9 border-3 border-slate-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-xs sm:text-sm text-slate-500 font-medium">Loading units and properties...</p>
+          <p className="text-xs sm:text-sm text-slate-500 font-medium">Loading condominium units...</p>
         </div>
-      ) : filteredAndSortedProperties.length === 0 ? (
+      ) : filteredCondoUnits.length === 0 ? (
         /* Empty State Card */
         <div className="rounded-2xl border border-slate-200 bg-white p-12 sm:p-20 text-center shadow-xs">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-50 border border-slate-100 text-slate-400 mx-auto mb-4">
@@ -377,7 +440,7 @@ export default function TenantUnitsPage() {
           </div>
 
           <h2 className="text-lg sm:text-xl font-bold text-slate-800">
-            No units or properties available yet
+            No condominium units available yet
           </h2>
 
           <p className="text-xs sm:text-sm text-slate-500 max-w-lg mx-auto mt-2 leading-relaxed">
@@ -492,23 +555,21 @@ export default function TenantUnitsPage() {
                     <span className="text-lg font-extrabold text-slate-900">{formatCurrency(unit.rentAmount || 0)}</span>
                     <span className="text-xs text-slate-400 font-normal"> /mo</span>
                   </div>
-                  {parentProperty ? (
-                    <button
-                      type="button"
-                      onClick={() => {
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (parentProperty) {
                         if (user) recordRecentPropertyView(user.id, parentProperty.id);
                         setSelectedUnitByProperty((prev) => ({ ...prev, [parentProperty.id]: unit.id }));
                         setSelectedProperty(parentProperty);
-                      }}
-                      className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-                    >
-                      View Details
-                    </button>
-                  ) : (
-                    <span className="text-[11px] font-semibold text-slate-500">
-                      {isAssigned ? "Assigned to you" : unit.status === "vacant" ? "Open for rent" : ""}
-                    </span>
-                  )}
+                      } else {
+                        setSelectedUnitModal(unit);
+                      }
+                    }}
+                    className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                  >
+                    View Details
+                  </button>
                 </div>
               </div>
             );
@@ -833,6 +894,139 @@ export default function TenantUnitsPage() {
                     ) : (
                       <Link
                         href={locationAgent ? `/agents/${locationAgent.id}?propertyId=${encodeURIComponent(selectedProperty.id)}&propertyName=${encodeURIComponent(selectedProperty.name)}${currentUnit?.unitNumber ? `&unitNumber=${encodeURIComponent(currentUnit.unitNumber)}` : ""}&unitId=${encodeURIComponent(currentUnit?.id || "")}#message` : `/agents`}
+                        className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" />
+                        <span>Inquire Unit</span>
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
+      </AnimatePresence>
+
+      {/* INDEPENDENT CONDOMINIUM UNIT DETAILS MODAL */}
+      <AnimatePresence>
+        {selectedUnitModal && (() => {
+          const isAssigned = isMyUnit(selectedUnitModal);
+          const unitLabel = String(selectedUnitModal.unitNumber || "").replace(/^unit\s*/i, "");
+          const buildingName = selectedUnitModal.name || "Condominium Unit";
+          const title = unitLabel ? `Unit ${unitLabel} – ${buildingName}` : buildingName;
+          const address = [selectedUnitModal.address, selectedUnitModal.city, selectedUnitModal.province].filter(Boolean).join(", ");
+          const cover = selectedUnitModal.imageUrl || selectedUnitModal.imageUrls?.[0] || null;
+          const amenities = Array.from(
+            new Set([
+              ...(((selectedUnitModal as any).amenities as string[]) || []),
+              ...(((selectedUnitModal as any).features as string[]) || []),
+            ])
+          ).filter(Boolean);
+
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs cursor-pointer"
+              onClick={() => setSelectedUnitModal(null)}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden cursor-default max-h-[90vh] flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="relative h-52 w-full bg-slate-100 flex items-center justify-center shrink-0">
+                  {cover ? (
+                    <Image src={cover} alt={title} fill unoptimized className="object-cover" />
+                  ) : (
+                    <Building2 className="h-16 w-16 text-slate-300" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUnitModal(null)}
+                    className="absolute top-3 right-3 z-50 h-9 w-9 rounded-full bg-white/95 backdrop-blur-sm flex items-center justify-center text-slate-700 shadow-lg hover:bg-white hover:text-slate-950 transition-all cursor-pointer"
+                    aria-label="Close unit details"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="p-6 overflow-y-auto space-y-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-xl font-bold text-slate-900">{title}</h3>
+                      {isAssigned && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[11px] font-semibold border border-blue-200">
+                          <Check className="h-3 w-3" /> Your Home
+                        </span>
+                      )}
+                    </div>
+                    {address && (
+                      <p className="flex items-center gap-1 text-xs text-slate-500 mt-1">
+                        <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <span>{address}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                    <div>
+                      <span className="text-[11px] text-slate-500 uppercase font-semibold">Type</span>
+                      <p className="text-sm font-bold text-slate-800 mt-0.5">Condominium Unit</p>
+                    </div>
+                    {selectedUnitModal.floor !== undefined && selectedUnitModal.floor !== null && String(selectedUnitModal.floor) !== "" && (
+                      <div>
+                        <span className="text-[11px] text-slate-500 uppercase font-semibold">Floor</span>
+                        <p className="text-sm font-bold text-slate-800 mt-0.5">Floor {selectedUnitModal.floor}</p>
+                      </div>
+                    )}
+                    {selectedUnitModal.condition && (
+                      <div>
+                        <span className="text-[11px] text-slate-500 uppercase font-semibold">Condition</span>
+                        <p className="text-sm font-bold text-slate-800 mt-0.5">{selectedUnitModal.condition}</p>
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-[11px] text-slate-500 uppercase font-semibold">Availability</span>
+                      <p className="text-sm font-bold text-slate-800 capitalize mt-0.5">
+                        {isAssigned ? "Your Home (Occupied)" : selectedUnitModal.status === "vacant" ? "Available" : selectedUnitModal.status}
+                      </p>
+                    </div>
+                  </div>
+
+                  {amenities.length > 0 && (
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase text-slate-500 mb-2">Amenities &amp; Facilities</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {amenities.map((amenity) => (
+                          <span key={amenity} className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700">
+                            {amenity}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-2 flex items-center justify-between border-t border-slate-100">
+                    <div>
+                      <span className="text-xs text-slate-500">
+                        {isAssigned ? "Your Monthly Rent" : "Monthly Rent"}
+                      </span>
+                      <p className="text-xl font-extrabold text-slate-900">
+                        {formatCurrency(selectedUnitModal.rentAmount || 0)}
+                        <span className="text-xs font-normal text-slate-500"> /mo</span>
+                      </p>
+                    </div>
+
+                    {isAssigned ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
+                        <Check className="h-4 w-4 text-emerald-600" />
+                        Assigned &amp; Approved
+                      </span>
+                    ) : (
+                      <Link
+                        href={`/agents?unitId=${encodeURIComponent(selectedUnitModal.id)}&unitNumber=${encodeURIComponent(selectedUnitModal.unitNumber || "")}&propertyName=${encodeURIComponent(buildingName)}`}
                         className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer inline-flex items-center gap-1.5"
                       >
                         <MessageCircle className="h-3.5 w-3.5" />

@@ -36,6 +36,7 @@ import {
 } from "@/lib/tenant-property-storage";
 import { ManagementBanner } from "@/components/management-panel";
 import { AnimatedFilterDropdown } from "@/components/ui/animated-filter-dropdown";
+import { MyRentalCard, useMyRental } from "@/components/tenant-my-rental";
 
 type SortOption =
   | "price-asc"
@@ -64,6 +65,7 @@ export default function TenantPropertiesPage() {
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [selectedUnitByProperty, setSelectedUnitByProperty] = useState<Record<string, string>>({});
+  const myRental = useMyRental(Boolean(user));
 
   // Filters state
   const [filterType, setFilterType] = useState<string>("all");
@@ -99,7 +101,7 @@ export default function TenantPropertiesPage() {
           setTenant(data.tenancy.tenant);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     (async () => {
       try {
@@ -109,7 +111,7 @@ export default function TenantPropertiesPage() {
         if (data.success && Array.isArray(data.users) && isMounted) {
           setAgents(data.users);
         }
-      } catch {}
+      } catch { }
     })();
 
     return () => {
@@ -120,6 +122,8 @@ export default function TenantPropertiesPage() {
   const isMyUnit = (unit: Unit) => {
     if (!user) return false;
     if (unit.tenantId === user.id) return true;
+    if (myRental.unit?.id && unit.id === myRental.unit.id) return true;
+    if (myRental.assignment?.unitId && unit.id === myRental.assignment.unitId) return true;
     if (tenant?.id && unit.tenantId === tenant.id) return true;
     if (tenant?.unitId && unit.id === tenant.unitId) return true;
     if (tenant?.unitNumber && unit.unitNumber.toLowerCase() === tenant.unitNumber.toLowerCase()) return true;
@@ -127,6 +131,8 @@ export default function TenantPropertiesPage() {
   };
 
   const isAssignedProperty = (property: Property) => {
+    if (myRental.property?.id && property.id === myRental.property.id) return true;
+    if (myRental.assignment?.propertyName && property.name.toLowerCase() === myRental.assignment.propertyName.toLowerCase()) return true;
     if (!tenant) return false;
     if (tenant.propertyName && property.name.toLowerCase() === tenant.propertyName.toLowerCase()) return true;
     if (tenant.unitId && units.some((u) => u.id === tenant.unitId && u.propertyId === property.id)) return true;
@@ -184,20 +190,24 @@ export default function TenantPropertiesPage() {
     return matched[0] || null;
   }, [selectedProperty, agents]);
 
-  // Filtering & Sorting
+  // Filtering & Sorting (House / Subdivision properties only; Condo Units live in My Units)
   const filteredAndSortedProperties = useMemo(() => {
     const list = properties.filter((p) => {
+      const pType = (p.type || "").toLowerCase();
+      if (["condominium", "condo", "building"].includes(pType) && !isAssignedProperty(p)) {
+        return false;
+      }
+
       const propertyUnits = units.filter((u) => u.propertyId === p.id);
 
       const matchesSearch =
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.description && p.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        propertyUnits.some((u) => u.unitNumber.toLowerCase().includes(searchTerm.toLowerCase()));
+        (p.description && p.description.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchesType =
         filterType === "all" ||
-        p.type?.toLowerCase() === filterType.toLowerCase();
+        pType === filterType.toLowerCase();
 
       const matchesMaxRent =
         !maxRent ||
@@ -211,23 +221,27 @@ export default function TenantPropertiesPage() {
       return matchesSearch && matchesType && matchesMaxRent && matchesUnit;
     });
 
-    switch (selectedSort) {
-      case "price-asc":
-        list.sort((a, b) => getPropertyRent(a) - getPropertyRent(b));
-        break;
-      case "price-desc":
-        list.sort((a, b) => getPropertyRent(b) - getPropertyRent(a));
-        break;
-      case "name-asc":
-        list.sort((a, b) => a.name.localeCompare(b.name));
-        break;
-      case "units-desc":
-        list.sort((a, b) => (b.units || 0) - (a.units || 0));
-        break;
-    }
+    list.sort((a, b) => {
+      const aMine = isAssignedProperty(a) ? 1 : 0;
+      const bMine = isAssignedProperty(b) ? 1 : 0;
+      if (aMine !== bMine) return bMine - aMine;
+
+      switch (selectedSort) {
+        case "price-asc":
+          return getPropertyRent(a) - getPropertyRent(b);
+        case "price-desc":
+          return getPropertyRent(b) - getPropertyRent(a);
+        case "name-asc":
+          return a.name.localeCompare(b.name);
+        case "units-desc":
+          return (b.units || 0) - (a.units || 0);
+        default:
+          return 0;
+      }
+    });
 
     return list;
-  }, [properties, units, tenant, user, searchTerm, selectedSort, filterType, selectedUnitFilter, maxRent]);
+  }, [properties, units, tenant, user, myRental.property, myRental.assignment, searchTerm, selectedSort, filterType, selectedUnitFilter, maxRent]);
 
   const handleResetSearch = () => {
     setSearchTerm("");
@@ -249,9 +263,12 @@ export default function TenantPropertiesPage() {
       <ManagementBanner
         category="PROPERTY DIRECTORY"
         title="My Properties"
-        description="Browse available rental properties and explore units in your area."
+        description="Browse subdivision and house rental properties and view your assigned home."
         icon={Building2}
       />
+
+      {/* Tenant's Acquired / Assigned House Property */}
+      <MyRentalCard state={myRental} filter="property" />
 
       {/* Search & Filter Controls Bar (Exact match to screenshot 2) */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -280,44 +297,14 @@ export default function TenantPropertiesPage() {
           )}
         </div>
 
-        {/* Right action buttons: Unit Dropdown, Filter & Sort */}
+        {/* Right action buttons: Filter & Sort */}
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Unit Dropdown Selector */}
-          <AnimatedFilterDropdown
-            label="Unit"
-            value={selectedUnitFilter}
-            onChange={(e) => {
-              const val = e.target.value;
-              setSelectedUnitFilter(val);
-              if (val !== "all") {
-                const targetUnit = units.find((u) => u.id === val);
-                if (targetUnit && targetUnit.propertyId) {
-                  setSelectedUnitByProperty((prev) => ({
-                    ...prev,
-                    [targetUnit.propertyId as string]: targetUnit.id,
-                  }));
-                }
-              }
-            }}
-            options={[
-              { value: "all", label: `All Units (${units.length})` },
-              ...(myAssignedUnit ? [{ value: myAssignedUnit.id, label: `Unit ${myAssignedUnit.unitNumber} • Your Home`, badge: "Home" }] : []),
-              ...units
-                .filter((u) => u.status === "vacant" && u.id !== myAssignedUnit?.id)
-                .map((u) => ({
-                  value: u.id,
-                  label: `Unit ${u.unitNumber} ${u.floor ? `(Floor ${u.floor})` : ""} • Vacant`,
-                })),
-            ]}
-          />
-
           {/* Filter button */}
           <button
             type="button"
             onClick={() => setIsFilterOpen(true)}
-            className={`h-11 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-medium shadow-xs flex items-center gap-2 transition-colors cursor-pointer ${
-              filterType !== "all" || maxRent ? "ring-2 ring-blue-500 text-blue-600" : ""
-            }`}
+            className={`h-11 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-medium shadow-xs flex items-center gap-2 transition-colors cursor-pointer ${filterType !== "all" || maxRent ? "ring-2 ring-blue-500 text-blue-600" : ""
+              }`}
           >
             <SlidersHorizontal className="h-4 w-4 text-slate-600" />
             <span>Filter</span>
@@ -350,11 +337,10 @@ export default function TenantPropertiesPage() {
                       setSelectedSort(optionKey);
                       setIsSortOpen(false);
                     }}
-                    className={`flex items-center justify-between w-full px-3 py-2 rounded-lg text-xs font-medium text-left transition-colors cursor-pointer ${
-                      selectedSort === optionKey
-                        ? "bg-blue-50 text-blue-700 font-semibold"
-                        : "text-slate-700 hover:bg-slate-50"
-                    }`}
+                    className={`flex items-center justify-between w-full px-3 py-2 rounded-lg text-xs font-medium text-left transition-colors cursor-pointer ${selectedSort === optionKey
+                      ? "bg-blue-50 text-blue-700 font-semibold"
+                      : "text-slate-700 hover:bg-slate-50"
+                      }`}
                   >
                     <span>{SORT_LABELS[optionKey]}</span>
                     {selectedSort === optionKey && <Check className="h-3.5 w-3.5 text-blue-600" />}
@@ -473,20 +459,22 @@ export default function TenantPropertiesPage() {
 
                     {/* Status Badge */}
                     <div className="absolute top-3 right-3">
-                      {isCurrentUnitAssigned ? (
+                      {isCurrentUnitAssigned || isAssignedProperty(property) ? (
                         <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-600 text-white flex items-center gap-1 shadow-xs">
                           <Check className="h-3 w-3" />
                           Your Home {currentUnit ? `• Unit ${currentUnit.unitNumber}` : ""}
                         </span>
+                      ) : property.availabilityStatus === "Under Maintenance" || currentUnit?.status === "maintenance" ? (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500 text-white">
+                          Under Maintenance
+                        </span>
+                      ) : property.availabilityStatus === "Occupied" || currentUnit?.status === "occupied" || property.status === "inactive" ? (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-700 text-white">
+                          Occupied
+                        </span>
                       ) : (
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                            currentUnit?.status === "vacant" || property.status === "active"
-                              ? "bg-emerald-500 text-white"
-                              : "bg-slate-700 text-white"
-                          }`}
-                        >
-                          {currentUnit?.status === "vacant" || property.status === "active" ? "Available" : "Occupied"}
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500 text-white">
+                          Available
                         </span>
                       )}
                     </div>
@@ -625,11 +613,10 @@ export default function TenantPropertiesPage() {
                         key={t}
                         type="button"
                         onClick={() => setFilterType(t)}
-                        className={`h-9 rounded-xl border text-xs font-semibold capitalize transition-colors ${
-                          filterType === t
-                            ? "border-blue-600 bg-blue-50 text-blue-700"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                        }`}
+                        className={`h-9 rounded-xl border text-xs font-semibold capitalize transition-colors ${filterType === t
+                          ? "border-blue-600 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
                       >
                         {t === "all" ? "All Types" : t}
                       </button>

@@ -20,6 +20,7 @@ export interface MoveOutTenantRow {
 
 export interface MoveOutUnitRow {
   id: string;
+  name?: string | null;
   property_id?: string | null;
   unit_number?: string | null;
   rent_amount?: number | string | null;
@@ -58,13 +59,19 @@ export interface MoveOutTenancy {
 }
 
 export function resolveMoveOutTenant(identity: MoveOutIdentity, records: MoveOutTenantRow[]) {
-  const direct = records.find((record) => record.id === identity.userId);
-  if (direct) return { tenant: direct, issue: null };
-  if (!identity.emailVerified) return { tenant: null, issue: "unverified_email" };
   const email = identity.email.trim().toLowerCase();
-  const matches = email ? records.filter((record) => record.email?.trim().toLowerCase() === email) : [];
-  if (matches.length > 1) return { tenant: null, issue: "ambiguous_identity" };
-  return { tenant: matches[0] || null, issue: matches.length ? null : "unassigned" };
+  const matches = records.filter(
+    (record) => record.id === identity.userId || (email && record.email?.trim().toLowerCase() === email)
+  );
+  if (!matches.length) return { tenant: null, issue: "unassigned" };
+  const hasTarget = (r: MoveOutTenantRow) => Boolean(r.unit_id || r.property_name || r.unit_number);
+  const chosen =
+    matches.find((r) => r.assignment_status === "confirmed" && hasTarget(r)) ||
+    matches.find((r) => r.assignment_status === "pending" && hasTarget(r)) ||
+    matches.find((r) => hasTarget(r)) ||
+    matches.find((r) => r.id === identity.userId) ||
+    matches[0];
+  return { tenant: chosen || null, issue: chosen ? null : "unassigned" };
 }
 
 export function resolveMoveOutUnit(tenant: MoveOutTenantRow, identityIds: string[], units: MoveOutUnitRow[]) {
