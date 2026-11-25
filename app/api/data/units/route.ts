@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     const rateLimit = await withRateLimit(request, `create_unit:${getClientIp(request)}`);
     if (rateLimit) return rateLimit;
 
-    const auth = await requireRole(request, ["admin", "owner", "agent"]);
+    const auth = await requireRole(request, ["owner"]);
     if (auth instanceof NextResponse) return auth;
 
     const validation = validateApiRequest(request);
@@ -60,9 +60,7 @@ export async function POST(request: NextRequest) {
     }
 
     sanitized.createdBy = auth.userId;
-    if (auth.user.role === "agent") {
-      sanitized.agentId = auth.userId;
-    } else if (body.agentId) {
+    if (body.agentId) {
       sanitized.agentId = body.agentId;
     }
 

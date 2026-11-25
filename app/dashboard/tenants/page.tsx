@@ -179,7 +179,7 @@ export default function TenantsPage() {
           <Input placeholder="Search tenants, properties, or unit..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="h-9 rounded-lg border-slate-200 pl-9" aria-label="Search tenants" />
         </label>
         <select aria-label="Filter tenants by status" value={tenantStatusFilter} onChange={(event) => setTenantStatusFilter(event.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-700">
-          <option value="all">All Statuses</option>
+          <option value="all">All Status</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
         </select>

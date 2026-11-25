@@ -91,7 +91,7 @@ export default function UnitsPage() {
     imageUrls: [] as string[]
   });
 
-  const canManage = user && (user.role === "admin" || user.role === "owner");
+  const canManage = user && user.role === "owner";
 
   useEffect(() => {
     (async () => {

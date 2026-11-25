@@ -1034,7 +1034,7 @@ export default function AdminDashboard() {
           <ManagementBanner
             category="GEOGRAPHIC OVERVIEW"
             title="Property Map"
-            description="Explore interactive locations, occupancy distribution, and property statuses."
+            description="Explore interactive locations, occupancy distribution, and property status."
             icon={MapPinned}
           />
           <PropertyLocationMap hideHeader />
@@ -1477,7 +1477,7 @@ export default function AdminDashboard() {
                   value={userStatusFilter}
                   onChange={(e) => setUserStatusFilter(e.target.value as any)}
                   options={[
-                    { value: "all", label: "All Statuses" },
+                    { value: "all", label: "All Status" },
                     { value: "verified", label: "Verified ID" },
                     { value: "pending", label: "Pending Approval" },
                     { value: "unverified", label: "Unverified" },
@@ -2137,7 +2137,7 @@ export default function AdminDashboard() {
                   value={propertyStatusFilter}
                   onChange={(e) => setPropertyStatusFilter(e.target.value)}
                   options={[
-                    { value: "all", label: "All Statuses" },
+                    { value: "all", label: "All Status" },
                     { value: "active", label: "Active" },
                     { value: "inactive", label: "Inactive" },
                     { value: "maintenance", label: "Under Maintenance" },

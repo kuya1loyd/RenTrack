@@ -25,7 +25,7 @@ import {
   getProperties, getUnits, getTenants, getPayments, updatePayment,
   getConversations, notifyAdmins, updateTenantStatus,
   getInquiries, updateInquiryStatus, safeParseJson, markAllMessagesRead,
-  updateInquiryProperty, addUnit, Property, Unit, TenantRecord, Payment, Conversation, ChatInquiry,
+  updateInquiryProperty, Property, Unit, TenantRecord, Payment, Conversation, ChatInquiry,
 } from "@/lib/data";
 import { formatDisplayId, cn, formatCurrency, formatDate, formatDateTime, getTimeAgo, getInitials } from "@/lib/utils";
 import { downloadExcelReport, downloadPdfReport } from "@/lib/report-downloads";
@@ -1361,7 +1361,7 @@ export default function AgentDashboard() {
                           value={propertyStatusFilter}
                           onChange={(e) => setPropertyStatusFilter(e.target.value)}
                           options={[
-                            { value: "all", label: "All Statuses" },
+                            { value: "all", label: "All Status" },
                             { value: "active", label: "Active" },
                             { value: "inactive", label: "Inactive" },
                             { value: "maintenance", label: "Under Maintenance" },
@@ -1595,7 +1595,7 @@ export default function AgentDashboard() {
                       value={unitStatusFilter}
                       onChange={(event) => setUnitStatusFilter(event.target.value)}
                       options={[
-                        { value: "all", label: "All Statuses" },
+                        { value: "all", label: "All Status" },
                         { value: "vacant", label: "Available" },
                         { value: "occupied", label: "Occupied" },
                         { value: "maintenance", label: "Under Maintenance" },
@@ -2121,7 +2121,7 @@ export default function AgentDashboard() {
                         aria-label="Filter payments by status"
                         className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700"
                       >
-                        <option value="all">All Statuses</option>
+                        <option value="all">All Status</option>
                         <option value="paid">Paid</option>
                         <option value="pending">Pending</option>
                         <option value="overdue">Overdue</option>
@@ -2353,7 +2353,7 @@ export default function AgentDashboard() {
                         <option value="all">All categories</option><option value="property">Property</option><option value="general">General</option>
                       </select>
                       <select value={inquiryFilter} onChange={(event) => setInquiryFilter(event.target.value)} aria-label="Filter inquiries by status" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700">
-                        <option value="all">All Statuses</option><option value="new">New</option><option value="read">In progress</option><option value="replied">Replied</option><option value="closed">Closed</option>
+                        <option value="all">All Status</option><option value="new">New</option><option value="read">In progress</option><option value="replied">Replied</option><option value="closed">Closed</option>
                       </select>
                       <label className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2 text-[10px] text-slate-500">From<input type="date" value={inquiryDateFrom} onChange={(event) => setInquiryDateFrom(event.target.value)} aria-label="Inquiries from date" className="min-w-0 flex-1 bg-transparent text-[10px] text-slate-700 outline-none" /></label>
                       <label className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2 text-[10px] text-slate-500">To<input type="date" value={inquiryDateTo} onChange={(event) => setInquiryDateTo(event.target.value)} aria-label="Inquiries to date" className="min-w-0 flex-1 bg-transparent text-[10px] text-slate-700 outline-none" /></label>

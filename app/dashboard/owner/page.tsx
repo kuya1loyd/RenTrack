@@ -1427,7 +1427,7 @@ export default function OwnerDashboard() {
                   if (val !== "maintenance") setUnitMaintenanceReasonFilter("all");
                 }}
                 options={[
-                  { value: "all", label: "All Statuses" },
+                  { value: "all", label: "All Status" },
                   { value: "vacant", label: "Available" },
                   { value: "occupied", label: "Occupied" },
                   { value: "maintenance", label: "Under Maintenance" },
@@ -1683,7 +1683,7 @@ export default function OwnerDashboard() {
                       if (val !== "maintenance") setPropertyMaintenanceReasonFilter("all");
                     }}
                     options={[
-                      { value: "all", label: "All Statuses" },
+                      { value: "all", label: "All Status" },
                       { value: "active", label: "Active" },
                       { value: "inactive", label: "Inactive" },
                       { value: "maintenance", label: "Under Maintenance" },
@@ -2536,7 +2536,7 @@ export default function OwnerDashboard() {
                 value={moveOutStatusFilter}
                 onChange={(e) => setMoveOutStatusFilter(e.target.value as any)}
                 options={[
-                  { value: "all", label: `All Statuses (${moveOutCounts.all})` },
+                  { value: "all", label: `All Status (${moveOutCounts.all})` },
                   { value: "pending", label: `Pending (${moveOutCounts.pending})` },
                   { value: "approved", label: `Approved (${moveOutCounts.approved})` },
                   { value: "rejected", label: `Rejected (${moveOutCounts.rejected})` },
@@ -3059,7 +3059,7 @@ export default function OwnerDashboard() {
                   value={financialStatusFilter}
                   onChange={(e) => setFinancialStatusFilter(e.target.value)}
                   options={[
-                    { value: "all", label: "All Statuses" },
+                    { value: "all", label: "All Status" },
                     { value: "paid", label: "Verified / Paid" },
                     { value: "pending", label: "Pending" },
                     { value: "overdue", label: "Overdue" },

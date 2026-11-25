@@ -277,7 +277,7 @@ export default function PropertiesPage() {
               if (e.target.value !== "Under Maintenance") setMaintenanceReasonFilter("all");
             }}
             options={[
-              { value: "all", label: "All Statuses" },
+              { value: "all", label: "All Status" },
               { value: "Available", label: "Available" },
               { value: "Occupied", label: "Occupied" },
               { value: "Reserved", label: "Reserved" },

@@ -339,7 +339,7 @@ export default function ContractsPanel({ mode }: { mode: "owner" | "agent" }) {
             <input value={contractSearch} onChange={(event) => setContractSearch(event.target.value)} placeholder="Search contracts, tenants, or files…" aria-label="Search contracts" className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
           </label>
           <select value={contractStatus} onChange={(event) => setContractStatus(event.target.value)} aria-label="Filter contracts by status" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700">
-            <option value="all">All Statuses</option><option value="requested">Requested</option><option value="sent">Sent</option><option value="rejected">Declined</option>
+            <option value="all">All Status</option><option value="requested">Requested</option><option value="sent">Sent</option><option value="rejected">Declined</option>
           </select>
           <select value={contractProperty} onChange={(event) => { setContractProperty(event.target.value); setContractUnit("all"); }} aria-label="Filter contracts by property" className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700">
             <option value="all">All properties</option>{visibleProperties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
