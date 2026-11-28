@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findUserById, getAdminSupabase, initDatabase } from "@/lib/db";
+import { initDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/api-security";
-import { loadMoveOutContext } from "@/lib/move-out-service";
+import { resolveTenantManager } from "@/lib/move-out-service";
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,46 +9,20 @@ export async function GET(request: NextRequest) {
     if (auth instanceof NextResponse) return auth;
 
     await initDatabase();
-    const context = await loadMoveOutContext(auth);
-    if (!context.unit?.property_id) {
+    const management = await resolveTenantManager(auth);
+
+    if (!management.owner && !management.agent && !management.manager) {
       return NextResponse.json({
         success: false,
-        error: context.tenancy.message || "A current assigned unit is required to find your landlord.",
-      }, { status: 409 });
-    }
-
-    const { data: property, error: propertyError } = await getAdminSupabase()
-      .from("properties")
-      .select("created_by, agent_id")
-      .eq("id", context.unit.property_id)
-      .maybeSingle();
-    if (propertyError) throw propertyError;
-    if (!property?.created_by) {
-      return NextResponse.json({ success: false, error: "The owner of your assigned property could not be resolved." }, { status: 404 });
-    }
-
-    let owner = await findUserById(property.created_by);
-    if (owner?.role === "agent" && owner.createdBy) {
-      owner = await findUserById(owner.createdBy);
-    }
-    if (owner?.role !== "owner" && property.agent_id && property.agent_id !== property.created_by) {
-      const agent = await findUserById(property.agent_id);
-      const assignedOwner = agent?.createdBy ? await findUserById(agent.createdBy) : null;
-      if (assignedOwner?.role === "owner") owner = assignedOwner;
-    }
-    if (!owner || owner.role !== "owner") {
-      return NextResponse.json({ success: false, error: "The owner of your assigned property could not be resolved." }, { status: 404 });
+        error: "The owner or manager of your assigned property could not be resolved.",
+      }, { status: 404 });
     }
 
     return NextResponse.json({
       success: true,
-      owner: {
-        id: owner.id,
-        name: owner.name || "Property Owner",
-        email: owner.email || "",
-        role: owner.role,
-        ...(owner.avatarUrl ? { avatarUrl: owner.avatarUrl } : {}),
-      },
+      owner: management.owner,
+      agent: management.agent,
+      manager: management.manager,
     });
   } catch (error) {
     console.error("Resolve tenant landlord error:", error);

@@ -399,6 +399,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
               window.history.pushState(null, "", `#${targetTab}`);
             }
             window.dispatchEvent(new CustomEvent("owner-dashboard-tab-change", { detail: targetTab }));
+            window.dispatchEvent(new CustomEvent("renttrack-switch-tab", { detail: { tab: targetTab } }));
           }
         }
         router.push(href);

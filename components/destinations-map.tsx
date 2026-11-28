@@ -10,12 +10,86 @@ const philippinesBounds: L.LatLngBoundsLiteral = [
   [21.3, 126.8],
 ];
 
-const destinations = [
-  { name: "Manila", region: "National Capital Region", coordinates: [14.5995, 120.9842] as [number, number] },
-  { name: "Cebu", region: "Central Visayas", coordinates: [10.3157, 123.8854] as [number, number] },
-  { name: "Butuan", region: "Agusan del Norte", coordinates: [8.9475, 125.5406] as [number, number] },
-  { name: "Davao", region: "Davao Region", coordinates: [7.1907, 125.4553] as [number, number] },
-];
+const DESTINATION_CONFIG: Record<
+  string,
+  {
+    name: string;
+    region: string;
+    coordinates: [number, number];
+    tokens: string[];
+  }
+> = {
+  Manila: {
+    name: "Manila",
+    region: "National Capital Region",
+    coordinates: [14.5995, 120.9842],
+    tokens: [
+      "manila",
+      "makati",
+      "quezon",
+      "taguig",
+      "bgc",
+      "pasig",
+      "mandaluyong",
+      "paranaque",
+      "pasay",
+      "alabang",
+      "muntinlupa",
+      "las pinas",
+      "ncr",
+      "metro manila",
+      "marikina",
+      "caloocan",
+      "malabon",
+      "navotas",
+      "valenzuela",
+      "san juan",
+      "pateros",
+    ],
+  },
+  Cebu: {
+    name: "Cebu",
+    region: "Central Visayas",
+    coordinates: [10.3157, 123.8854],
+    tokens: [
+      "cebu",
+      "mandaue",
+      "lapu-lapu",
+      "lapu lapu",
+      "lapulapu",
+      "talisay",
+      "consolacion",
+      "minglanilla",
+      "liloan",
+      "cordova",
+    ],
+  },
+  Butuan: {
+    name: "Butuan",
+    region: "Agusan del Norte",
+    coordinates: [8.9475, 125.5406],
+    tokens: ["butuan", "cabadbaran", "agusan", "surigao", "caraga"],
+  },
+  Davao: {
+    name: "Davao",
+    region: "Davao Region",
+    coordinates: [7.1907, 125.4553],
+    tokens: [
+      "davao",
+      "tagum",
+      "panabo",
+      "samal",
+      "digos",
+      "mati",
+      "davao del sur",
+      "davao del norte",
+      "davao city",
+      "davao de oro",
+      "davao occidental",
+      "davao oriental",
+    ],
+  },
+};
 
 function createDestinationIcon(name: string) {
   return L.divIcon({
@@ -119,33 +193,41 @@ export default function DestinationsMap({
     layer.clearLayers();
 
     const getListingCount = (destName: string) => {
-      const q = destName.toLowerCase();
-      const propMatches = (properties || []).filter((p: any) => {
-        // Exclude condo building wrappers to avoid double-counting
-        // Exclude condo building wrappers and properties that have units to avoid double-counting
-        const isCondoBuilding = String(p.type || "").toLowerCase() === "condominium" || String(p.type || "").toLowerCase() === "building";
-        if (isCondoBuilding) return false;
-        const hasUnits = (units || []).some((u: any) => (u.propertyId || u.property_id) === p.id);
-        if (isCondoBuilding || hasUnits) return false;
-        const str = `${p.name || ""} ${p.location || ""} ${p.city || ""} ${p.province || ""} ${p.address || ""}`.toLowerCase();
-        return str.includes(q);
-      }).length;
+      const cfg = DESTINATION_CONFIG[destName];
+      const tokens = cfg ? cfg.tokens : [destName.toLowerCase()];
+
+      const matchesTokens = (text: string) => {
+        const lower = text.toLowerCase();
+        return tokens.some((token) => lower.includes(token));
+      };
+
+      // 1. Matched Units (including condo units & standalone units)
       const unitMatches = (units || []).filter((u: any) => {
         const parent = (properties || []).find((p: any) => p.id === (u.propertyId || u.property_id));
-        const str = `${u.unitNumber || ""} ${u.address || ""} ${u.location || ""} ${parent?.name || ""} ${parent?.location || ""} ${parent?.city || ""} ${parent?.province || ""}`.toLowerCase();
-        return str.includes(q);
+        const uStr = `${u.name || ""} ${u.title || ""} ${u.unitNumber || u.unit_number || ""} ${u.address || ""} ${u.city || ""} ${u.province || ""} ${u.location || ""} ${parent?.name || ""} ${parent?.location || ""} ${parent?.city || ""} ${parent?.province || ""} ${parent?.address || ""}`;
+        return matchesTokens(uStr);
       }).length;
+
+      // 2. Matched Properties (standalone houses, commercial, villas, or condo listings without units)
+      const propMatches = (properties || []).filter((p: any) => {
+        const hasUnits = (units || []).some((u: any) => (u.propertyId || u.property_id) === p.id);
+        if (hasUnits) return false;
+        const pStr = `${p.name || ""} ${p.location || ""} ${p.city || ""} ${p.province || ""} ${p.address || ""} ${p.type || ""}`;
+        return matchesTokens(pStr);
+      }).length;
+
       return propMatches + unitMatches;
     };
 
-    destinations.forEach((destination) => {
+    // Regional Destination Pins (Manila, Cebu, Butuan, Davao)
+    Object.values(DESTINATION_CONFIG).forEach((destination) => {
+      const count = getListingCount(destination.name);
+
       const marker = L.marker(destination.coordinates, {
         icon: createDestinationIcon(destination.name),
         title: `Properties in ${destination.name}`,
         alt: `Properties in ${destination.name}`,
       });
-
-      const count = getListingCount(destination.name);
 
       const actionHtml =
         count > 0
@@ -188,3 +270,4 @@ export default function DestinationsMap({
     />
   );
 }
+

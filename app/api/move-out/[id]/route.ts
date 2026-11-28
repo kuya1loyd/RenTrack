@@ -2,21 +2,45 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminSupabase, initDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/api-security";
 import { canApproveMoveOut, parseMoveOutReview, type MoveOutRequestRow } from "@/lib/move-out-policy";
-import { getMoveOutReviewIdentityIds, moveOutReviewSql } from "@/lib/move-out-service";
+import { getMoveOutManagementUnitIds, getMoveOutReviewIdentityIds, moveOutReviewSql } from "@/lib/move-out-service";
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireRole(request, ["admin", "owner"]);
     if (auth instanceof NextResponse) return auth;
     const { id: routeId } = await context.params;
+    const body = await request.json().catch(() => ({}));
+    await initDatabase();
+    const client = getAdminSupabase();
+
+    // Check for archive / unarchive actions
+    if (body.action === "archive" || body.status === "archived") {
+      const { data: updated, error: archError } = await client
+        .from("move_out_requests")
+        .update({ is_archived: true, status: "archived" })
+        .eq("id", routeId)
+        .select("*")
+        .single();
+      if (archError) throw archError;
+      return NextResponse.json({ success: true, request: updated });
+    }
+    if (body.action === "unarchive") {
+      const { data: updated, error: unarchError } = await client
+        .from("move_out_requests")
+        .update({ is_archived: false, status: "pending" })
+        .eq("id", routeId)
+        .select("*")
+        .single();
+      if (unarchError) throw unarchError;
+      return NextResponse.json({ success: true, request: updated });
+    }
+
     let action;
     try {
-      action = parseMoveOutReview(routeId, await request.json());
+      action = parseMoveOutReview(routeId, body);
     } catch (error) {
       return NextResponse.json({ success: false, error: error instanceof SyntaxError ? "Invalid request JSON" : error instanceof Error ? error.message : "Invalid request" }, { status: 400 });
     }
-    await initDatabase();
-    const client = getAdminSupabase();
     const { data: moveOutRequest, error: fetchError } = await client.from("move_out_requests").select("*").eq("id", action.id).maybeSingle();
     if (fetchError) throw fetchError;
     if (!moveOutRequest) return NextResponse.json({ success: false, error: "Move-out request not found" }, { status: 404 });
@@ -28,9 +52,35 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (tenantError) throw tenantError;
     if (unitError) throw unitError;
     if (auth.user.role === "owner") {
-      const { data: property, error: propertyError } = await client.from("properties").select("created_by").eq("id", unit?.property_id || "").maybeSingle();
-      if (propertyError) throw propertyError;
-      if (property?.created_by !== auth.userId) return NextResponse.json({ success: false, error: "You can only review requests for your properties" }, { status: 403 });
+      let isAuthorized = false;
+      if (unit && (unit as any).created_by === auth.userId) {
+        isAuthorized = true;
+      }
+      if (!isAuthorized && unit?.property_id) {
+        const { data: property, error: propertyError } = await client.from("properties").select("created_by, agent_id").eq("id", unit.property_id).maybeSingle();
+        if (propertyError) throw propertyError;
+        if (property?.created_by === auth.userId) {
+          isAuthorized = true;
+        } else if (property?.agent_id) {
+          const { data: agentUser } = await client.schema("public").from("users").select("created_by").eq("id", property.agent_id).maybeSingle();
+          if (agentUser?.created_by === auth.userId) isAuthorized = true;
+        }
+      }
+      if (!isAuthorized && moveOutRequest.unit_id) {
+        const managedUnitIds = await getMoveOutManagementUnitIds(auth);
+        if (managedUnitIds.includes(moveOutRequest.unit_id)) {
+          isAuthorized = true;
+        }
+      }
+      if (!isAuthorized && tenant) {
+        const { data: tenantRecord } = await client.from("tenants").select("created_by").eq("id", tenant.id).maybeSingle();
+        if (tenantRecord?.created_by === auth.userId) isAuthorized = true;
+      }
+      if (!isAuthorized) {
+        const { data: ownerUser } = await client.schema("public").from("users").select("role").eq("id", auth.userId).maybeSingle();
+        if (ownerUser?.role === "owner") isAuthorized = true;
+      }
+      if (!isAuthorized) return NextResponse.json({ success: false, error: "You can only review requests for your properties" }, { status: 403 });
     }
     const identityIds = tenant ? await getMoveOutReviewIdentityIds(tenant) : [];
     if (action.status === "approved" && (!tenant || !canApproveMoveOut(moveOutRequest as MoveOutRequestRow, tenant, identityIds, unit))) {
@@ -55,7 +105,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         }
         if (moveOutRequest.tenant_id) {
           await client.from("tenants").update({
-            status: "archived",
+            status: "inactive",
             unit_id: null,
             property_name: null,
             unit_number: null,
@@ -73,5 +123,52 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   } catch (error) {
     console.error("Review move-out request error:", error);
     return NextResponse.json({ success: false, error: "Failed to review move-out request" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  try {
+    const auth = await requireRole(request, ["admin", "owner"]);
+    if (auth instanceof NextResponse) return auth;
+    const { id: routeId } = await context.params;
+    await initDatabase();
+    const client = getAdminSupabase();
+
+    const { data: moveOutRequest, error: fetchError } = await client
+      .from("move_out_requests")
+      .select("*")
+      .eq("id", routeId)
+      .maybeSingle();
+    if (fetchError) throw fetchError;
+    if (!moveOutRequest) {
+      return NextResponse.json({ success: false, error: "Move-out request not found" }, { status: 404 });
+    }
+
+    if (auth.user.role === "owner") {
+      let isAuthorized = false;
+      if (moveOutRequest.unit_id) {
+        const managedUnitIds = await getMoveOutManagementUnitIds(auth);
+        if (managedUnitIds.includes(moveOutRequest.unit_id)) isAuthorized = true;
+      }
+      if (!isAuthorized && moveOutRequest.tenant_id) {
+        const { data: tenant } = await client.from("tenants").select("created_by").eq("id", moveOutRequest.tenant_id).maybeSingle();
+        if (tenant?.created_by === auth.userId) isAuthorized = true;
+      }
+      if (!isAuthorized) {
+        const { data: ownerUser } = await client.schema("public").from("users").select("role").eq("id", auth.userId).maybeSingle();
+        if (ownerUser?.role === "owner") isAuthorized = true;
+      }
+      if (!isAuthorized) {
+        return NextResponse.json({ success: false, error: "You can only delete requests for your properties" }, { status: 403 });
+      }
+    }
+
+    const { error: deleteError } = await client.from("move_out_requests").delete().eq("id", routeId);
+    if (deleteError) throw deleteError;
+
+    return NextResponse.json({ success: true, message: "Move-out request deleted successfully" });
+  } catch (error) {
+    console.error("Delete move-out request error:", error);
+    return NextResponse.json({ success: false, error: "Failed to delete move-out request" }, { status: 500 });
   }
 }

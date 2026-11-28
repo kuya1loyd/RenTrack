@@ -52,13 +52,14 @@ export default function TenantLayout({ children }: { children: React.ReactNode }
     try {
       const response = await fetch("/api/tenant/landlord", { credentials: "include", cache: "no-store" });
       const data = await safeParseJson(response);
-      if (!response.ok || !data.success || !data.owner?.id) {
-        throw new Error(data.error || "The owner of your assigned property could not be resolved.");
+      const targetUser = data.manager || data.owner || data.agent;
+      if (!response.ok || !data.success || !targetUser?.id) {
+        throw new Error(data.error || "The owner or manager of your assigned property could not be resolved.");
       }
       setShowMessages(false);
-      setActiveChatUser(data.owner as NonNullable<Conversation["otherUser"]>);
+      setActiveChatUser(targetUser as NonNullable<Conversation["otherUser"]>);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "The owner of your assigned property could not be resolved.");
+      toast.error(error instanceof Error ? error.message : "The owner or manager of your assigned property could not be resolved.");
     }
   }, []);
 

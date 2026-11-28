@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { X, UserPlus, Mail, Phone, MapPin, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,18 +12,39 @@ interface AccountRequestModalProps {
   isOpen: boolean;
   onClose: () => void;
   agentName: string;
+  initialData?: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    reason?: string;
+  } | null;
 }
 
-export default function AccountRequestModal({ isOpen, onClose, agentName }: AccountRequestModalProps) {
+export default function AccountRequestModal({ isOpen, onClose, agentName, initialData }: AccountRequestModalProps) {
   const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    address: "",
+    name: initialData?.name || "",
+    email: initialData?.email || "",
+    phone: initialData?.phone || "",
+    address: initialData?.address || "",
     recipientRole: "owner",
-    reason: "",
+    reason: initialData?.reason || "",
   });
   const [submitting, setSubmitting] = useState(false);
+
+  // Sync formData when initialData or isOpen changes
+  useEffect(() => {
+    if (isOpen) {
+      setFormData({
+        name: initialData?.name || "",
+        email: initialData?.email || "",
+        phone: initialData?.phone || "",
+        address: initialData?.address || "",
+        recipientRole: "owner",
+        reason: initialData?.reason || "",
+      });
+    }
+  }, [isOpen, initialData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

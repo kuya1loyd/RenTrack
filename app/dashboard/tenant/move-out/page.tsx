@@ -27,12 +27,21 @@ import type { MoveOutRequestRow, MoveOutTenancy } from "@/lib/move-out-policy";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { safeParseJson } from "@/lib/data";
 
+type MoveOutManager = {
+  id: string;
+  name: string;
+  email?: string;
+  role: string;
+  avatarUrl?: string;
+};
+
 type MoveOutResponse = {
   success?: boolean;
   error?: string;
   requests?: MoveOutRequestRow[];
   request?: MoveOutRequestRow;
   tenancy?: MoveOutTenancy;
+  manager?: MoveOutManager | null;
 };
 
 const statusPresentation = {
@@ -65,6 +74,8 @@ export default function TenantMoveOutPage() {
   const { user } = useAuth();
   const [tenancy, setTenancy] = useState<MoveOutTenancy | null>(null);
   const [requests, setRequests] = useState<MoveOutRequestRow[]>([]);
+  const [manager, setManager] = useState<MoveOutManager | null>(null);
+  const [loadingChat, setLoadingChat] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [retryCount, setRetryCount] = useState(0);
@@ -80,6 +91,38 @@ export default function TenantMoveOutPage() {
   // Modals
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
+
+  const handleChatManager = async () => {
+    let target = manager;
+    if (!target?.id) {
+      setLoadingChat(true);
+      try {
+        const response = await fetch("/api/tenant/landlord", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        const data = await safeParseJson(response);
+        if (data && (data.manager?.id || data.owner?.id || data.agent?.id)) {
+          target = data.manager || data.owner || data.agent;
+          setManager(target);
+        }
+      } catch (err) {
+        console.warn("Failed to resolve landlord:", err);
+      } finally {
+        setLoadingChat(false);
+      }
+    }
+
+    if (target?.id) {
+      window.dispatchEvent(
+        new CustomEvent("renttrack-open-messages", {
+          detail: { otherUser: target },
+        })
+      );
+    } else {
+      window.dispatchEvent(new CustomEvent("renttrack-contact-landlord"));
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -99,6 +142,17 @@ export default function TenantMoveOutPage() {
         }
         setTenancy(data.tenancy);
         setRequests(data.requests || []);
+        if (data.manager) {
+          setManager(data.manager);
+        } else {
+          fetch("/api/tenant/landlord", { credentials: "include", cache: "no-store" })
+            .then(safeParseJson)
+            .then((res) => {
+              const target = res?.manager || res?.owner || res?.agent;
+              if (target?.id) setManager(target);
+            })
+            .catch(() => {});
+        }
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
@@ -258,11 +312,16 @@ export default function TenantMoveOutPage() {
             <div className="flex flex-col sm:flex-row gap-2.5 shrink-0 w-full md:w-auto">
               <button
                 type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent("renttrack-contact-landlord"))}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold shadow-xs transition-colors cursor-pointer"
+                onClick={handleChatManager}
+                disabled={loadingChat}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white text-xs sm:text-sm font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-75"
               >
-                <MessageSquare className="h-4 w-4" />
-                <span>Contact Landlord</span>
+                {loadingChat ? (
+                  <div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                ) : (
+                  <MessageSquare className="h-4 w-4" />
+                )}
+                <span>{manager?.name ? `Contact ${manager.name}` : "Contact Landlord"}</span>
               </button>
               <button
                 type="button"
@@ -364,17 +423,29 @@ export default function TenantMoveOutPage() {
                     </div>
                   )}
 
-                  <div className="pt-1 flex items-center justify-between">
-                    <span className="text-[11px] text-amber-900 font-medium">
-                      Need to amend or expedite?
-                    </span>
+                  <div className="pt-1 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] text-amber-900 font-medium">
+                        Need to amend or expedite?
+                      </span>
+                      {manager?.name && (
+                        <span className="text-[10px] text-amber-800/80">
+                          Manager: <strong className="font-semibold text-amber-950">{manager.name}</strong> ({manager.role === "agent" ? "Property Agent" : "Property Owner"})
+                        </span>
+                      )}
+                    </div>
                     <button
                       type="button"
-                      onClick={() => window.dispatchEvent(new CustomEvent("renttrack-open-messages"))}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                      onClick={handleChatManager}
+                      disabled={loadingChat}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-800 active:scale-98 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-75 shrink-0"
                     >
-                      <MessageSquare className="h-3.5 w-3.5" />
-                      <span>Chat Manager</span>
+                      {loadingChat ? (
+                        <div className="h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                      ) : (
+                        <MessageSquare className="h-3.5 w-3.5" />
+                      )}
+                      <span>{manager?.name ? `Chat ${manager.name}` : "Chat Manager"}</span>
                     </button>
                   </div>
                 </div>
@@ -561,11 +632,16 @@ export default function TenantMoveOutPage() {
 
               <button
                 type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent("renttrack-contact-landlord"))}
-                className="w-full h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                onClick={handleChatManager}
+                disabled={loadingChat}
+                className="w-full h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75"
               >
-                <MessageSquare className="h-3.5 w-3.5 text-blue-600" />
-                <span>Contact Landlord in Messages</span>
+                {loadingChat ? (
+                  <div className="h-3.5 w-3.5 rounded-full border-2 border-blue-600/30 border-t-blue-600 animate-spin" />
+                ) : (
+                  <MessageSquare className="h-3.5 w-3.5 text-blue-600" />
+                )}
+                <span>{manager?.name ? `Contact ${manager.name} in Messages` : "Contact Landlord in Messages"}</span>
               </button>
             </div>
           </div>
@@ -655,11 +731,12 @@ export default function TenantMoveOutPage() {
                   <div className="shrink-0 flex items-center gap-2 self-start sm:self-auto">
                     <button
                       type="button"
-                      onClick={() => window.dispatchEvent(new CustomEvent("renttrack-open-messages"))}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                      onClick={handleChatManager}
+                      disabled={loadingChat}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-75"
                     >
                       <MessageSquare className="h-3.5 w-3.5 text-blue-600" />
-                      <span>Message Manager</span>
+                      <span>{manager?.name ? `Message ${manager.name}` : "Message Manager"}</span>
                     </button>
                   </div>
                 </div>
@@ -735,12 +812,12 @@ export default function TenantMoveOutPage() {
                     type="button"
                     onClick={() => {
                       setShowStatusModal(false);
-                      window.dispatchEvent(new CustomEvent("renttrack-open-messages"));
+                      void handleChatManager();
                     }}
                     className="flex-1 h-9 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                   >
                     <MessageSquare className="h-3.5 w-3.5" />
-                    <span>Contact Manager</span>
+                    <span>{manager?.name ? `Contact ${manager.name}` : "Contact Manager"}</span>
                   </button>
                   <button
                     type="button"

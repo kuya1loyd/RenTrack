@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SecureContext } from "@/lib/api-security";
-import { getAdminSupabase } from "@/lib/db";
+import { getAdminSupabase, findUserById } from "@/lib/db";
 import {
   resolveMoveOutTenant, resolveMoveOutUnit,
   type MoveOutIdentity, type MoveOutTenantRow, type MoveOutUnitRow, type MoveOutTenancy,
@@ -117,6 +117,135 @@ export function moveOutSubmissionId(tenantId: string, unitId: string, previousRe
   return `move_out_${createHash("sha256").update(JSON.stringify([tenantId, unitId, previousRequestId || "initial"])).digest("hex").slice(0, 32)}`;
 }
 
+export async function resolveTenantManager(auth: SecureContext, existingContext?: Awaited<ReturnType<typeof loadMoveOutContext>>) {
+  const client = getAdminSupabase();
+  const context = existingContext || (await loadMoveOutContext(auth));
+
+  let propertyId = context.unit?.property_id;
+  const propertyName =
+    context.unit?.name ||
+    context.tenancy?.tenant?.propertyName ||
+    context.tenant?.property_name ||
+    null;
+
+  let ownerUser: { id: string; name?: string; email?: string; role: string; avatarUrl?: string } | null = null;
+  let agentUser: { id: string; name?: string; email?: string; role: string; avatarUrl?: string } | null = null;
+
+  try {
+    if (!propertyId && propertyName) {
+      const { data: propByName } = await client
+        .from("properties")
+        .select("id, created_by, agent_id, name")
+        .ilike("name", propertyName.trim())
+        .limit(1)
+        .maybeSingle();
+      if (propByName?.id) {
+        propertyId = propByName.id;
+      }
+    }
+
+    if (propertyId) {
+      const { data: prop } = await client
+        .from("properties")
+        .select("id, created_by, agent_id, name")
+        .eq("id", propertyId)
+        .maybeSingle();
+
+      if (prop) {
+        if (prop.agent_id) {
+          try {
+            const ag = await findUserById(prop.agent_id);
+            if (ag && ag.role === "agent") {
+              agentUser = {
+                id: ag.id,
+                name: ag.name,
+                email: ag.email,
+                role: ag.role,
+                avatarUrl: ag.avatarUrl,
+              };
+            }
+          } catch {
+            // ignore
+          }
+        }
+        if (prop.created_by) {
+          try {
+            let ow = await findUserById(prop.created_by);
+            if (ow?.role === "agent" && ow.createdBy) {
+              ow = await findUserById(ow.createdBy);
+            }
+            if (ow && ow.role === "owner") {
+              ownerUser = {
+                id: ow.id,
+                name: ow.name,
+                email: ow.email,
+                role: ow.role,
+                avatarUrl: ow.avatarUrl,
+              };
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+
+    // Fallback to any active owner if no owner resolved
+    if (!ownerUser) {
+      const { data: fallbackOwners } = await client
+        .from("users")
+        .select("id, name, email, role, avatar_url")
+        .eq("role", "owner")
+        .order("created_at", { ascending: true })
+        .limit(1);
+      if (fallbackOwners && fallbackOwners.length > 0) {
+        const fo = fallbackOwners[0];
+        ownerUser = {
+          id: fo.id,
+          name: fo.name,
+          email: fo.email,
+          role: fo.role,
+          avatarUrl: fo.avatar_url,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("Failed resolving manager for tenant:", err);
+  }
+
+  const primaryManager = agentUser || ownerUser;
+  return {
+    context,
+    manager: primaryManager
+      ? {
+          id: primaryManager.id,
+          name: primaryManager.name || (primaryManager.role === "agent" ? "Property Agent" : "Property Owner"),
+          email: primaryManager.email || "",
+          role: primaryManager.role,
+          ...(primaryManager.avatarUrl ? { avatarUrl: primaryManager.avatarUrl } : {}),
+        }
+      : null,
+    owner: ownerUser
+      ? {
+          id: ownerUser.id,
+          name: ownerUser.name || "Property Owner",
+          email: ownerUser.email || "",
+          role: ownerUser.role,
+          ...(ownerUser.avatarUrl ? { avatarUrl: ownerUser.avatarUrl } : {}),
+        }
+      : null,
+    agent: agentUser
+      ? {
+          id: agentUser.id,
+          name: agentUser.name || "Property Agent",
+          email: agentUser.email || "",
+          role: agentUser.role,
+          ...(agentUser.avatarUrl ? { avatarUrl: agentUser.avatarUrl } : {}),
+        }
+      : null,
+  };
+}
+
 function sqlText(value: string) {
   return `E'${value.replace(/\\/g, "\\\\").replace(/'/g, "''")}'`;
 }
@@ -141,7 +270,11 @@ BEGIN
   IF current_request.status <> 'pending' THEN RAISE EXCEPTION 'This request has already been reviewed' USING ERRCODE = '40001'; END IF;
   SELECT * INTO current_tenant FROM tenants WHERE id = current_request.tenant_id FOR UPDATE;
   SELECT * INTO current_unit FROM units WHERE id = current_request.unit_id FOR UPDATE;
-  ${ownerId ? `IF NOT EXISTS (SELECT 1 FROM properties WHERE id = current_unit.property_id AND created_by = ${sqlText(ownerId)}) THEN
+  ${ownerId ? `IF NOT (
+    (current_unit.created_by IS NOT DISTINCT FROM ${sqlText(ownerId)})
+    OR EXISTS (SELECT 1 FROM properties WHERE id = current_unit.property_id AND created_by = ${sqlText(ownerId)})
+    OR EXISTS (SELECT 1 FROM users WHERE id = ${sqlText(ownerId)} AND role IN ('owner', 'admin'))
+  ) THEN
     RAISE EXCEPTION 'You can only review requests for your properties' USING ERRCODE = '42501';
   END IF;` : ""}
   ${status === "approved" ? `IF current_tenant.id IS NULL OR current_unit.id IS NULL
@@ -152,9 +285,9 @@ BEGIN
     OR (current_unit.tenant_id IS NULL AND (current_tenant.unit_id IS DISTINCT FROM current_unit.id OR COALESCE(current_tenant.assignment_status, '') = 'pending')) THEN
     RAISE EXCEPTION 'The current unit assignment has changed; check the tenancy before approving' USING ERRCODE = '40001';
   END IF;
-  -- Approved move-outs vacate the unit and archive the tenant instead of blocking the account.
+  -- Approved move-outs vacate the unit and set the tenant to inactive.
   UPDATE units SET status = 'vacant', tenant_id = NULL, tenant_name = NULL WHERE id = current_unit.id;
-  UPDATE tenants SET status = 'archived', unit_id = NULL, property_name = NULL, unit_number = NULL, assignment_status = '', rent_amount = 0 WHERE id = current_tenant.id;` : ""}
+  UPDATE tenants SET status = 'inactive', unit_id = NULL, property_name = NULL, unit_number = NULL, assignment_status = '', rent_amount = 0 WHERE id = current_tenant.id;` : ""}
   UPDATE move_out_requests SET status = ${sqlText(status)}, reviewed_by = ${sqlText(reviewerId)}, reviewed_at = NOW() WHERE id = current_request.id;
 END;
 ${delimiter};`;

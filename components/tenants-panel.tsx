@@ -85,7 +85,7 @@ export default function TenantsPanel({
       const res = await updateTenantStatus(tenant.id, nextStatus);
       if (res) {
         if (nextStatus === "active") {
-          toast.success(isArchived ? "Tenant restored from archive" : "Tenant unblocked");
+          toast.success(isArchived ? "Tenant restored from archive" : "Tenant account retrieved and reactivated");
         } else {
           toast.success("Tenant blocked");
         }
@@ -547,7 +547,7 @@ export default function TenantsPanel({
                               ) : (
                                 <>
                                   <Shield className="h-3.5 w-3.5 text-emerald-500" />
-                                  <span>{tenant.status === "archived" ? "Unarchive tenant" : "Unblock tenant"}</span>
+                                  <span>{tenant.status === "archived" ? "Retrieve / Unarchive tenant" : "Retrieve / Reactivate account"}</span>
                                 </>
                               )}
                             </DropdownMenuItem>

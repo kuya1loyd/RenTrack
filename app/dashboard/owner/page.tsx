@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Home, ClipboardCheck, Clock,
   CreditCard, FileText, BarChart3, FileSpreadsheet,
   CheckCircle2, UserPlus, User,
-  Eye, Download, X, Plus, Camera, Users, Trash2, ChevronDown,
+  Eye, Download, X, Plus, Camera, Users, Trash2, ChevronDown, Archive,
   Shield, ShieldOff, LogOut, MoreVertical, Search, Building2, RotateCcw,
   Copy, MoreHorizontal, Mail, MessageSquare, Phone, MapPinned, MapPin, DoorOpen, Bed,
   LayoutGrid, List, Wallet, History as HistoryIcon,
@@ -178,7 +178,7 @@ export default function OwnerDashboard() {
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [moveOutRequests, setMoveOutRequests] = useState<any[]>([]);
   const [moveOutSearch, setMoveOutSearch] = useState("");
-  const [moveOutStatusFilter, setMoveOutStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
+  const [moveOutStatusFilter, setMoveOutStatusFilter] = useState<"all" | "pending" | "approved" | "rejected" | "archived">("all");
   const [moveOutPropertyFilter, setMoveOutPropertyFilter] = useState("all");
   const [selectedMoveOut, setSelectedMoveOut] = useState<any | null>(null);
   const [, setIsRefreshing] = useState(false);
@@ -238,6 +238,7 @@ export default function OwnerDashboard() {
   const [tenantFilter, setTenantFilter] = useState("all");
   const [tenantSearch, setTenantSearch] = useState("");
   const [viewingTenant, setViewingTenant] = useState<TenantRecord | null>(null);
+  const [updatingMoveOutId, setUpdatingMoveOutId] = useState<string | null>(null);
   const [financialView, setFinancialView] = useState<"payments" | "approvals" | "reports">("payments");
   const [financialStatusFilter, setFinancialStatusFilter] = useState("all");
   const [financialSearch, setFinancialSearch] = useState("");
@@ -252,7 +253,8 @@ export default function OwnerDashboard() {
       const customDetail = (e as CustomEvent)?.detail;
       const hash = typeof window !== "undefined" ? window.location.hash.replace("#", "") : "";
       const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-      const tabParam = params?.get("tab") || hash || customDetail?.tab;
+      const rawParam = params?.get("tab") || hash || customDetail?.tab;
+      const tabParam = rawParam === "move-out" ? "move-out-requests" : rawParam === "payments" ? "financial" : rawParam;
 
       if (tabParam === "properties" || tabParam === "units" || tabParam === "occupancy") {
         setActiveTab(tabParam as Step);
@@ -1044,7 +1046,14 @@ export default function OwnerDashboard() {
   const filteredMoveOutRequests = useMemo(() => {
     const q = moveOutSearch.trim().toLowerCase();
     return moveOutRequests.filter((r) => {
-      if (moveOutStatusFilter !== "all" && r.status !== moveOutStatusFilter) return false;
+      const isArchived = r.status === "archived" || r.is_archived;
+      if (moveOutStatusFilter === "archived") {
+        if (!isArchived) return false;
+      } else if (moveOutStatusFilter === "all") {
+        if (isArchived) return false;
+      } else if (r.status !== moveOutStatusFilter || isArchived) {
+        return false;
+      }
       if (moveOutPropertyFilter !== "all" && r.property_name !== moveOutPropertyFilter) return false;
       if (!q) return true;
       const haystack = [
@@ -1061,14 +1070,16 @@ export default function OwnerDashboard() {
 
   const moveOutCounts = useMemo(() => {
     return {
-      all: moveOutRequests.length,
-      pending: moveOutRequests.filter((r) => r.status === "pending").length,
-      approved: moveOutRequests.filter((r) => r.status === "approved").length,
-      rejected: moveOutRequests.filter((r) => r.status === "rejected").length,
+      all: moveOutRequests.filter((r) => !r.is_archived && r.status !== "archived").length,
+      pending: moveOutRequests.filter((r) => r.status === "pending" && !r.is_archived).length,
+      approved: moveOutRequests.filter((r) => r.status === "approved" && !r.is_archived).length,
+      rejected: moveOutRequests.filter((r) => r.status === "rejected" && !r.is_archived).length,
+      archived: moveOutRequests.filter((r) => r.status === "archived" || r.is_archived).length,
     };
   }, [moveOutRequests]);
 
   const handleUpdateMoveOutStatus = async (id: string, status: "approved" | "rejected") => {
+    setUpdatingMoveOutId(id);
     try {
       const res = await fetch(`/api/move-out/${id}`, {
         method: "PATCH",
@@ -1088,6 +1099,53 @@ export default function OwnerDashboard() {
       }
     } catch {
       toast.error(`Failed to ${status} request`);
+    } finally {
+      setUpdatingMoveOutId(null);
+    }
+  };
+
+  const handleArchiveMoveOut = async (id: string, archive: boolean) => {
+    try {
+      const res = await fetch(`/api/move-out/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: archive ? "archive" : "unarchive" }),
+      });
+      const data = await safeParseJson(res);
+      if (data.success) {
+        setMoveOutRequests((prev) =>
+          prev.map((r) =>
+            r.id === id ? { ...r, is_archived: archive, status: archive ? "archived" : "pending" } : r
+          )
+        );
+        if (selectedMoveOut?.id === id) {
+          setSelectedMoveOut((prev: any) => prev ? { ...prev, is_archived: archive, status: archive ? "archived" : "pending" } : null);
+        }
+        toast.success(archive ? "Move-out request archived" : "Move-out request unarchived");
+      } else {
+        toast.error(data.error || "Failed to update archive status");
+      }
+    } catch {
+      toast.error("Failed to update archive status");
+    }
+  };
+
+  const handleDeleteMoveOut = async (id: string) => {
+    if (!confirm("Are you sure you want to permanently delete this move-out request?")) return;
+    try {
+      const res = await fetch(`/api/move-out/${id}`, {
+        method: "DELETE",
+      });
+      const data = await safeParseJson(res);
+      if (data.success) {
+        setMoveOutRequests((prev) => prev.filter((r) => r.id !== id));
+        if (selectedMoveOut?.id === id) setSelectedMoveOut(null);
+        toast.success("Move-out request deleted successfully");
+      } else {
+        toast.error(data.error || "Failed to delete move-out request");
+      }
+    } catch {
+      toast.error("Failed to delete move-out request");
     }
   };
 
@@ -2550,6 +2608,7 @@ export default function OwnerDashboard() {
                   { value: "pending", label: `Pending (${moveOutCounts.pending})` },
                   { value: "approved", label: `Approved (${moveOutCounts.approved})` },
                   { value: "rejected", label: `Rejected (${moveOutCounts.rejected})` },
+                  { value: "archived", label: `Archived (${moveOutCounts.archived})` },
                 ]}
               />
             </div>
@@ -2609,6 +2668,9 @@ export default function OwnerDashboard() {
                   <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700 text-xs">
                     {moveOutCounts.rejected} Rejected
                   </Badge>
+                  <Badge variant="outline" className="border-purple-200 bg-purple-50 text-purple-700 text-xs">
+                    {moveOutCounts.archived} Archived
+                  </Badge>
                 </div>
               </div>
             </CardHeader>
@@ -2644,11 +2706,13 @@ export default function OwnerDashboard() {
                                   ? "success"
                                   : request.status === "rejected"
                                     ? "destructive"
-                                    : "warning"
+                                    : request.status === "archived" || request.is_archived
+                                      ? "secondary"
+                                      : "warning"
                               }
                               className="text-[10px] capitalize"
                             >
-                              {request.status}
+                              {request.is_archived || request.status === "archived" ? "Archived" : request.status}
                             </Badge>
                           </div>
                           <p className="mt-0.5 text-xs text-slate-600">
@@ -2671,16 +2735,25 @@ export default function OwnerDashboard() {
                           <>
                             <Button
                               size="sm"
+                              disabled={updatingMoveOutId === request.id}
                               onClick={() => handleUpdateMoveOutStatus(request.id, "approved")}
-                              className="h-8 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-3"
+                              className="h-8 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-3 flex items-center gap-1.5"
                             >
-                              Approve
+                              {updatingMoveOutId === request.id ? (
+                                <>
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  <span>Approving...</span>
+                                </>
+                              ) : (
+                                "Approve"
+                              )}
                             </Button>
                             <Button
                               size="sm"
                               variant="outline"
+                              disabled={updatingMoveOutId === request.id}
                               onClick={() => handleUpdateMoveOutStatus(request.id, "rejected")}
-                              className="h-8 rounded-lg border-red-200 text-red-600 hover:bg-red-50 text-xs font-medium px-3"
+                              className="h-8 rounded-lg border-red-200 text-red-600 hover:bg-red-50 text-xs font-medium px-3 flex items-center gap-1.5"
                             >
                               Reject
                             </Button>
@@ -2704,18 +2777,6 @@ export default function OwnerDashboard() {
                               <Eye className="mr-2 h-4 w-4" />
                               View details
                             </DropdownMenuItem>
-                            {request.status === "pending" && (
-                              <>
-                                <DropdownMenuItem onSelect={() => handleUpdateMoveOutStatus(request.id, "approved")} className="text-green-700">
-                                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                                  Approve request
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => handleUpdateMoveOutStatus(request.id, "rejected")} className="text-red-600">
-                                  <X className="mr-2 h-4 w-4" />
-                                  Reject request
-                                </DropdownMenuItem>
-                              </>
-                            )}
                             <DropdownMenuItem
                               onSelect={() => {
                                 navigator.clipboard.writeText(request.id);
@@ -2724,6 +2785,20 @@ export default function OwnerDashboard() {
                             >
                               <Copy className="mr-2 h-4 w-4" />
                               Copy Request ID
+                            </DropdownMenuItem>
+                            <div className="my-1 border-t border-slate-100" />
+                            <DropdownMenuItem
+                              onSelect={() => handleArchiveMoveOut(request.id, !request.is_archived && request.status !== "archived")}
+                            >
+                              <Archive className="mr-2 h-4 w-4 text-purple-600" />
+                              {request.is_archived || request.status === "archived" ? "Unarchive request" : "Archive request"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={() => handleDeleteMoveOut(request.id)}
+                              className="text-red-600 focus:text-red-700 focus:bg-red-50"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4 text-red-500" />
+                              Delete request
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -2784,29 +2859,60 @@ export default function OwnerDashboard() {
                   </div>
                 </div>
 
-                <div className="mt-6 flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
-                  {selectedMoveOut.status === "pending" && (
-                    <>
-                      <Button
-                        size="sm"
-                        onClick={() => handleUpdateMoveOutStatus(selectedMoveOut.id, "approved")}
-                        className="bg-green-600 hover:bg-green-700 text-white"
-                      >
-                        Approve Move-Out
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleUpdateMoveOutStatus(selectedMoveOut.id, "rejected")}
-                        className="text-red-600 border-red-200 hover:bg-red-50"
-                      >
-                        Reject Request
-                      </Button>
-                    </>
-                  )}
-                  <Button variant="outline" size="sm" onClick={() => setSelectedMoveOut(null)}>
-                    Close
-                  </Button>
+                <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleArchiveMoveOut(selectedMoveOut.id, !selectedMoveOut.is_archived && selectedMoveOut.status !== "archived")}
+                      className="text-purple-600 border-purple-200 hover:bg-purple-50 text-xs flex items-center gap-1.5"
+                    >
+                      <Archive className="h-3.5 w-3.5" />
+                      {selectedMoveOut.is_archived || selectedMoveOut.status === "archived" ? "Unarchive" : "Archive"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleDeleteMoveOut(selectedMoveOut.id)}
+                      className="text-red-600 border-red-200 hover:bg-red-50 text-xs flex items-center gap-1.5"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {selectedMoveOut.status === "pending" && (
+                      <>
+                        <Button
+                          size="sm"
+                          disabled={updatingMoveOutId === selectedMoveOut.id}
+                          onClick={() => handleUpdateMoveOutStatus(selectedMoveOut.id, "approved")}
+                          className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-1.5"
+                        >
+                          {updatingMoveOutId === selectedMoveOut.id ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              <span>Approving...</span>
+                            </>
+                          ) : (
+                            "Approve Move-Out"
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={updatingMoveOutId === selectedMoveOut.id}
+                          onClick={() => handleUpdateMoveOutStatus(selectedMoveOut.id, "rejected")}
+                          className="text-red-600 border-red-200 hover:bg-red-50"
+                        >
+                          Reject Request
+                        </Button>
+                      </>
+                    )}
+                    <Button variant="outline" size="sm" onClick={() => setSelectedMoveOut(null)}>
+                      Close
+                    </Button>
+                  </div>
                 </div>
               </div>
             </Modal>

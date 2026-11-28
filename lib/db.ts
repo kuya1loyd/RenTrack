@@ -277,11 +277,14 @@ export async function initDatabase() {
     unit_id TEXT,
     property_name TEXT,
     reason TEXT,
-    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'archived')),
     reviewed_by TEXT REFERENCES users(id),
     reviewed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
+    statements.push(`ALTER TABLE move_out_requests ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT FALSE`);
+    statements.push(`ALTER TABLE move_out_requests DROP CONSTRAINT IF EXISTS move_out_requests_status_check`);
+    statements.push(`ALTER TABLE move_out_requests ADD CONSTRAINT move_out_requests_status_check CHECK (status IN ('pending', 'approved', 'rejected', 'archived'))`);
 
     statements.push(`CREATE TABLE IF NOT EXISTS payments (
     id TEXT PRIMARY KEY,

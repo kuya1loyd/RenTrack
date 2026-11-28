@@ -29,7 +29,7 @@ import {
   getUsers, getProperties, getUnits, getTenants, getNotifications,
   getPayments, getComplaints, getAllRatings, getAuditLogs,
   UserRecord, Property, Unit, TenantRecord, Notification, Payment, Complaint, Rating, AuditLog,
-  deleteUser, updateUser, adminResetUserPassword,
+  deleteUser, updateUser, adminResetUserPassword, updateTenantStatus,
   updateComplaintStatus, markAllMessagesRead,
   getComplaintById, updateUnit,
   UNIT_MAINTENANCE_REASONS, PROPERTY_MAINTENANCE_REASONS, SYSTEM_MAINTENANCE_REASONS, MAINTENANCE_REASON_GROUPS,
@@ -930,6 +930,40 @@ export default function AdminDashboard() {
       toast.success("User deleted successfully");
     } catch {
       toast.error("Failed to delete user");
+    }
+  };
+
+  const [retrievingTenantId, setRetrievingTenantId] = useState<string | null>(null);
+
+  const handleRetrieveTenantAccount = async (tenantId: string) => {
+    setRetrievingTenantId(tenantId);
+    try {
+      const res = await updateTenantStatus(tenantId, "active");
+      if (res) {
+        toast.success("Tenant account retrieved and reactivated successfully");
+        setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, status: "active" } : t)));
+        loadData();
+      } else {
+        toast.error("Failed to retrieve tenant account");
+      }
+    } catch {
+      toast.error("Failed to retrieve tenant account");
+    } finally {
+      setRetrievingTenantId(null);
+    }
+  };
+
+  const handleRetrieveUserAccount = async (u: UserRecord) => {
+    try {
+      const matchedTenant = tenants.find((t) => t.id === u.id || t.email?.toLowerCase() === u.email?.toLowerCase());
+      if (matchedTenant) {
+        await updateTenantStatus(matchedTenant.id, "active");
+        setTenants((prev) => prev.map((t) => (t.id === matchedTenant.id ? { ...t, status: "active" } : t)));
+      }
+      toast.success("Account retrieved and reactivated successfully");
+      loadData();
+    } catch {
+      toast.error("Failed to retrieve account");
     }
   };
 
@@ -2059,6 +2093,14 @@ export default function AdminDashboard() {
                                     </DropdownMenuItem>
 
                                     <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+
+                                    <DropdownMenuItem
+                                      onSelect={() => handleRetrieveUserAccount(u)}
+                                      className="group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer transition-all duration-150 hover:translate-x-1"
+                                    >
+                                      <RotateCcw className="h-3.5 w-3.5 text-emerald-500 transition-transform duration-150 group-hover:scale-110" />
+                                      <span>Retrieve / Reactivate Account</span>
+                                    </DropdownMenuItem>
 
                                     <DropdownMenuItem
                                       onSelect={() => handleDeleteUser(u.id)}
@@ -3282,7 +3324,8 @@ export default function AdminDashboard() {
                         <TableHead>Email</TableHead>
                         <TableHead>Phone</TableHead>
                         <TableHead>Unit Number</TableHead>
-                        <TableHead className="pr-6">Status</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="pr-6 text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -3298,14 +3341,34 @@ export default function AdminDashboard() {
                           <TableCell className="text-text-secondary text-xs">{t.email}</TableCell>
                           <TableCell className="text-text-secondary text-xs">{t.phone || "—"}</TableCell>
                           <TableCell className="text-xs font-medium">{t.unitNumber || "-"}</TableCell>
-                          <TableCell className="pr-6">
+                          <TableCell>
                             <span className={cn(
                               "inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold capitalize",
                               t.status === "active" && "bg-green-50 text-green-700 border border-green-200",
                               t.status === "inactive" && "bg-gray-50 text-gray-600 border border-gray-200",
+                              t.status === "archived" && "bg-purple-50 text-purple-700 border border-purple-200",
                             )}>
                               {t.status}
                             </span>
+                          </TableCell>
+                          <TableCell className="pr-6 text-right">
+                            {t.status !== "active" ? (
+                              <Button
+                                size="sm"
+                                disabled={retrievingTenantId === t.id}
+                                onClick={() => handleRetrieveTenantAccount(t.id)}
+                                className="h-7 gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold px-2.5 shadow-2xs transition-all"
+                              >
+                                {retrievingTenantId === t.id ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="h-3 w-3" />
+                                )}
+                                Retrieve Account
+                              </Button>
+                            ) : (
+                              <span className="text-[11px] text-gray-400 font-medium">Active</span>
+                            )}
                           </TableCell>
                         </motion.tr>
                       ))}

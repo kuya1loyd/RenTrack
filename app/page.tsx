@@ -58,10 +58,10 @@ const features = [
   { icon: Shield, title: "Role-Based Access", desc: "Secure RBAC with Admin, Owner, Agent, and Tenant roles. Audit logs for full accountability and transparency.", image: "/images/landing/feature-security.jpg" },
 ];
 
-function ContactGroup({ title, contacts, emptyMessage }: { title: string; contacts: { name: string; email: string; phone: string }[]; emptyMessage?: string }) {
+function ContactGroup({ title, contacts, emptyMessage }: { title?: string; contacts: { name: string; email: string; phone: string }[]; emptyMessage?: string }) {
   return (
     <section className="border-t border-slate-200 pt-3 first:border-0 first:pt-0">
-      <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+      {title && <h3 className="text-sm font-semibold text-slate-800">{title}</h3>}
       {contacts.length ? contacts.map((contact, index) => (
         <div key={`${contact.name}-${index}`} className="mt-2 rounded-lg bg-slate-50 p-3">
           <p className="text-sm font-medium text-slate-900">{contact.name}</p>
@@ -680,6 +680,22 @@ export default function LandingPage() {
     return type === filter;
   };
 
+  const DESTINATION_FILTER_TOKENS: Record<string, string[]> = {
+    davao: ["davao", "tagum", "panabo", "samal", "digos", "mati", "davao del sur", "davao del norte", "davao city"],
+    cebu: ["cebu", "mandaue", "lapu-lapu", "lapu lapu", "lapulapu", "talisay", "consolacion", "minglanilla", "liloan", "cordova"],
+    manila: ["manila", "makati", "quezon", "taguig", "bgc", "pasig", "mandaluyong", "paranaque", "pasay", "alabang", "muntinlupa", "las pinas", "ncr", "metro manila", "marikina", "caloocan"],
+    butuan: ["butuan", "cabadbaran", "agusan", "surigao", "caraga"],
+  };
+
+  const matchesSearchQuery = (haystack: string) => {
+    if (!normalizedSearch) return true;
+    const destTokens = DESTINATION_FILTER_TOKENS[normalizedSearch];
+    if (destTokens) {
+      return destTokens.some((t) => haystack.includes(t));
+    }
+    return haystack.includes(normalizedSearch);
+  };
+
   const matchesPropertyFilters = (property: any, unit?: any) => {
     if (propertyTypeFilter === "units") return false;
 
@@ -699,7 +715,7 @@ export default function LandingPage() {
     const haystack = [propertyName, propertyLocation, property?.address, property?.city, property?.province, propertyType, unitKeywords, amenitiesKeywords, unit?.unitNumber, unit?.unit_number, unit?.status]
       .filter(Boolean).join(" ").toLowerCase();
 
-    return (!normalizedSearch || haystack.includes(normalizedSearch))
+    return matchesSearchQuery(haystack)
       && (!locationFilter || propertyLocation.toLowerCase().includes(locationFilter.toLowerCase()))
       && matchesPropertyTypeFilter(propertyType, false, property)
       && (minPrice === 0 || rentAmount >= minPrice)
@@ -727,7 +743,7 @@ export default function LandingPage() {
     const bathroomMatch = matchesRoomCount(unit, "bathroom", bathroomFilter) || (Boolean(parentProperty) && getRoomCountNumber(unit, "bathroom") === null && matchesRoomCount(parentProperty, "bathroom", bathroomFilter));
     const furnishingMatch = matchesFurnishing(unit) || (Boolean(parentProperty) && extractAmenities(unit).length === 0 && matchesFurnishing(parentProperty));
 
-    return (!normalizedSearch || haystack.includes(normalizedSearch))
+    return matchesSearchQuery(haystack)
       && (!locationFilter || unitLocation.toLowerCase().includes(locationFilter.toLowerCase()))
       && matchesPropertyTypeFilter(unitType, true, parentProperty)
       && (minPrice === 0 || rentAmount >= minPrice)
@@ -791,19 +807,26 @@ export default function LandingPage() {
 
   const handleSelectDestination = (destinationName: string, count?: number) => {
     // Check if there are active rental listings in this destination
-    const q = destinationName.toLowerCase();
-    const propCount = properties.filter((p) => {
-      const isCondoBuilding = String(p.type || "").toLowerCase() === "condominium" || String(p.type || "").toLowerCase() === "building";
+    const key = destinationName.toLowerCase();
+    const tokens = DESTINATION_FILTER_TOKENS[key] || [key];
+    const matchesDest = (text: string) => {
+      const lower = text.toLowerCase();
+      return tokens.some((t) => lower.includes(t));
+    };
+
+    const propCount = properties.filter((p: any) => {
       const hasUnits = units.some((u: any) => (u.propertyId || u.property_id) === p.id);
-      if (isCondoBuilding || hasUnits) return false;
-      const str = `${p.name || ""} ${p.location || ""} ${p.city || ""} ${p.province || ""} ${p.address || ""}`.toLowerCase();
-      return str.includes(q);
+      if (hasUnits) return false;
+      const str = `${p.name || ""} ${p.location || ""} ${p.city || ""} ${p.province || ""} ${p.address || ""} ${p.type || ""}`;
+      return matchesDest(str);
     }).length;
-    const unitCount = units.filter((u) => {
-      const parent = properties.find((p) => p.id === (u.propertyId || u.property_id));
-      const str = `${u.unitNumber || ""} ${u.address || ""} ${u.location || ""} ${parent?.name || ""} ${parent?.location || ""} ${parent?.city || ""} ${parent?.province || ""}`.toLowerCase();
-      return str.includes(q);
+
+    const unitCount = units.filter((u: any) => {
+      const parent = properties.find((p: any) => p.id === (u.propertyId || u.property_id));
+      const str = `${u.name || ""} ${u.title || ""} ${u.unitNumber || u.unit_number || ""} ${u.address || ""} ${u.city || ""} ${u.province || ""} ${u.location || ""} ${parent?.name || ""} ${parent?.location || ""} ${parent?.city || ""} ${parent?.province || ""} ${parent?.address || ""}`;
+      return matchesDest(str);
     }).length;
+
     const totalCount = count !== undefined ? count : (propCount + unitCount);
 
     if (totalCount === 0) {
@@ -3692,8 +3715,8 @@ export default function LandingPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">RentTrack contacts</p>
           <h2 className="mt-1 text-lg font-bold text-slate-900">Property Owner</h2>
           {contactLoading ? <p className="py-6 text-sm text-slate-500">Loading contacts...</p> : contactError ? <p role="alert" className="py-5 text-sm text-red-700">{contactError}</p> : contactPeople && (
-            <div className="mt-4 space-y-4">
-              <ContactGroup title="Property Owner" contacts={contactPeople.owners} emptyMessage="No owner contact details are public right now." />
+            <div className="mt-2">
+              <ContactGroup contacts={contactPeople.owners} emptyMessage="No owner contact details are public right now." />
             </div>
           )}
         </aside>

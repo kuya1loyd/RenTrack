@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminSupabase, initDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/api-security";
 import { findPendingMoveOut, normalizeMoveOutReason, type MoveOutRequestRow } from "@/lib/move-out-policy";
-import { getMoveOutManagementUnitIds, loadMoveOutContext, moveOutSubmissionId } from "@/lib/move-out-service";
+import { getMoveOutManagementUnitIds, loadMoveOutContext, moveOutSubmissionId, resolveTenantManager } from "@/lib/move-out-service";
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,11 +12,18 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     let query = getAdminSupabase().from("move_out_requests").select("*");
     let tenancy;
+    let manager = null;
     if (auth.user.role === "tenant") {
       const context = await loadMoveOutContext(auth);
       // Tenant-controlled query parameters cannot broaden their history.
       query = query.in("tenant_id", context.identityIds);
       tenancy = context.tenancy;
+      try {
+        const management = await resolveTenantManager(auth, context);
+        manager = management.manager;
+      } catch (mErr) {
+        console.warn("Could not resolve manager for move-out:", mErr);
+      }
     } else {
       if (auth.user.role !== "admin") {
         const unitIds = await getMoveOutManagementUnitIds(auth);
@@ -27,13 +34,18 @@ export async function GET(request: NextRequest) {
       if (tenantId) query = query.eq("tenant_id", tenantId);
     }
     const status = searchParams.get("status");
-    if (status && !["pending", "approved", "rejected"].includes(status)) {
+    if (status && !["pending", "approved", "rejected", "archived"].includes(status)) {
       return NextResponse.json({ success: false, error: "Invalid request status" }, { status: 400 });
     }
     if (status) query = query.eq("status", status);
     const { data, error } = await query.order("created_at", { ascending: false });
     if (error) throw error;
-    return NextResponse.json({ success: true, requests: data || [], ...(tenancy ? { tenancy } : {}) });
+    return NextResponse.json({
+      success: true,
+      requests: data || [],
+      ...(tenancy ? { tenancy } : {}),
+      ...(manager ? { manager } : {}),
+    });
   } catch (error) {
     console.error("Get move-out requests error:", error);
     return NextResponse.json({ success: false, error: "We could not load your tenancy and move-out requests. Please try again." }, { status: 500 });
@@ -90,7 +102,8 @@ export async function POST(request: NextRequest) {
           userId: admin.id,
           title: "New Move-Out Request",
           message: `${tenantName} submitted a move-out request for ${context.tenancy.tenant?.propertyName || "their unit"}.`,
-          type: "system",
+          type: "move_out",
+          link: admin.role === "owner" ? "/dashboard/owner#move-out-requests" : "/dashboard/admin?tab=overview",
         });
       }
     } catch (notifErr) {

@@ -2,6 +2,7 @@ type NotificationRoutingInput = {
   title?: string | null;
   message?: string | null;
   type?: string | null;
+  link?: string | null;
 };
 
 export type NotificationDashboardRole = "admin" | "owner" | "agent" | "tenant" | string;
@@ -12,6 +13,14 @@ const defaultHref: Record<string, string> = {
   agent: "/dashboard/agent#overview",
   tenant: "/dashboard/tenant",
 };
+
+/** Move-out request notices go straight to move-out management. */
+export function isMoveOutNotification(notification: NotificationRoutingInput): boolean {
+  const type = (notification.type || "").toLowerCase();
+  if (type === "move_out" || type === "move-out" || type === "moveout") return true;
+  const text = `${notification.title || ""} ${notification.message || ""}`.toLowerCase();
+  return /\b(?:move-out|move out|moveout|turnover notice)\b/i.test(text);
+}
 
 /** Contract notices are never maintenance/system alerts, even when saved with a generic type. */
 export function isContractNotification(notification: NotificationRoutingInput): boolean {
@@ -29,7 +38,7 @@ export function isContractNotification(notification: NotificationRoutingInput): 
 
 /** Checks whether a notification is an informational system maintenance or platform alert. */
 export function isMaintenanceNotification(notification: NotificationRoutingInput): boolean {
-  if (isContractNotification(notification)) return false;
+  if (isContractNotification(notification) || isMoveOutNotification(notification)) return false;
   const title = (notification.title || "").toLowerCase();
   const message = (notification.message || "").toLowerCase();
   const type = (notification.type || "").toLowerCase();
@@ -54,6 +63,19 @@ export function getNotificationDashboardHref(
   const isOwner = role === "owner";
   const isAgent = role === "agent";
   const isTenant = role === "tenant";
+
+  // Explicit notification links take precedence if valid for the dashboard
+  if (notification.link && typeof notification.link === "string" && notification.link.startsWith("/dashboard/")) {
+    return notification.link;
+  }
+
+  // Move-out notices go straight to the move-out requests section
+  if (isMoveOutNotification(notification)) {
+    if (isOwner) return "/dashboard/owner#move-out-requests";
+    if (isAdmin) return "/dashboard/admin?tab=overview";
+    if (isAgent) return "/dashboard/agent#overview";
+    if (isTenant) return "/dashboard/tenant/move-out";
+  }
 
   // Contract notices go straight to the contracts page for each role.
   if (isContractNotification(notification)) {

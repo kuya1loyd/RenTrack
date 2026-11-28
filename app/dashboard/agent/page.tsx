@@ -160,6 +160,14 @@ export default function AgentDashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showAccountRequestModal, setShowAccountRequestModal] = useState(false);
+  const [assigningInquiryId, setAssigningInquiryId] = useState<string | null>(null);
+  const [prefilledAccountRequest, setPrefilledAccountRequest] = useState<{
+    name?: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    reason?: string;
+  } | null>(null);
   const [paymentFilter, setPaymentFilter] = useState<string>("all");
   const [, setIsRefreshing] = useState(false);
   const [viewingReceipt, setViewingReceipt] = useState<Payment | null>(null);
@@ -281,6 +289,53 @@ export default function AgentDashboard() {
       toast.error(error instanceof Error ? error.message : "Could not update inquiry category");
     } finally {
       setUpdatingInquiryType(null);
+    }
+  };
+
+  const handleAssignFromInquiry = (inq: ChatInquiry) => {
+    const emailMatch = (inq.senderEmail || "").trim().toLowerCase();
+    const nameMatch = (inq.senderName || "").trim().toLowerCase();
+    const matchedTenant = tenants.find(
+      (t) =>
+        (emailMatch && t.email && t.email.trim().toLowerCase() === emailMatch) ||
+        (nameMatch && t.name && t.name.trim().toLowerCase() === nameMatch)
+    );
+
+    const propNameTarget = inq.propertyName ? inq.propertyName.trim().toLowerCase() : "";
+    const matchedProp =
+      (inq.propertyId && properties.find((p) => p.id === inq.propertyId)) ||
+      (propNameTarget ? properties.find((p) => p.name.trim().toLowerCase() === propNameTarget) : null) ||
+      null;
+
+    const unitNum = inq.unitNumber || inq.text.match(/\[Unit\s+([^\]]+)\]/i)?.[1];
+    const matchedUnit =
+      (unitNum && units.find((u) => {
+        const matchNum = String(u.unitNumber || "").replace(/^unit\s*#?\s*/i, "").trim().toLowerCase();
+        const targetNum = String(unitNum).replace(/^unit\s*#?\s*/i, "").trim().toLowerCase();
+        return matchNum === targetNum && (!matchedProp || u.propertyId === matchedProp.id);
+      })) ||
+      (inq.propertyId && units.find((u) => u.id === inq.propertyId)) ||
+      null;
+
+    setAssigningInquiryId(inq.id);
+
+    if (matchedTenant) {
+      setSelectedTenant(matchedTenant);
+      setSelectedProperty(matchedProp);
+      setSelectedUnit(matchedUnit);
+      setShowAssignModal(true);
+      toast.success(`Assigning ${matchedTenant.name} to ${matchedUnit ? `Unit ${matchedUnit.unitNumber}` : matchedProp ? matchedProp.name : "rental"}`);
+    } else {
+      const propLabel = matchedProp?.name || inq.propertyName || "property";
+      const unitLabel = matchedUnit?.unitNumber ? ` (Unit ${matchedUnit.unitNumber})` : unitNum ? ` (Unit ${unitNum})` : "";
+      setPrefilledAccountRequest({
+        name: inq.senderName || "",
+        email: inq.senderEmail || "",
+        phone: inq.senderPhone || "",
+        reason: `Tenant inquired about ${propLabel}${unitLabel}: "${inq.text.slice(0, 150)}"`,
+      });
+      setShowAccountRequestModal(true);
+      toast.info(`Requesting tenant account for ${inq.senderName} to assign this rental.`);
     }
   };
 
@@ -2441,14 +2496,36 @@ export default function AgentDashboard() {
                               <td className="whitespace-nowrap px-4 py-3 text-slate-600" title={formatDateTime(inq.createdAt)}>{getTimeAgo(inq.repliedAt || inq.createdAt)}</td>
                               <td className="px-4 py-3"><Badge variant={inq.status === "new" ? "default" : inq.status === "closed" ? "outline" : "info"} className="text-[10px] capitalize">{inq.status === "read" ? "In progress" : inq.status}</Badge></td>
                               <td className="px-4 py-3 text-right">
-                                <DropdownMenu modal={false}>
-                                  <DropdownMenuTrigger asChild><button type="button" className="inline-flex h-7 items-center rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50">Actions<ChevronDown className="ml-1 h-3.5 w-3.5" /></button></DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" sideOffset={4} side="bottom">
-                                    <DropdownMenuItem onSelect={() => { if (inq.status === "new") void markInquiryRead(inq.id); setReplyingInquiry(inq.id); setInquiryReply(inq.replyText || ""); }}>Reply</DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={() => setShowAccountRequestModal(true)} className="text-amber-700 hover:bg-amber-50">Request Account</DropdownMenuItem>
-                                    {inq.status === "new" && <DropdownMenuItem onSelect={() => markInquiryRead(inq.id)}>Mark Read</DropdownMenuItem>}
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAssignFromInquiry(inq)}
+                                    className="inline-flex h-7 items-center gap-1 rounded-lg bg-blue-600 px-2.5 text-[11px] font-semibold text-white shadow-xs transition-colors hover:bg-blue-700"
+                                    title={`Assign ${inq.senderName} to inquired property / unit`}
+                                  >
+                                    <UserPlus className="h-3 w-3" />
+                                    <span>Assign</span>
+                                  </button>
+                                  <DropdownMenu modal={false}>
+                                    <DropdownMenuTrigger asChild><button type="button" className="inline-flex h-7 items-center rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-50">Actions<ChevronDown className="ml-1 h-3.5 w-3.5" /></button></DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" sideOffset={4} side="bottom">
+                                      <DropdownMenuItem onSelect={() => handleAssignFromInquiry(inq)} className="font-semibold text-blue-700 hover:bg-blue-50">
+                                        <UserPlus className="mr-1.5 h-3.5 w-3.5" /> Assign Inquired Rental
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onSelect={() => { if (inq.status === "new") void markInquiryRead(inq.id); setReplyingInquiry(inq.id); setInquiryReply(inq.replyText || ""); }}>Reply</DropdownMenuItem>
+                                      <DropdownMenuItem onSelect={() => {
+                                        setPrefilledAccountRequest({
+                                          name: inq.senderName,
+                                          email: inq.senderEmail,
+                                          phone: inq.senderPhone,
+                                          reason: `Inquired about ${inq.propertyName || "rental property"}`,
+                                        });
+                                        setShowAccountRequestModal(true);
+                                      }} className="text-amber-700 hover:bg-amber-50">Request Account</DropdownMenuItem>
+                                      {inq.status === "new" && <DropdownMenuItem onSelect={() => markInquiryRead(inq.id)}>Mark Read</DropdownMenuItem>}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -2500,12 +2577,31 @@ export default function AgentDashboard() {
                           <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-slate-700">{inq.text}</p>
                           {inq.replyText && <p className="line-clamp-2 text-[11px] text-blue-700">Reply: {inq.replyText}</p>}
                           {inq.visitorReply && <p className="line-clamp-2 text-[11px] text-slate-500">Visitor: {inq.visitorReply}</p>}
-                          <div className="flex justify-end">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleAssignFromInquiry(inq)}
+                              className="inline-flex h-7 items-center gap-1 rounded-lg bg-blue-600 px-2.5 text-[11px] font-semibold text-white shadow-xs transition-colors hover:bg-blue-700"
+                            >
+                              <UserPlus className="h-3 w-3" />
+                              <span>Assign Rental</span>
+                            </button>
                             <DropdownMenu modal={false}>
-                              <DropdownMenuTrigger asChild><button type="button" className="inline-flex h-7 items-center rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50">Actions<ChevronDown className="ml-1 h-3.5 w-3.5" /></button></DropdownMenuTrigger>
+                              <DropdownMenuTrigger asChild><button type="button" className="inline-flex h-7 items-center rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-50">Actions<ChevronDown className="ml-1 h-3.5 w-3.5" /></button></DropdownMenuTrigger>
                               <DropdownMenuContent align="end" sideOffset={4} side="bottom">
+                                <DropdownMenuItem onSelect={() => handleAssignFromInquiry(inq)} className="font-semibold text-blue-700 hover:bg-blue-50">
+                                  <UserPlus className="mr-1.5 h-3.5 w-3.5" /> Assign Inquired Rental
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onSelect={() => { if (inq.status === "new") void markInquiryRead(inq.id); setReplyingInquiry(inq.id); setInquiryReply(inq.replyText || ""); }}>Reply</DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => setShowAccountRequestModal(true)} className="text-amber-700 hover:bg-amber-50">Request Account</DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => {
+                                  setPrefilledAccountRequest({
+                                    name: inq.senderName,
+                                    email: inq.senderEmail,
+                                    phone: inq.senderPhone,
+                                    reason: `Inquired about ${inq.propertyName || "rental property"}`,
+                                  });
+                                  setShowAccountRequestModal(true);
+                                }} className="text-amber-700 hover:bg-amber-50">Request Account</DropdownMenuItem>
                                 {inq.status === "new" && <DropdownMenuItem onSelect={() => markInquiryRead(inq.id)}>Mark Read</DropdownMenuItem>}
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -2519,8 +2615,12 @@ export default function AgentDashboard() {
                 {!initialLoad && !loadError && filteredInquiries.length > 0 && <PaginationControls page={inquiryPage} total={filteredInquiries.length} onPageChange={setInquiryPage} />}
                 <AccountRequestModal
                   isOpen={showAccountRequestModal}
-                  onClose={() => setShowAccountRequestModal(false)}
+                  onClose={() => {
+                    setShowAccountRequestModal(false);
+                    setPrefilledAccountRequest(null);
+                  }}
                   agentName={user?.name || "Agent"}
+                  initialData={prefilledAccountRequest}
                 />
               </motion.div>
             )}
@@ -2690,6 +2790,15 @@ export default function AgentDashboard() {
           initialUnit={selectedUnit}
           initialProperty={selectedProperty}
           onSuccess={async () => {
+            if (assigningInquiryId) {
+              try {
+                await updateInquiryStatus(assigningInquiryId, "approved");
+                setInquiries((prev) =>
+                  prev.map((item) => (item.id === assigningInquiryId ? { ...item, status: "approved" } : item))
+                );
+              } catch {}
+              setAssigningInquiryId(null);
+            }
             await loadData();
           }}
           onRequestTenantAccount={() => setShowAccountRequestModal(true)}
@@ -2698,8 +2807,12 @@ export default function AgentDashboard() {
         {showAccountRequestModal && (
           <AccountRequestModal
             isOpen={showAccountRequestModal}
-            onClose={() => setShowAccountRequestModal(false)}
+            onClose={() => {
+              setShowAccountRequestModal(false);
+              setPrefilledAccountRequest(null);
+            }}
             agentName={user?.name || "Agent"}
+            initialData={prefilledAccountRequest}
           />
         )}
        </div>
